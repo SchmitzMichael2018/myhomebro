@@ -102,6 +102,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
     : serviceItems.map((item) => ({ title: item, description: '' }));
   const sections = visibleSections(layout);
   const businessName = identity.business_name || 'this contractor';
+  const isQaProfile = /(^|\s)qa(\s|$)/i.test(businessName) || /qa[-_.]?contractor/i.test(contact.email_public || '');
   const leadFormEnabled = contact.allow_public_intake !== false && contactBlock.lead_form_enabled !== false;
   const [intakeForm, setIntakeForm] = useState(emptyIntakeForm);
   const [submitState, setSubmitState] = useState({ status: 'idle', message: '' });
@@ -287,7 +288,14 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
                 {websiteCtaText(contactBlock.cta_text || 'Start Your Project')}
               </a>
               <div className="mt-5 flex flex-wrap gap-3 text-sm font-semibold">
-                {contact.show_phone_public && contact.phone_public ? <a href={`tel:${contact.phone_public}`} className="rounded-xl bg-white/15 px-4 py-2 text-white">{contact.phone_public}</a> : null}
+                {contact.show_phone_public && contact.phone_public ? (
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/65">
+                      {isQaProfile ? 'QA demo contact — not a real business number' : 'Call the contractor'}
+                    </span>
+                    <a href={`tel:${contact.phone_public}`} className="rounded-xl bg-white/15 px-4 py-2 text-white">{contact.phone_public}</a>
+                  </div>
+                ) : null}
                 {contact.show_email_public && contact.email_public ? <a href={`mailto:${contact.email_public}`} className="rounded-xl bg-white/15 px-4 py-2 text-white">{contact.email_public}</a> : null}
               </div>
             </div>

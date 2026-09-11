@@ -2621,8 +2621,9 @@ export default function ContractorPublicPresencePage() {
                     {profile.work_types?.length ? <span className="flex flex-wrap gap-1.5 pt-1">{profile.work_types.map((item) => <span key={item} className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{item}</span>)}</span> : null}
                   </label>
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Public phone</span>
+                    <span className="text-sm font-bold text-slate-800">Public contractor phone (shown on website)</span>
                     <input value={profile.phone_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="(210) 504-9796" />
+                    {/qa/i.test(profile.business_name_public || '') || /qa[-_.]?contractor/i.test(profile.email_public || '') ? <span className="block text-xs font-semibold text-amber-700">QA profile: use demo contact information only. Never enter a homeowner’s phone number here.</span> : <span className="block text-xs text-slate-500">Customers will use this number to contact the contractor directly.</span>}
                   </label>
                   <label className="space-y-1">
                     <span className="text-sm font-bold text-slate-800">Public email</span>
