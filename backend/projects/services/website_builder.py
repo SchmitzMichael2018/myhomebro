@@ -548,6 +548,11 @@ def _website_ai_instructions(action: str) -> str:
 def _normalize_website_ai_result(action: str, value: Any) -> dict[str, Any]:
     data = value if isinstance(value, dict) else {}
     draft = data.get("draft") if isinstance(data.get("draft"), dict) else {}
+    if action == "generate_website_copy_set" and not draft:
+        # Be tolerant of providers that flatten an otherwise valid coordinated
+        # draft. The UI can only apply the suggestion when these fields survive
+        # normalization as a draft object.
+        draft = {key: data.get(key) for key in ("headline", "subheadline", "cta_text", "about", "visual_direction", "image_brief")}
     allowed_draft = {
         key: _safe_text(draft.get(key))[:1200]
         for key in ("headline", "subheadline", "cta_text", "about", "visual_direction", "image_brief")
@@ -616,7 +621,7 @@ def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, 
                     "content": (
                         "You are Project Assistant helping a contractor prepare accurate public website content. "
                         "Use only the supplied public facts. Never invent licenses, insurance, awards, guarantees, reviews, "
-                        "customer quotes, project results, years of experience, locations, or completed work. AI-generated "
+                        "customer quotes, project results, years of experience, locations, or completed work. "
                         "Avoid unsupported quality claims such as expert, trusted, reliable, best, or quality craftsmanship. "
                         "visuals may be proposed only as decorative illustrations and never as portfolio evidence. Return "
                         "valid JSON with suggested_value, suggestions, draft, basis, and warnings. The draft object may use "
@@ -637,6 +642,37 @@ def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, 
                     ),
                 },
             ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "contractor_website_assistance",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "suggested_value": {"type": "string"},
+                            "suggestions": {"type": "array", "items": {"type": "string"}},
+                            "draft": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "headline": {"type": "string"},
+                                    "subheadline": {"type": "string"},
+                                    "cta_text": {"type": "string"},
+                                    "about": {"type": "string"},
+                                    "visual_direction": {"type": "string"},
+                                    "image_brief": {"type": "string"},
+                                },
+                                "required": ["headline", "subheadline", "cta_text", "about", "visual_direction", "image_brief"],
+                            },
+                            "basis": {"type": "array", "items": {"type": "string"}},
+                            "warnings": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["suggested_value", "suggestions", "draft", "basis", "warnings"],
+                    },
+                }
+            },
         )
         parsed = json.loads(getattr(response, "output_text", "") or "{}")
         normalized = _normalize_website_ai_result(action, parsed)

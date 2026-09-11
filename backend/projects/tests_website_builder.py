@@ -423,6 +423,26 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(result["suggested_value"], "Clear reviewed headline")
         self.assertNotIn("{", result["suggested_value"])
 
+    def test_coordinated_ai_draft_recovers_flattened_provider_fields(self):
+        result = _normalize_website_ai_result(
+            "generate_website_copy_set",
+            {
+                "headline": "Remodeling planned around your home",
+                "subheadline": "Clear milestones and straightforward communication.",
+                "cta_text": "Request an Estimate",
+                "about": "We help homeowners plan remodeling projects.",
+                "visual_direction": "Warm editorial remodeler layout.",
+                "image_brief": "Decorative architectural texture.",
+                "suggestions": [],
+                "basis": ["Contractor-provided process"],
+                "warnings": [],
+            },
+        )
+
+        self.assertEqual(result["draft"]["headline"], "Remodeling planned around your home")
+        self.assertEqual(result["draft"]["cta_text"], "Request an Estimate")
+        self.assertEqual(result["suggested_value"], "Remodeling planned around your home")
+
     def test_completed_contractor_photo_can_be_imported_hidden_for_review(self):
         homeowner = Homeowner.objects.create(created_by=self.contractor, full_name="QA Homeowner", email="qa-gallery@example.com")
         project = Project.objects.create(contractor=self.contractor, homeowner=homeowner, title="Completed Kitchen")
