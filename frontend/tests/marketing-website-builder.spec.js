@@ -889,7 +889,7 @@ test('Portfolio is an image-led gallery with a contained project workflow', asyn
 
 test('Website builder uses five stages with a persistent protected preview', async ({ page }) => {
   await mockMarketingPage(page, { pro: true, developmentOverride: true });
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto('/app/marketing?tab=profile', { waitUntil: 'domcontentloaded' });
 
   const nav = page.getByTestId('marketing-grouped-step-navigation');
@@ -909,6 +909,28 @@ test('Website builder uses five stages with a persistent protected preview', asy
   await nav.getByRole('button', { name: 'Content' }).click();
   await expect(page.getByTestId('online-presence-seo-tab')).toBeVisible();
   await expect(page.getByTestId('persistent-website-preview')).toBeVisible();
+});
+
+test('Website builder gives every editor a usable width on a standard desktop', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true, developmentOverride: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=profile', { waitUntil: 'domcontentloaded' });
+
+  const nav = page.getByTestId('marketing-grouped-step-navigation');
+  const steps = [
+    ['Business', 'public-presence-profile-tab'],
+    ['Design', 'marketing-brand-kit-tab'],
+    ['Content', 'online-presence-seo-tab'],
+    ['Trust & Portfolio', 'public-presence-gallery-tab'],
+    ['Review & Publish', 'online-presence-final-review-tab'],
+  ];
+
+  await expect(page.getByTestId('persistent-website-preview')).toBeHidden();
+  for (const [label, testId] of steps) {
+    await nav.getByRole('button', { name: label }).click();
+    const width = await page.getByTestId(testId).evaluate((element) => element.getBoundingClientRect().width);
+    expect(width).toBeGreaterThan(850);
+  }
 });
 
 test('capture final Portfolio implementation', async ({ page }) => {

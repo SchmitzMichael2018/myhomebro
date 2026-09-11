@@ -2185,7 +2185,7 @@ export default function ContractorPublicPresencePage() {
         </div>
 
         <main className="px-5 pb-6 lg:px-6" data-testid="online-presence-step-content">
-          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0">
           {activeTab === 'overview' ? <MarketingOverview
             websitePublished={websitePublished}
@@ -3084,7 +3084,7 @@ export default function ContractorPublicPresencePage() {
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}
           </div>
-          <aside className="sticky top-4 hidden space-y-3 xl:block" data-testid="persistent-website-preview">
+          <aside className="sticky top-4 hidden space-y-3 2xl:block" data-testid="persistent-website-preview">
             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div><div className="text-xs font-black uppercase tracking-wide text-slate-500">Live preview</div><div className="mt-1 text-sm font-black text-slate-950">{finalPreviewMode === 'mobile' ? 'Mobile' : 'Desktop'} view</div></div>
