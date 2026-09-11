@@ -103,12 +103,14 @@ function getAgreementId(er) {
 
 function isEscrowAgreement(agreement) {
   const values = [
+    agreement?.payment_mode,
     agreement?.payment_model,
     agreement?.payment_type,
     agreement?.payment_method,
     agreement?.funding_type,
     agreement?.escrow_status,
     agreement?.project?.payment_model,
+    agreement?.project?.payment_mode,
     agreement?.project?.payment_type,
   ]
     .filter(Boolean)
