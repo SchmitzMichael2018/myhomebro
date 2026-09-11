@@ -258,8 +258,12 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             {(reviews.selected || []).slice(0, 4).map((review) => (
               <figure key={review.id || review.reviewer_name} className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-                <div className="text-sm font-bold text-slate-900">{review.rating || 5}/5</div>
-                <blockquote className="mt-2 text-sm leading-6 text-slate-700">{review.public_comment || review.comment || 'Great work and clear communication.'}</blockquote>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-bold text-slate-900">{review.rating || 5}/5</div>
+                  {review.is_verified ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-800">Verified customer</span> : <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-900">Contractor-provided</span>}
+                </div>
+                {review.title ? <div className="mt-3 text-sm font-black text-slate-900">{review.title}</div> : null}
+                <blockquote className="mt-2 text-sm leading-6 text-slate-700">{review.review_text || review.public_comment || review.comment || 'Great work and clear communication.'}</blockquote>
                 <figcaption className="mt-3 text-xs font-semibold text-slate-500">{review.reviewer_name || review.customer_name || 'Customer'}</figcaption>
               </figure>
             ))}
