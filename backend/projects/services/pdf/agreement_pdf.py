@@ -72,6 +72,15 @@ def _currency(v) -> str:
     return "$0.00"
 
 
+def agreement_reference_heading(agreement: Agreement) -> str:
+  """Return the prominent agreement reference shown in PDF metadata and content."""
+  reference = f"Agreement #{getattr(agreement, 'pk', '')}"
+  amendment_number = int(getattr(agreement, "amendment_number", 0) or 0)
+  if amendment_number > 0:
+    return f"{reference} Amendment {amendment_number}"
+  return reference
+
+
 def _first_existing(paths: list[str]) -> Optional[str]:
   for p in paths:
     if p and os.path.exists(p):
@@ -777,7 +786,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     rightMargin=0.75 * inch,
     topMargin=1.2 * inch,
     bottomMargin=0.9 * inch,
-    title=f"Agreement #{getattr(ag, 'pk', '')}",
+    title=agreement_reference_heading(ag),
   )
 
   ss = getSampleStyleSheet()
@@ -836,8 +845,68 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     story.append(img_logo)
     story.append(Spacer(1, 6))
 
-  story.append(Paragraph(f"Agreement #{ag.id}", s_h1))
+  story.append(Paragraph(agreement_reference_heading(ag), s_h1))
   story.append(Spacer(1, 6))
+
+  amendment_number = int(getattr(ag, "amendment_number", 0) or 0)
+  amended_milestones = []
+  prior_executed_total = ""
+  if amendment_number > 0:
+    amended_milestones = list(
+      Milestone.objects.filter(
+        agreement=ag,
+        amendment_number_snapshot=amendment_number,
+      ).order_by("order", "id")
+    )
+    try:
+      from projects.models_amendment_request import AmendmentRequest
+      amendment_request = (
+        AmendmentRequest.objects.filter(agreement=ag)
+        .order_by("-updated_at", "-id")
+        .first()
+      )
+      prior_executed_total = _s(
+        (getattr(amendment_request, "requested_changes", None) or {}).get("prior_executed_total")
+      ).strip()
+    except Exception:
+      prior_executed_total = ""
+
+    change_lines = []
+    for milestone in amended_milestones:
+      milestone_date = _due_of(milestone) or _start_of(milestone)
+      date_text = _fmt_date_friendly(milestone_date) if milestone_date else "Date TBD"
+      change_lines.append(
+        f"<b>Added milestone:</b> {_escape_html(_s(milestone.title))} — "
+        f"{_currency(getattr(milestone, 'amount', 0))} — {date_text}"
+      )
+    if not change_lines:
+      change_lines.append("This document updates the previously executed agreement terms.")
+    total_line = f"<b>Amended agreement total:</b> {_currency(getattr(ag, 'total_cost', 0))}"
+    if prior_executed_total:
+      total_line = (
+        f"<b>Agreement total:</b> {_currency(prior_executed_total)} previously executed; "
+        f"{_currency(getattr(ag, 'total_cost', 0))} after Amendment {amendment_number}."
+      )
+    amendment_summary = Table(
+      [[Paragraph(
+        f"<b>WHAT CHANGED IN AMENDMENT {amendment_number}</b><br/>"
+        + "<br/>".join(change_lines)
+        + f"<br/>{total_line}",
+        s_val,
+      )]],
+      colWidths=[doc.width],
+    )
+    amendment_summary.setStyle(TableStyle([
+      ("BACKGROUND", (0, 0), (-1, -1), "#FFF7D6"),
+      ("BOX", (0, 0), (-1, -1), 1, "#D9A400"),
+      ("LEFTPADDING", (0, 0), (-1, -1), 10),
+      ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+      ("TOPPADDING", (0, 0), (-1, -1), 8),
+      ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(amendment_summary)
+    story.append(Spacer(1, 10))
+
   story.append(Paragraph("Project", s_lbl))
 
   contractor = getattr(ag, "contractor", None)
@@ -985,6 +1054,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     ]]
 
     total_amt = Decimal("0.00")
+    amendment_row_numbers = []
 
     for idx, m in enumerate(ms, 1):
       try:
@@ -1005,6 +1075,14 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
 
       desc_html = _desc_to_html(desc)
       milestone_html = f"<b>{_escape_html(title)}</b>"
+      is_current_amendment = (
+        amendment_number > 0
+        and int(getattr(m, "amendment_number_snapshot", 0) or 0) == amendment_number
+      )
+      if is_current_amendment:
+        milestone_html += (
+          f"<br/><font color='#8A5A00'><b>ADDED IN AMENDMENT {amendment_number}</b></font>"
+        )
       if desc_html:
         milestone_html += f"<br/>{desc_html}"
       for advisory_line in _milestone_advisory_lines(m):
@@ -1017,6 +1095,8 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         Paragraph(due, s_table_center),
         Paragraph(_currency(float(amt)), s_table_center),
       ])
+      if is_current_amendment:
+        amendment_row_numbers.append(len(rows) - 1)
 
     rows.append([
       "",
@@ -1033,7 +1113,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     c2 = doc.width - (c1 + c3 + c4 + c5)
 
     t = Table(rows, colWidths=[c1, c2, c3, c4, c5], repeatRows=1)
-    t.setStyle(TableStyle([
+    milestone_table_style = [
       ("BACKGROUND", (0, 0), (-1, 0), "#F3F4F6"),
       ("GRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
       ("ALIGN", (0, 1), (0, -2), "CENTER"),
@@ -1046,7 +1126,14 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
       ("LEFTPADDING", (0, 0), (-1, -1), 6),
       ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-    ]))
+    ]
+    for row_number in amendment_row_numbers:
+      milestone_table_style.extend([
+        ("BACKGROUND", (0, row_number), (-1, row_number), "#FFF7D6"),
+        ("LINEABOVE", (0, row_number), (-1, row_number), 0.75, "#D9A400"),
+        ("LINEBELOW", (0, row_number), (-1, row_number), 0.75, "#D9A400"),
+      ])
+    t.setStyle(TableStyle(milestone_table_style))
     story += [t, Spacer(1, 10)]
 
     story.append(PageBreak())
