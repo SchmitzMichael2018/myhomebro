@@ -392,14 +392,18 @@ class WhoAmIView(APIView):
             )
 
         # -------------------------------------------------
-        # Fallback (authenticated but not classified)
+        # Authenticated users who are not platform operators, contractor owners,
+        # internal team members, or accepted subcontractors enter the customer
+        # portal. Customer accounts are associated to project records by their
+        # normalized email rather than by a direct Homeowner.user foreign key.
         # -------------------------------------------------
         return Response(
             {
                 "user_id": user.id,
                 "email": user.email,
-                "type": "unknown",
-                "role": None,
+                "type": "homeowner",
+                "role": "homeowner",
+                "identity_type": "homeowner",
                 "review_queue_count": 0,
                 "attention_counts": _empty_attention_counts(),
             },

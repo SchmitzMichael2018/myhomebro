@@ -13132,6 +13132,25 @@ class ContractorWhoAmIReviewQueueCountTests(TestCase):
         self.assertEqual(attention["pending_invites_count"], 1)
         self.assertGreaterEqual(attention["total_attention_count"], 4)
 
+    def test_whoami_routes_unaffiliated_authenticated_user_to_customer_portal(self):
+        homeowner_user = get_user_model().objects.create_user(
+            email="whoami-homeowner@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=homeowner_user)
+
+        response = self.client.get("/api/projects/whoami/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["user_id"], homeowner_user.id)
+        self.assertEqual(payload["email"], "whoami-homeowner@example.com")
+        self.assertEqual(payload["type"], "homeowner")
+        self.assertEqual(payload["role"], "homeowner")
+        self.assertEqual(payload["identity_type"], "homeowner")
+        self.assertEqual(payload["review_queue_count"], 0)
+        self.assertEqual(payload["attention_counts"]["total_attention_count"], 0)
+
 
 class ContractorTeamSummaryTests(TestCase):
     def setUp(self):
