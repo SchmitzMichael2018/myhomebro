@@ -547,13 +547,24 @@ function normalizeInvoiceMagicUrl(actionTarget = "") {
   return value;
 }
 
-function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpdate }) {
+function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpdate, targetReimbursementId = "", targetAgreementId = "" }) {
   const [paymentHistoryCollapsed, setPaymentHistoryCollapsed] = useState(() => payments.filter(isPaymentHistoryRecord).length > 3);
   const [escrowHistoryCollapsed, setEscrowHistoryCollapsed] = useState(() => payments.filter(isEscrowHistoryRecord).length > 3);
   const [selectedAgreementId, setSelectedAgreementId] = useState("");
   const attention = payments.filter((payment) => {
     return isActionablePayment(payment);
   });
+  const targetedPayment = attention.find(
+    (payment) => String(payment.record_id || payment.id || "") === String(targetReimbursementId || ""),
+  );
+  useEffect(() => {
+    if (targetAgreementId) setSelectedAgreementId(String(targetAgreementId));
+    if (!targetReimbursementId || !targetedPayment) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`customer-reimbursement-${targetReimbursementId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [targetAgreementId, targetReimbursementId, targetedPayment]);
   const paymentHistory = payments.filter(isPaymentHistoryRecord);
   const escrowHistory = payments.filter(isEscrowHistoryRecord);
   const totals = paymentSummary(payments);
@@ -774,7 +785,18 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {attention.length ? (
-            attention.map((payment) => <PaymentActionCard key={payment.id} payment={payment} token={token} onPortalUpdate={onPortalUpdate} />)
+            attention.map((payment) => {
+              const isTarget = String(payment.record_id || payment.id || "") === String(targetReimbursementId || "");
+              return (
+                <div
+                  id={isTarget ? `customer-reimbursement-${targetReimbursementId}` : undefined}
+                  key={payment.id}
+                  className={isTarget ? "rounded-3xl ring-4 ring-amber-300/70 ring-offset-4 ring-offset-slate-950" : ""}
+                >
+                  <PaymentActionCard payment={payment} token={token} onPortalUpdate={onPortalUpdate} />
+                </div>
+              );
+            })
           ) : (
             <div className="lg:col-span-2">
               <EmptyState title="No payments need review" testId="customer-payments-attention-empty">
@@ -2736,7 +2758,10 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
 
 export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const location = useLocation();
-  const requestedWorkspace = new URLSearchParams(location.search).get("workspace");
+  const linkedParams = new URLSearchParams(location.search);
+  const requestedWorkspace = linkedParams.get("workspace");
+  const targetReimbursementId = linkedParams.get("reimbursement") || "";
+  const targetAgreementId = linkedParams.get("agreement") || "";
   const linkedWorkspace = ["projects", "requests", "payments", "notifications", "diy-planner"].includes(requestedWorkspace)
     ? requestedWorkspace
     : "overview";
@@ -3702,7 +3727,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         />
       );
     }
-    if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} agreements={portal?.agreements || []} token={token} onPortalUpdate={onPortalUpdate} />;
+    if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} agreements={portal?.agreements || []} token={token} onPortalUpdate={onPortalUpdate} targetReimbursementId={targetReimbursementId} targetAgreementId={targetAgreementId} />;
     if (activeTab === "notifications") {
       return <NotificationsCenter notifications={notifications} unreadCount={unreadCount} preferences={portal?.notification_cleanup_preferences || {}} notificationPreferences={portal?.notification_preferences || {}} markingId={markingNotificationId} archivingId={archivingNotificationId} restoringId={restoringNotificationId} savingPreferences={savingNotificationPreferences} savingNotificationPreferences={savingDeliveryPreferences} preferenceError={notificationPreferenceError} notificationPreferenceError={deliveryPreferenceError} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} onArchive={archiveNotification} onRestore={restoreNotification} onSavePreferences={saveNotificationCleanupPreferences} onSaveNotificationPreferences={saveCustomerNotificationPreferences} onOpenTab={setActiveTab} onOpenReminder={openReminderDetail} />;
     }
