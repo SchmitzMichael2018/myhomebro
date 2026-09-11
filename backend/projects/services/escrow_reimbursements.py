@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.db import transaction
 from django.utils import timezone
 
-from projects.models import Agreement, DrawRequest, DrawRequestStatus, ExpenseRequest, Invoice, InvoiceStatus
+from projects.models import Agreement, DrawRequest, DrawRequestStatus, ExpenseRequest, Invoice
 from projects.models_dispute import Dispute
 
 
@@ -30,12 +30,10 @@ def _to_cents(value) -> int:
 def _invoice_released_amount(agreement: Agreement) -> Decimal:
     total = Decimal("0.00")
     for invoice in Invoice.objects.filter(agreement=agreement):
-        status = str(getattr(invoice, "status", "") or "").lower()
         if (
             getattr(invoice, "escrow_released", False)
             or getattr(invoice, "escrow_released_at", None)
             or getattr(invoice, "stripe_transfer_id", "")
-            or status == InvoiceStatus.PAID
         ):
             total += money(getattr(invoice, "amount", 0))
     return total

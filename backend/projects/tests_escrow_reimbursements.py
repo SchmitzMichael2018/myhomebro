@@ -141,6 +141,19 @@ class EscrowReimbursementRequestTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("exceeds available escrow", response.data["detail"])
 
+    def test_funded_invoice_status_does_not_count_as_released_escrow(self):
+        Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1000.00"),
+            status=InvoiceStatus.PAID,
+            escrow_released=False,
+        )
+
+        ledger = escrow_ledger(self.agreement)
+
+        self.assertEqual(ledger["invoice_released"], Decimal("0.00"))
+        self.assertEqual(ledger["available"], Decimal("1000.00"))
+
     def test_reimbursement_is_blocked_when_dispute_freezes_escrow(self):
         Dispute.objects.create(
             agreement=self.agreement,
