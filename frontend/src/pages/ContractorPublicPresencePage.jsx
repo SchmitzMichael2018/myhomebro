@@ -2792,7 +2792,7 @@ export default function ContractorPublicPresencePage() {
             <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="website-trust-section">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-wide text-emerald-700">Verified trust</div><h2 className="mt-1 text-xl font-black text-slate-950">Facts customers can rely on</h2><p className="mt-1 text-sm text-slate-600">MyHomeBro verification is shown separately from information entered by the contractor.</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">Verified facts are labeled</span></div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[
-                ['MyHomeBro verification', websiteProfile?.trust?.indicators?.length ? 'Verified indicators available' : 'Not verified', true],
+                ['MyHomeBro verification', websiteProfile?.trust?.indicators?.length ? 'Verified indicators available' : 'Not verified', Boolean(websiteProfile?.trust?.indicators?.length)],
                 ['License', profile.show_license_public || credentials.licensed ? 'Provided and visible' : 'Not shown', Boolean(websiteProfile?.trust?.indicators?.some?.((item) => String(item?.label || item).toLowerCase().includes('licens')))],
                 ['Insurance', credentials.insured ? 'Contractor-entered' : 'Not shown', false],
                 ['Years in business', profile.years_in_business ? `${profile.years_in_business} years` : 'Not provided', false],
