@@ -13,8 +13,12 @@ from projects.models import (
     ContractorReview,
     ContractorWebsite,
     ContractorWebsitePage,
+    Agreement,
     Homeowner,
+    Milestone,
+    MilestoneFile,
     Notification,
+    Project,
     PublicContractorLead,
     Skill,
 )
@@ -418,6 +422,37 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
 
         self.assertEqual(result["suggested_value"], "Clear reviewed headline")
         self.assertNotIn("{", result["suggested_value"])
+
+    def test_completed_contractor_photo_can_be_imported_hidden_for_review(self):
+        homeowner = Homeowner.objects.create(created_by=self.contractor, full_name="QA Homeowner", email="qa-gallery@example.com")
+        project = Project.objects.create(contractor=self.contractor, homeowner=homeowner, title="Completed Kitchen")
+        agreement = Agreement.objects.create(project=project, contractor=self.contractor, homeowner=homeowner, status="signed")
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Final walkthrough",
+            description="Completed cabinet and tile work.",
+            amount="100.00",
+            completed=True,
+        )
+        completion_file = MilestoneFile.objects.create(
+            milestone=milestone,
+            uploaded_by=self.user,
+            file=SimpleUploadedFile("completed-kitchen.jpg", b"test-image", content_type="image/jpeg"),
+        )
+
+        candidates = self.client.get("/api/projects/contractor/gallery/", secure=True)
+        self.assertEqual(candidates.status_code, 200)
+        self.assertEqual(candidates.data["portfolio_candidates"][0]["file_id"], completion_file.id)
+
+        imported = self.client.post(
+            "/api/projects/contractor/gallery/",
+            {"source_milestone_file_id": completion_file.id},
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(imported.status_code, 201)
+        self.assertFalse(imported.data["is_public"])
 
     @override_settings(
         CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={

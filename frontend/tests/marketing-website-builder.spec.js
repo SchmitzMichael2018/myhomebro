@@ -867,7 +867,7 @@ test('Portfolio is an image-led gallery with a contained project workflow', asyn
   await page.getByTestId('portfolio-gallery').getByRole('button', { name: 'Remove Kitchen update' }).click();
   await expect(page.getByTestId('portfolio-gallery')).toContainText('Kitchen update');
   await expect(step).toContainText('Add more work to strengthen your portfolio.');
-  await page.getByRole('button', { name: 'Hidden 0' }).click();
+  await page.getByTestId('portfolio-filters').getByRole('button', { name: 'Hidden 0' }).click();
   await expect(page.getByTestId('portfolio-filter-empty')).toContainText('No hidden portfolio items yet.');
 
   await page.getByTestId('portfolio-add-project').click();
@@ -884,7 +884,31 @@ test('Portfolio is an image-led gallery with a contained project workflow', asyn
   await expect(editor).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save & Continue' })).toHaveCount(1);
   await page.getByRole('button', { name: 'Save & Continue' }).click();
-  await expect(page.getByTestId('public-presence-reviews-tab')).toBeVisible();
+  await expect(page.getByTestId('online-presence-final-review-tab')).toBeVisible();
+});
+
+test('Website builder uses five stages with a persistent protected preview', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true, developmentOverride: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=profile', { waitUntil: 'domcontentloaded' });
+
+  const nav = page.getByTestId('marketing-grouped-step-navigation');
+  await expect(nav.getByRole('button')).toHaveCount(5);
+  await expect(nav).toContainText('Business');
+  await expect(nav).toContainText('Design');
+  await expect(nav).toContainText('Content');
+  await expect(nav).toContainText('Trust & Portfolio');
+  await expect(nav).toContainText('Review & Publish');
+  await expect(nav).not.toContainText('SEO & Visibility');
+  await expect(page.getByTestId('persistent-website-preview')).toBeVisible();
+
+  await nav.getByRole('button', { name: 'Design' }).click();
+  await expect(page.getByTestId('contractor-starter-designs')).toContainText('Premium Custom Builder');
+  await expect(page.getByTestId('persistent-website-preview')).toBeVisible();
+
+  await nav.getByRole('button', { name: 'Content' }).click();
+  await expect(page.getByTestId('online-presence-seo-tab')).toBeVisible();
+  await expect(page.getByTestId('persistent-website-preview')).toBeVisible();
 });
 
 test('capture final Portfolio implementation', async ({ page }) => {

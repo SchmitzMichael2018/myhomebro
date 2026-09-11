@@ -39,23 +39,29 @@ import { buildMarketingAssistantContext, isAllowedMarketingNavigation, MARKETING
 import ToggleSwitch from '../components/ToggleSwitch.jsx';
 
 const ONLINE_PRESENCE_STEPS = [
-  { key: 'overview', label: 'Overview', eyebrow: 'Growth Center' },
-  { key: 'decision', label: 'Website Decision', eyebrow: 'Step 0' },
-  { key: 'profile', label: 'Business Information', eyebrow: 'Step 1' },
-  { key: 'brand', label: 'Brand Kit', eyebrow: 'Step 2' },
-  { key: 'gallery', label: 'Portfolio', eyebrow: 'Step 3' },
-  { key: 'reviews', label: 'Reviews', eyebrow: 'Step 4' },
-  { key: 'website', label: 'Design & Content', eyebrow: 'Step 4' },
-  { key: 'seo', label: 'SEO & Visibility', eyebrow: 'Step 5' },
-  { key: 'final', label: 'Final Review', eyebrow: 'Step 6' },
-  { key: 'publish', label: 'Publish', eyebrow: 'Step 7' },
+  { key: 'profile', label: 'Business', eyebrow: 'Step 1' },
+  { key: 'brand', label: 'Design', eyebrow: 'Step 2' },
+  { key: 'website', label: 'Content', eyebrow: 'Step 3' },
+  { key: 'gallery', label: 'Trust & Portfolio', eyebrow: 'Step 4' },
+  { key: 'final', label: 'Review & Publish', eyebrow: 'Step 5' },
 ];
 
+const LEGACY_STEP_ALIASES = {
+  overview: 'profile',
+  decision: 'profile',
+  reviews: 'gallery',
+  seo: 'website',
+  publish: 'final',
+};
+
 const DESIGN_STYLE_OPTIONS = [
-  { key: 'starter', label: 'Modern', description: 'Clean sections, blue accents, and a direct quote path.' },
-  { key: 'premium_home', label: 'Classic', description: 'Warm, trust-led presentation for residential projects.' },
-  { key: 'bold_contractor', label: 'Bold', description: 'Strong contrast and action-forward content blocks.' },
-  { key: 'clean_local_service', label: 'Local', description: 'Friendly, practical, and tuned for service calls.' },
+  { key: 'general_contractor', label: 'General Contractor', description: 'Balanced services, trust, project work, and estimate requests.' },
+  { key: 'remodeler', label: 'Remodeler', description: 'Visual project storytelling with portfolio work near the top.' },
+  { key: 'handyman', label: 'Handyman', description: 'Fast service discovery and a simple request path.' },
+  { key: 'roofing', label: 'Roofing', description: 'Verification, service area, and inspection-focused calls to action.' },
+  { key: 'painting', label: 'Painting', description: 'Image-led layout suited to before-and-after work.' },
+  { key: 'mechanical_service', label: 'Electrical / Plumbing / HVAC', description: 'Structured service information and prominent contact options.' },
+  { key: 'premium_custom_builder', label: 'Premium Custom Builder', description: 'Editorial layout for detailed, high-consideration projects.' },
 ];
 
 const WEBSITE_SECTION_LABELS = {
@@ -278,7 +284,7 @@ function getAnalysisConfidenceLabel(value) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-function AiSuggestionCard({ suggestion, onAccept, onRegenerate, onDismiss }) {
+function AiSuggestionCard({ suggestion, onAccept, onRegenerate, onDismiss, acceptLabel = 'Accept' }) {
   if (!suggestion) return null;
   const configured = suggestion.configured !== false;
   const hasValue = Boolean(String(suggestion.suggested_value || '').trim());
@@ -310,7 +316,7 @@ function AiSuggestionCard({ suggestion, onAccept, onRegenerate, onDismiss }) {
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><strong>Review:</strong> {suggestion.warnings.join(' ')}</div>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        {hasValue || hasDraft ? <button type="button" onClick={onAccept} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white" data-testid={`ai-accept-${suggestion.target}`}>Accept</button> : null}
+        {hasValue || hasDraft ? <button type="button" onClick={onAccept} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white" data-testid={`ai-accept-${suggestion.target}`}>{acceptLabel}</button> : null}
         <button type="button" onClick={onRegenerate} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-700">Regenerate</button>
         <button type="button" onClick={onDismiss} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700">Dismiss</button>
       </div>
@@ -560,9 +566,9 @@ const defaultWebsiteReadiness = {
 export default function ContractorPublicPresencePage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { openAssistant, updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
+  const { updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState(defaultProfile);
   const [profileBusy, setProfileBusy] = useState(false);
   const [websiteDecisionError, setWebsiteDecisionError] = useState('');
@@ -599,6 +605,7 @@ export default function ContractorPublicPresencePage() {
   const [workflowOverflow, setWorkflowOverflow] = useState({ left: false, right: false });
   const [qrData, setQrData] = useState(null);
   const [galleryRows, setGalleryRows] = useState([]);
+  const [portfolioCandidates, setPortfolioCandidates] = useState([]);
   const [reviewsRows, setReviewsRows] = useState([]);
   const [leadsRows, setLeadsRows] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
@@ -963,7 +970,7 @@ export default function ContractorPublicPresencePage() {
     websitePages,
     heroContent,
     readinessRows: finalReadinessRows,
-    recommendations: activeTab === 'seo' ? seoRecommendations : finalImprovements,
+    recommendations: activeTab === 'website' ? seoRecommendations : finalImprovements,
     validation: { websiteDecisionError, galleryEditorOpen, galleryForm, galleryImage },
     brand: { missingPreferences: missingBrandPreferences },
   }), [activeTab, profile, websiteReadiness, qrData?.qr_svg, galleryRows, reviewsRows, websitePages, heroContent, finalReadinessRows, seoRecommendations, finalImprovements, websiteDecisionError, galleryEditorOpen, galleryForm, galleryImage, missingBrandPreferences]);
@@ -1017,10 +1024,6 @@ export default function ContractorPublicPresencePage() {
   });
 
   async function requestAiSuggestion(action, target, currentValue = '', extra = {}) {
-    if (action === 'final_website_audit') {
-      openMarketingAssistant();
-      return;
-    }
     try {
       setAiBusyTarget(target);
       setAiSuggestions((prev) => {
@@ -1098,9 +1101,10 @@ export default function ContractorPublicPresencePage() {
   }
 
   const goToStep = useCallback((key, { replace = false } = {}) => {
-    if (ONLINE_PRESENCE_STEPS.some((step) => step.key === key)) {
-      setActiveTab(key);
-      navigate(MARKETING_NAVIGATION_TARGETS[key], { replace });
+    const normalizedKey = LEGACY_STEP_ALIASES[key] || key;
+    if (ONLINE_PRESENCE_STEPS.some((step) => step.key === normalizedKey)) {
+      setActiveTab(normalizedKey);
+      navigate(MARKETING_NAVIGATION_TARGETS[normalizedKey], { replace });
     }
   }, [navigate]);
   const marketingAssistantContextSignature = JSON.stringify(marketingAssistantContext);
@@ -1124,13 +1128,6 @@ export default function ContractorPublicPresencePage() {
     };
   }, [loading, marketingAssistantContextSignature, handleMarketingAssistantAction, updateAssistantContext, updateAssistantOnAction]);
 
-  const openMarketingAssistant = useCallback(() => {
-    openAssistant({
-      title: `Project Assistant for ${marketingAssistantContext.active_step_label}`,
-      context: marketingAssistantContext,
-      onAction: handleMarketingAssistantAction,
-    });
-  }, [openAssistant, marketingAssistantContextSignature, handleMarketingAssistantAction]);
   const goToPreviousStep = () => {
     const previous = ONLINE_PRESENCE_STEPS[Math.max(0, activeStepIndex - 1)];
     if (previous) goToStep(previous.key);
@@ -1174,8 +1171,8 @@ export default function ContractorPublicPresencePage() {
     return saveWebsitePage(homePage, homePage);
   };
   const saveContentAndContinue = async () => {
-    const saved = await saveHomePageHero();
-    if (!saved) return;
+    const [pageSaved, profileSaved] = await Promise.all([saveHomePageHero(), saveProfile()]);
+    if (!pageSaved || !profileSaved) return;
     const next = ONLINE_PRESENCE_STEPS[Math.min(ONLINE_PRESENCE_STEPS.length - 1, activeStepIndex + 1)];
     if (next) goToStep(next.key);
   };
@@ -1296,6 +1293,7 @@ export default function ContractorPublicPresencePage() {
       setProfile({ ...defaultProfile, ...(profileRes.data || {}) });
       setQrData(qrRes.data || null);
       setGalleryRows(normalizeList(galleryRes.data));
+      setPortfolioCandidates(Array.isArray(galleryRes.data?.portfolio_candidates) ? galleryRes.data.portfolio_candidates : []);
       setReviewsRows(normalizeList(reviewsRes.data));
       const leadResults = normalizeList(leadsRes.data);
       setLeadsRows(leadResults);
@@ -1434,11 +1432,16 @@ export default function ContractorPublicPresencePage() {
       goToStep('profile', { replace: true });
       return;
     }
-    if (ONLINE_PRESENCE_STEPS.some((item) => item.key === tab)) {
-      setActiveTab(tab);
+    const normalizedTab = LEGACY_STEP_ALIASES[tab] || tab;
+    if (ONLINE_PRESENCE_STEPS.some((item) => item.key === normalizedTab)) {
+      if (normalizedTab !== tab) {
+        goToStep(normalizedTab, { replace: true });
+        return;
+      }
+      setActiveTab(normalizedTab);
       return;
     }
-    goToStep('overview', { replace: true });
+    goToStep('profile', { replace: true });
   }, [location.search, goToStep]);
 
   useEffect(() => {
@@ -1665,6 +1668,27 @@ export default function ContractorPublicPresencePage() {
     } catch (err) {
       console.error(err);
       toast.error('Failed to add gallery item.');
+    } finally {
+      setGalleryBusy(false);
+    }
+  }
+
+  async function importCompletedProject(candidate) {
+    try {
+      setGalleryBusy(true);
+      await api.post('/projects/contractor/gallery/', {
+        source_milestone_file_id: candidate.file_id,
+        title: candidate.title,
+        description: candidate.description,
+        category: candidate.category,
+      });
+      const { data } = await api.get('/projects/contractor/gallery/');
+      setGalleryRows(normalizeList(data));
+      setPortfolioCandidates(Array.isArray(data?.portfolio_candidates) ? data.portfolio_candidates : []);
+      toast.success('Completed project imported as hidden. Review it before showing it publicly.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Could not import this completed project.');
     } finally {
       setGalleryBusy(false);
     }
@@ -2085,11 +2109,9 @@ export default function ContractorPublicPresencePage() {
 
         <div className="relative px-5 py-5 lg:px-6" data-testid="online-presence-setup-nav">
           <div ref={workflowNavRef} aria-label="Marketing workflow steps" className="no-scrollbar flex w-full gap-4 overflow-x-auto rounded-xl border border-slate-200 bg-white p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600" data-testid="marketing-grouped-step-navigation">
-            {[{ label: 'Build Your Foundation', steps: ONLINE_PRESENCE_STEPS.slice(0, 5), offset: 0 }, { label: 'Optimize & Publish', steps: ONLINE_PRESENCE_STEPS.slice(5), offset: 5 }].map((group, groupIndex) => <div key={group.label} className={`min-w-max shrink-0 ${groupIndex ? 'border-l border-slate-200 pl-4' : ''}`}><div className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{group.label}</div><div className="flex gap-2">{group.steps.map((step, localIndex) => {
-              const index = group.offset + localIndex;
+            <div className="min-w-max shrink-0"><div className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Build your website</div><div className="flex gap-2">{ONLINE_PRESENCE_STEPS.map((step, index) => {
               const isActive = activeTab === step.key;
               const isComplete = completedStepKeys.has(step.key);
-              const visibleLabel = step.key === 'decision' ? 'Website' : step.key === 'profile' ? 'Business Info' : step.key === 'website' ? 'Content' : step.key === 'seo' ? 'SEO' : step.key === 'final' ? 'Review' : step.label;
               return (
                 <button
                   key={step.key}
@@ -2099,7 +2121,7 @@ export default function ContractorPublicPresencePage() {
                   aria-label={step.label}
                   aria-current={isActive ? 'step' : undefined}
                   className={[
-                    `flex h-9 items-center gap-1.5 rounded-lg border px-2 text-left text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1 ${step.key === 'profile' ? 'min-w-[104px]' : step.key === 'decision' ? 'min-w-[88px]' : 'min-w-[70px]'}`,
+                    'flex h-9 min-w-[104px] items-center gap-1.5 rounded-lg border px-2 text-left text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1',
                     isActive
                       ? 'border-blue-400 bg-blue-50 text-blue-700 shadow-sm'
                       : isComplete
@@ -2108,18 +2130,20 @@ export default function ContractorPublicPresencePage() {
                   ].join(' ')}
                 >
                   <span className={['flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px]', isActive ? 'bg-blue-600 text-white' : isComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'].join(' ')}>
-                    {isComplete ? '✓' : index}
+                    {isComplete ? '✓' : index + 1}
                   </span>
-                  <span className="whitespace-nowrap">{visibleLabel}</span>
+                  <span className="whitespace-nowrap">{step.label}</span>
                 </button>
               );
-            })}</div></div>)}
+            })}</div></div>
           </div>
           {workflowOverflow.left ? <div aria-hidden="true" className="pointer-events-none absolute bottom-5 left-5 top-5 w-10 rounded-l-xl bg-gradient-to-r from-white via-white/80 to-transparent lg:left-6" data-testid="marketing-nav-overflow-left" /> : null}
           {workflowOverflow.right ? <div aria-hidden="true" className="pointer-events-none absolute bottom-5 right-5 top-5 flex w-12 items-center justify-end rounded-r-xl bg-gradient-to-l from-white via-white/85 to-transparent pr-2 text-lg font-black text-blue-600 lg:right-6" data-testid="marketing-nav-overflow-right">›</div> : null}
         </div>
 
         <main className="px-5 pb-6 lg:px-6" data-testid="online-presence-step-content">
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0">
           {activeTab === 'overview' ? <MarketingOverview
             websitePublished={websitePublished}
             staleContentRisk={staleContentRisk}
@@ -2649,6 +2673,7 @@ export default function ContractorPublicPresencePage() {
               <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <h2 className="text-2xl font-black text-slate-950">Brand Kit</h2>
                 <p className="mt-1 text-sm leading-6 text-slate-600">Create a professional look and writing style that represents your business.</p>
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="contractor-starter-designs"><div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-black text-slate-950">Choose a contractor starter design</h3><p className="mt-1 text-xs leading-5 text-slate-600">Each design preconfigures section order, visual emphasis, and the recommended customer action. You can customize it afterward.</p></div><span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-slate-600">7 designs</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{DESIGN_STYLE_OPTIONS.map((template) => { const selected = websiteData.template_key === template.key; return <button key={template.key} type="button" aria-pressed={selected} disabled={!canCustomizeWebsite || websiteBusy} onClick={() => saveWebsiteSettings({ template_key: template.key })} className={`rounded-lg border p-3 text-left ${selected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-blue-200'}`} data-testid={`starter-design-${template.key}`}><div className="flex items-center justify-between gap-2"><span className="text-xs font-black text-slate-950">{template.label}</span>{selected ? <span className="text-xs font-black text-blue-700">Selected</span> : null}</div><p className="mt-1 text-[11px] leading-4 text-slate-600">{template.description}</p></button>; })}</div></div>
                 <div className="mt-3 min-w-0 rounded-xl border border-blue-100 bg-blue-50/50 p-3 [&_button]:min-h-8 [&_button]:px-3 [&_button]:focus-visible:outline-none [&_button]:focus-visible:ring-2 [&_button]:focus-visible:ring-blue-600 [&_label]:inline-flex [&_label]:min-h-8 [&_label]:items-center [&_label]:px-3 [&_label]:focus-within:ring-2 [&_label]:focus-within:ring-blue-600" data-testid="brand-guided-interview">
                   <h3 className="text-base font-black text-slate-950">Let&apos;s get to know your brand</h3>
                   <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -2749,6 +2774,7 @@ export default function ContractorPublicPresencePage() {
             <section className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-gallery-tab">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-black text-slate-950">Portfolio</h2><p className="mt-1 text-sm text-slate-600">Showcase your best work to build trust and win more business.</p></div><button type="button" onClick={() => setGalleryEditorOpen(true)} className="min-h-9 rounded-lg bg-blue-600 px-4 text-sm font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2" data-testid="portfolio-add-project">+ Add Project</button></div>
+                {portfolioCandidates.length ? <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4" data-testid="completed-project-imports"><div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-black text-blue-950">Reuse completed MyHomeBro work</h3><p className="mt-1 text-xs leading-5 text-blue-800">Import contractor-uploaded completion photos. Imported items stay hidden until you review the photo, description, and customer privacy.</p></div><span className="rounded-full bg-white px-2 py-1 text-xs font-black text-blue-700">{portfolioCandidates.length} available</span></div><div className="mt-3 grid gap-3 sm:grid-cols-2">{portfolioCandidates.slice(0, 4).map((candidate) => <article key={candidate.file_id} className="flex gap-3 rounded-xl border border-blue-100 bg-white p-3"><img src={candidate.image_url} alt="Completed project candidate" className="h-20 w-20 shrink-0 rounded-lg object-cover" /><div className="min-w-0 flex-1"><div className="line-clamp-1 text-sm font-black text-slate-950">{candidate.title}</div><div className="mt-1 line-clamp-1 text-xs text-slate-500">{candidate.milestone_title}</div><button type="button" disabled={galleryBusy} onClick={() => importCompletedProject(candidate)} className="mt-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60">Add to Portfolio</button></div></article>)}</div></div> : null}
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="portfolio-summary">{[['Public Items', publicGalleryRows.length], ['Hidden Items', hiddenGalleryRows.length], ['Featured Items', featuredGalleryRows.length], ['Total Photos', galleryRows.length]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-xl font-black text-slate-950">{value}</div></div>)}</div>
                 <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="overflow-x-auto border-b border-slate-200 px-3" data-testid="portfolio-filters"><div className="flex min-w-max gap-1">{[['all', 'All Items', galleryRows.length], ['public', 'Public', publicGalleryRows.length], ['hidden', 'Hidden', hiddenGalleryRows.length], ['featured', 'Featured', featuredGalleryRows.length]].map(([value, label, count]) => <button key={value} type="button" aria-pressed={galleryFilter === value} onClick={() => setGalleryFilter(value)} className={`border-b-2 px-3 py-2.5 text-xs font-bold ${galleryFilter === value ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}>{label} <span className="text-slate-400">{count}</span></button>)}</div></div>
@@ -2762,7 +2788,21 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
-          {activeTab === 'reviews' ? (
+          {activeTab === 'gallery' ? (
+            <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="website-trust-section">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-wide text-emerald-700">Verified trust</div><h2 className="mt-1 text-xl font-black text-slate-950">Facts customers can rely on</h2><p className="mt-1 text-sm text-slate-600">MyHomeBro verification is shown separately from information entered by the contractor.</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">Verified facts are labeled</span></div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[
+                ['MyHomeBro verification', websiteProfile?.trust?.indicators?.length ? 'Verified indicators available' : 'Not verified', true],
+                ['License', profile.show_license_public || credentials.licensed ? 'Provided and visible' : 'Not shown', Boolean(websiteProfile?.trust?.indicators?.some?.((item) => String(item?.label || item).toLowerCase().includes('licens')))],
+                ['Insurance', credentials.insured ? 'Contractor-entered' : 'Not shown', false],
+                ['Years in business', profile.years_in_business ? `${profile.years_in_business} years` : 'Not provided', false],
+                ['Warranty offered', customerTrustBadges.includes('Warranty included') ? 'Contractor-entered' : 'Not provided', false],
+                ['Customer rating', averageReviewRating === null ? 'No public rating' : `${averageReviewRating.toFixed(1)} from ${publicReviews.length} public review${publicReviews.length === 1 ? '' : 's'}`, publicReviews.length > 0],
+              ].map(([label, value, verified]) => <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-black text-slate-900">{label}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${verified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{verified ? 'Verified' : 'Contractor claim'}</span></div><p className="mt-2 text-xs text-slate-600">{value}</p></div>)}</div>
+            </section>
+          ) : null}
+
+          {activeTab === 'gallery' ? (
             <section className="space-y-4" data-testid="public-presence-reviews-tab">
               <div><h2 className="text-2xl font-black text-slate-950">Reviews</h2><p className="mt-1 text-sm text-slate-600">Build trust by collecting and showcasing customer feedback.</p></div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="reviews-reputation-summary"><h3 className="text-base font-black text-slate-950">Reputation Summary</h3><p className="mt-0.5 text-xs font-bold text-blue-700">{reviewReputationStatus}</p><div className="mt-3 grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-3"><div className="bg-white p-3"><div className="text-xs font-bold text-slate-500">Average Rating</div>{averageReviewRating === null ? <div className="mt-1 text-lg font-black text-slate-950">No rating yet</div> : <><div className="mt-1 flex items-center gap-2"><span className="text-xl font-black text-slate-950">{averageReviewRating.toFixed(1)}</span><span className="text-sm tracking-wide text-amber-500" aria-label={`${averageReviewRating.toFixed(1)} out of 5 stars`}>{'★'.repeat(Math.round(averageReviewRating))}</span></div><div className="mt-0.5 text-xs text-slate-500">Based on {reviewsRows.length} review{reviewsRows.length === 1 ? '' : 's'}</div></>}</div><div className="bg-white p-3"><div className="text-xs font-bold text-slate-500">Public Reviews</div><div className="mt-1 text-xl font-black text-slate-950">{publicReviews.length}</div><div className="mt-0.5 text-xs text-slate-500">Shown on your profile</div></div><div className="bg-white p-3"><div className="text-xs font-bold text-slate-500">Hidden Reviews</div><div className="mt-1 text-xl font-black text-slate-950">{hiddenReviews.length}</div><div className="mt-0.5 text-xs text-slate-500">Not shown publicly</div></div></div></div>
@@ -2811,7 +2851,7 @@ export default function ContractorPublicPresencePage() {
                   onDismiss={() => dismissAiSuggestion('website-copy-set')}
                 />
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="website-builder-design-tab"><div><h3 className="text-base font-black text-slate-950">Choose Website Style</h3><p className="mt-1 text-xs text-slate-500">Pick a style that matches your brand. You can customize it later.</p></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="content-style-cards">{DESIGN_STYLE_OPTIONS.map((template, index) => { const selected = (websiteData.template_key || 'starter') === template.key; const colors = [['#dbeafe', '#2563eb'], ['#fef3c7', '#92400e'], ['#111827', '#facc15'], ['#dcfce7', '#15803d']][index]; return <button key={template.key} type="button" aria-pressed={selected} disabled={!canCustomizeWebsite || websiteBusy} onClick={() => saveWebsiteSettings({ template_key: template.key })} className={`relative rounded-xl border p-3 text-left transition disabled:opacity-60 ${selected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-blue-200'}`} data-testid={`content-style-${template.key}`}>{selected ? <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-black text-white">✓</span> : null}<div className="text-sm font-black text-slate-950">{template.label}</div><div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white" aria-hidden="true"><div className="flex h-5 items-center gap-1 border-b border-slate-100 px-2"><span className="h-1.5 w-6 rounded" style={{ backgroundColor: colors[1] }} /><span className="ml-auto h-1 w-5 rounded bg-slate-200" /><span className="h-1 w-5 rounded bg-slate-200" /></div><div className="h-16 p-2" style={{ backgroundColor: colors[0] }}><div className="h-2 w-2/3 rounded" style={{ backgroundColor: colors[1] }} /><div className="mt-2 h-1.5 w-full rounded bg-white/80" /><div className="mt-1 h-1.5 w-3/4 rounded bg-white/80" /><div className="mt-2 h-3 w-10 rounded" style={{ backgroundColor: colors[1] }} /></div></div><p className="mt-2 text-xs leading-5 text-slate-600">{template.description}</p></button>; })}</div></div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="website-builder-design-tab"><div><h3 className="text-base font-black text-slate-950">Choose Website Style</h3><p className="mt-1 text-xs text-slate-500">Pick a style that matches your brand. You can customize it later.</p></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="content-style-cards">{DESIGN_STYLE_OPTIONS.map((template, index) => { const selected = (websiteData.template_key || 'starter') === template.key; const colors = [['#dbeafe', '#2563eb'], ['#fef3c7', '#92400e'], ['#111827', '#facc15'], ['#dcfce7', '#15803d']][index % 4]; return <button key={template.key} type="button" aria-pressed={selected} disabled={!canCustomizeWebsite || websiteBusy} onClick={() => saveWebsiteSettings({ template_key: template.key })} className={`relative rounded-xl border p-3 text-left transition disabled:opacity-60 ${selected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-blue-200'}`} data-testid={`content-style-${template.key}`}>{selected ? <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-black text-white">✓</span> : null}<div className="text-sm font-black text-slate-950">{template.label}</div><div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white" aria-hidden="true"><div className="flex h-5 items-center gap-1 border-b border-slate-100 px-2"><span className="h-1.5 w-6 rounded" style={{ backgroundColor: colors[1] }} /><span className="ml-auto h-1 w-5 rounded bg-slate-200" /><span className="h-1 w-5 rounded bg-slate-200" /></div><div className="h-16 p-2" style={{ backgroundColor: colors[0] }}><div className="h-2 w-2/3 rounded" style={{ backgroundColor: colors[1] }} /><div className="mt-2 h-1.5 w-full rounded bg-white/80" /><div className="mt-1 h-1.5 w-3/4 rounded bg-white/80" /><div className="mt-2 h-3 w-10 rounded" style={{ backgroundColor: colors[1] }} /></div></div><p className="mt-2 text-xs leading-5 text-slate-600">{template.description}</p></button>; })}</div></div>
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="grid min-w-0 gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="content-page-builder"><h3 className="text-base font-black text-slate-950">Build your website pages</h3><p className="mt-1 text-xs text-slate-500">These pages appear in your website navigation and public experience.</p><div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200">{websitePages.map((page) => <div key={page.id} className="flex items-center gap-3 p-3" data-testid={`content-page-row-${page.id}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-xs font-black text-blue-700">{String(page.title || page.page_type || 'P').slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1"><div className="truncate text-sm font-black text-slate-900">{page.title || page.page_type}</div><span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-black ${page.is_published ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{page.is_published ? 'Published' : 'Draft'}</span></div><button type="button" onClick={() => setSelectedWebsitePageId(page.id)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">Edit</button><a href={websiteFullPreviewUrl('desktop')} target="_blank" rel="noreferrer" aria-label={`Preview ${page.title || page.page_type}`} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">View</a></div>)}</div></div>
@@ -2823,7 +2863,7 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
-          {activeTab === 'seo' ? (
+          {activeTab === 'website' ? (
             <section className="space-y-4" data-testid="online-presence-seo-tab">
               <div><h2 className="text-2xl font-black text-slate-950">SEO &amp; Visibility</h2><p className="mt-1 text-sm text-slate-600">Help local customers find your business and understand what you offer.</p></div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="seo-search-readiness"><h3 className="text-base font-black text-slate-950">Search Readiness</h3><p className="mt-1 text-sm font-bold text-blue-700">{seoOverallStatus}</p><p className="mt-1 text-xs text-slate-500">{seoReadyCount === seoReadinessChecks.length ? 'Your supported search setup is complete.' : 'Complete the remaining items below before publishing.'}</p><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{seoReadinessChecks.map((item) => <div key={item.label} className="rounded-xl bg-slate-50 p-3"><div className="flex items-center gap-2"><span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-black ${item.ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{item.ready ? '✓' : '!'}</span><span className="text-xs font-black text-slate-900">{item.label}</span></div><div className={`mt-2 text-xs font-bold ${item.ready ? 'text-emerald-700' : 'text-amber-800'}`}>{item.ready ? 'Ready' : item.detail}</div></div>)}</div></div>
@@ -2857,7 +2897,7 @@ export default function ContractorPublicPresencePage() {
                   <div className={`mx-auto mt-4 overflow-hidden border border-slate-300 bg-white shadow-sm transition-all ${finalPreviewMode === 'mobile' ? 'max-w-[280px] rounded-[28px]' : 'w-full rounded-xl'}`} data-testid={`final-${finalPreviewMode}-preview`} aria-label={`${finalPreviewMode} website preview`}><div className="flex items-center border-b border-white/10 bg-slate-950 px-4 py-3 text-white"><span className="text-[10px] font-black">{websiteBusinessName}</span><span className="ml-auto flex gap-3 text-[8px] text-slate-300">{websitePages.filter((page) => page.is_published).slice(0, finalPreviewMode === 'mobile' ? 1 : 5).map((page) => <span key={page.id}>{page.title || page.page_type}</span>)}</span></div><div className={`relative flex items-center bg-slate-900 p-6 text-white ${finalPreviewMode === 'mobile' ? 'min-h-[360px] justify-center text-center' : 'min-h-[330px]'}`} style={websiteHeroImage ? { backgroundImage: `linear-gradient(rgba(15,23,42,.68),rgba(15,23,42,.68)), url(${websiteHeroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${websiteLayout.branding?.primary_color || websiteProfile?.branding?.primary_color || '#2563eb'}, #0f172a)` }}><div className={finalPreviewMode === 'mobile' ? 'max-w-[210px]' : 'max-w-md'}><div className={`${finalPreviewMode === 'mobile' ? 'text-2xl' : 'text-3xl'} font-black leading-tight`}>{heroContent.headline || websiteBusinessName}</div><p className="mt-3 text-xs leading-5 text-slate-200">{heroContent.subheadline || profile.bio || 'Your business website preview.'}</p>{heroContent.cta_text ? <span className="mt-4 inline-block rounded-lg px-4 py-2 text-[10px] font-black text-white" style={{ backgroundColor: websiteLayout.branding?.accent_color || websiteProfile?.branding?.accent_color || '#2563eb' }}>{heroContent.cta_text}</span> : null}</div></div><div className="p-5 text-center"><div className="text-sm font-black text-slate-900">Our Services</div>{serviceKeywords.length ? <div className="mt-3 flex flex-wrap justify-center gap-2">{serviceKeywords.slice(0, 4).map((service) => <span key={service} className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-600">{service}</span>)}</div> : <p className="mt-2 text-xs text-slate-500">Your services will appear here once added.</p>}</div></div>
                   <div className="mt-4 flex flex-col gap-2 rounded-xl bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-blue-900">Preview only. Publishing makes your saved website available at its public URL.</p><a href={websiteFullPreviewUrl(finalPreviewMode)} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-blue-700" data-testid="final-open-full-preview">Open Full Preview</a></div>
                 </div>
-                <aside className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center" data-testid="final-ready-summary"><div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full text-xl font-black ${canPublishWebsite ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{canPublishWebsite ? '✓' : '!'}</div><h3 className="mt-3 text-base font-black text-slate-950">{finalLaunchStatus.label}</h3><p className="mt-2 text-xs leading-5 text-slate-600">{finalLaunchStatus.detail}</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-what-next"><h3 className="text-base font-black text-slate-950">What Happens Next</h3><ul className="mt-3 space-y-3 text-xs leading-5 text-slate-600">{['Your website goes live', 'Customers can open the public URL', 'Your public profile becomes accessible', 'You can continue updating content later'].map((item) => <li key={item} className="flex gap-2"><span className="font-black text-emerald-600">✓</span>{item}</li>)}</ul></div><div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-assistant-help"><h3 className="text-base font-black text-slate-950">Need Help?</h3><p className="mt-2 text-xs leading-5 text-slate-600">Ask Project Assistant about any item before publishing.</p><button type="button" onClick={() => requestAiSuggestion('final_website_audit', 'final-website-audit', '')} className="mt-3 min-h-9 w-full rounded-lg border border-blue-200 px-3 text-xs font-black text-blue-700">Open Project Assistant</button><AiSuggestionCard suggestion={aiSuggestions['final-website-audit']} onAccept={() => dismissAiSuggestion('final-website-audit')} onRegenerate={() => requestAiSuggestion('final_website_audit', 'final-website-audit', '')} onDismiss={() => dismissAiSuggestion('final-website-audit')} /></div></aside>
+                <aside className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center" data-testid="final-ready-summary"><div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full text-xl font-black ${canPublishWebsite ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{canPublishWebsite ? '✓' : '!'}</div><h3 className="mt-3 text-base font-black text-slate-950">{finalLaunchStatus.label}</h3><p className="mt-2 text-xs leading-5 text-slate-600">{finalLaunchStatus.detail}</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-what-next"><h3 className="text-base font-black text-slate-950">What Happens Next</h3><ul className="mt-3 space-y-3 text-xs leading-5 text-slate-600">{['Your website goes live', 'Customers can open the public URL', 'Your public profile becomes accessible', 'You can continue updating content later'].map((item) => <li key={item} className="flex gap-2"><span className="font-black text-emerald-600">✓</span>{item}</li>)}</ul></div><div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-assistant-help"><h3 className="text-base font-black text-slate-950">Whole-site AI review</h3><p className="mt-2 text-xs leading-5 text-slate-600">Check content quality, factual support, photos, calls to action, service locations, and mobile readability before publishing.</p><button type="button" onClick={() => requestAiSuggestion('final_website_audit', 'final-website-audit', '')} className="mt-3 min-h-9 w-full rounded-lg border border-blue-200 px-3 text-xs font-black text-blue-700">Analyze Entire Website</button><AiSuggestionCard suggestion={aiSuggestions['final-website-audit']} acceptLabel="Apply Improvement" onAccept={() => { dismissAiSuggestion('final-website-audit'); goToStep('website'); }} onRegenerate={() => requestAiSuggestion('final_website_audit', 'final-website-audit', '')} onDismiss={() => dismissAiSuggestion('final-website-audit')} /></div></aside>
               </div>
               {websitePublishMessage ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900" role="alert">{websitePublishMessage}</div> : null}
             </section>
@@ -2986,33 +3026,44 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
-          {activeTab !== 'publish' ? <div className={`${activeTab === 'decision' ? 'mt-3 pt-3' : 'mt-5 pt-4'} flex items-center justify-between border-t border-slate-200`}>
+          <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-4">
             <button type="button" onClick={goToPreviousStep} disabled={activeStepIndex === 0} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-40">Back</button>
             {activeTab === 'profile' ? (
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="public-presence-save-profile" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'brand' ? (
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="brand-kit-save" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'gallery' ? (
-              <button type="button" onClick={goToNextStep} data-testid="portfolio-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Save & Continue</button>
-            ) : activeTab === 'reviews' ? (
-              <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="reviews-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
+              <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="portfolio-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'website' ? (
               <button type="button" onClick={saveContentAndContinue} disabled={websiteBusy || !homePage} data-testid="content-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{websiteBusy ? 'Saving...' : 'Save & Continue'}</button>
-            ) : activeTab === 'seo' ? (
-              <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="seo-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'final' ? (
               <div className="flex flex-col items-end gap-1"><button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} data-testid="final-publish-website" className="w-full rounded-lg bg-blue-600 px-7 py-2.5 text-sm font-black text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600 sm:w-auto">{websiteBusy ? 'Publishing...' : 'Publish Website'}</button><span className="text-[11px] text-slate-500">{canPublishWebsite ? 'You can continue improving after publishing.' : 'Complete the required items above before publishing.'}</span></div>
-            ) : activeTab === 'publish' ? (
-              <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
-              <button type="button" onClick={goToNextStep} data-testid={activeTab === 'decision' ? 'website-decision-continue' : undefined} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</button>
+              <button type="button" onClick={goToNextStep} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</button>
             )}
-          </div> : null}
+          </div>
 
           {!['decision', 'profile', 'brand', 'gallery', 'reviews', 'website', 'seo', 'final', 'publish'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}
+          </div>
+          <aside className="sticky top-4 hidden space-y-3 xl:block" data-testid="persistent-website-preview">
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div><div className="text-xs font-black uppercase tracking-wide text-slate-500">Live preview</div><div className="mt-1 text-sm font-black text-slate-950">{finalPreviewMode === 'mobile' ? 'Mobile' : 'Desktop'} view</div></div>
+                <div className="flex rounded-lg bg-slate-100 p-1">
+                  {['desktop', 'mobile'].map((mode) => <button key={mode} type="button" onClick={() => setFinalPreviewMode(mode)} aria-pressed={finalPreviewMode === mode} className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${finalPreviewMode === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</button>)}
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs"><span className="text-slate-500">Website state</span><span className="font-black text-slate-900">{websiteBusy ? 'Saving…' : staleContentRisk && websitePublished ? 'Published with newer draft changes' : websitePublished ? 'Published' : 'Draft'}</span></div>
+              <p className="mt-2 text-[11px] leading-4 text-slate-500">Edits appear here immediately. Save &amp; Continue keeps the draft; publishing updates the protected live snapshot.</p>
+            </div>
+            <div className={finalPreviewMode === 'mobile' ? 'mx-auto max-w-[300px]' : ''}>
+              <PublicPresenceBrandPreview profile={profile} galleryRows={galleryRows} reviewsRows={reviewsRows} />
+            </div>
+          </aside>
+          </div>
         </main>
       </div>
 

@@ -196,6 +196,55 @@ TEMPLATE_PRESETS = {
         "card_style": "soft",
         "section_order": ["hero", "services", "trust", "contact", "reviews", "portfolio"],
     },
+    "general_contractor": {
+        "label": "General Contractor",
+        "layout_style": "balanced",
+        "typography_style": "clean_sans",
+        "card_style": "crisp",
+        "section_order": ["hero", "trust", "services", "portfolio", "reviews", "contact"],
+    },
+    "remodeler": {
+        "label": "Remodeler",
+        "layout_style": "editorial_home",
+        "typography_style": "warm_serif",
+        "card_style": "premium",
+        "section_order": ["hero", "portfolio", "services", "reviews", "trust", "contact"],
+    },
+    "handyman": {
+        "label": "Handyman",
+        "layout_style": "local_service",
+        "typography_style": "clean_sans",
+        "card_style": "soft",
+        "section_order": ["hero", "services", "trust", "contact", "portfolio", "reviews"],
+    },
+    "roofing": {
+        "label": "Roofing",
+        "layout_style": "bold_trade",
+        "typography_style": "modern_sans",
+        "card_style": "crisp",
+        "section_order": ["hero", "trust", "services", "portfolio", "contact", "reviews"],
+    },
+    "painting": {
+        "label": "Painting",
+        "layout_style": "visual_portfolio",
+        "typography_style": "clean_sans",
+        "card_style": "soft",
+        "section_order": ["hero", "portfolio", "services", "reviews", "trust", "contact"],
+    },
+    "mechanical_service": {
+        "label": "Electrical / Plumbing / HVAC",
+        "layout_style": "local_service",
+        "typography_style": "compact_sans",
+        "card_style": "structured",
+        "section_order": ["hero", "services", "trust", "contact", "reviews", "portfolio"],
+    },
+    "premium_custom_builder": {
+        "label": "Premium Custom Builder",
+        "layout_style": "editorial_luxury",
+        "typography_style": "warm_serif",
+        "card_style": "premium",
+        "section_order": ["hero", "portfolio", "reviews", "services", "trust", "contact"],
+    },
 }
 
 SECTION_KEYS = ["hero", "services", "portfolio", "reviews", "trust", "contact"]
@@ -475,7 +524,7 @@ def _website_ai_instructions(action: str) -> str:
         "generate_website_copy_set": "Draft a coordinated homepage headline, subheadline, call to action, and about paragraph.",
         "design_recommendation": "Recommend a distinctive visual direction, palette, typography mood, and section emphasis.",
         "hero_image_generation": "Write a safe decorative hero-image brief. Do not imply the image is completed contractor work.",
-        "final_website_audit": "List the highest-value accuracy, trust, clarity, mobile, and conversion improvements.",
+        "final_website_audit": "Evaluate the whole website for missing or weak sections, repetitive language, unsupported claims, poor or missing photos, unclear calls to action, missing service locations, and mobile readability. Put the highest-value improvement in suggested_value, explain why in basis, list the remaining improvements in suggestions, and flag factual risks in warnings.",
         "business_description": "Draft a concise, trustworthy business description.",
         "hero_headline": "Draft one concise homepage headline.",
         "hero_subheadline": "Draft one supporting homepage subheadline.",
@@ -509,6 +558,8 @@ def _normalize_website_ai_result(action: str, value: Any) -> dict[str, Any]:
     suggested_value = _safe_text(raw_suggested_value)[:1600] if not isinstance(raw_suggested_value, (dict, list)) else ""
     if action == "generate_website_copy_set":
         suggested_value = allowed_draft.get("headline", suggested_value or "Website draft ready for review.")
+    if action == "final_website_audit" and not suggested_value and suggestions:
+        suggested_value = suggestions[0]
     return {
         "suggested_value": suggested_value,
         "suggestions": suggestions,

@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Agreement, Contractor, ContractorPublicProfile, ContractorReview, Homeowner, Invoice, Milestone, Project, PublicContractorLead
+from projects.models import Agreement, Contractor, ContractorGalleryItem, ContractorPublicProfile, ContractorReview, Homeowner, Invoice, Milestone, MilestoneFile, Project, PublicContractorLead
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models_templates import ProjectTemplate
 from projects.serializers.public_presence import (
@@ -549,11 +549,72 @@ class ContractorGalleryListCreateView(APIView):
     def get(self, request):
         contractor = _resolve_contractor(request.user)
         rows = contractor.public_gallery_items.select_related("public_profile").order_by("-is_featured", "sort_order", "-created_at")
-        return Response({"results": ContractorGalleryItemSerializer(rows, many=True, context={"request": request}).data})
+        imported_names = set(rows.exclude(image="").values_list("image", flat=True))
+        candidates = []
+        milestone_files = (
+            MilestoneFile.objects.select_related("milestone__agreement__project")
+            .filter(
+                milestone__agreement__contractor=contractor,
+                milestone__completed=True,
+                uploaded_by=request.user,
+            )
+            .order_by("-uploaded_at")[:40]
+        )
+        for milestone_file in milestone_files:
+            if not milestone_file.file or milestone_file.file.name in imported_names:
+                continue
+            milestone = milestone_file.milestone
+            agreement = milestone.agreement
+            project = agreement.project
+            candidates.append(
+                {
+                    "file_id": milestone_file.id,
+                    "image_url": request.build_absolute_uri(milestone_file.file.url),
+                    "title": getattr(project, "title", "") or milestone.title,
+                    "milestone_title": milestone.title,
+                    "description": milestone.completion_notes or milestone.description,
+                    "category": milestone.normalized_milestone_type or milestone.title,
+                    "completed_at": milestone.completion_date or milestone_file.uploaded_at,
+                    "public_safe_status": "Requires review before publishing",
+                }
+            )
+            if len(candidates) >= 12:
+                break
+        return Response(
+            {
+                "results": ContractorGalleryItemSerializer(rows, many=True, context={"request": request}).data,
+                "portfolio_candidates": candidates,
+            }
+        )
 
     def post(self, request):
         contractor = _resolve_contractor(request.user)
         profile = _get_or_create_profile(contractor)
+        source_file_id = request.data.get("source_milestone_file_id")
+        if source_file_id:
+            milestone_file = get_object_or_404(
+                MilestoneFile.objects.select_related("milestone__agreement__project"),
+                pk=source_file_id,
+                milestone__agreement__contractor=contractor,
+                milestone__completed=True,
+                uploaded_by=request.user,
+            )
+            milestone = milestone_file.milestone
+            project = milestone.agreement.project
+            item = ContractorGalleryItem.objects.create(
+                contractor=contractor,
+                public_profile=profile,
+                title=request.data.get("title") or getattr(project, "title", "") or milestone.title,
+                description=request.data.get("description") or milestone.completion_notes or milestone.description,
+                category=request.data.get("category") or milestone.normalized_milestone_type or milestone.title,
+                image=milestone_file.file.name,
+                is_featured=False,
+                is_public=False,
+            )
+            return Response(
+                ContractorGalleryItemSerializer(item, context={"request": request}).data,
+                status=status.HTTP_201_CREATED,
+            )
         serializer = ContractorGalleryItemSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save(contractor=contractor, public_profile=profile)

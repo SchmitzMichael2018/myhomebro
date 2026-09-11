@@ -1,13 +1,13 @@
 export const MARKETING_STEP_LABELS = {
   overview: 'Overview',
   decision: 'Website Decision',
-  profile: 'Business Information',
-  brand: 'Brand Kit',
-  gallery: 'Portfolio',
+  profile: 'Business',
+  brand: 'Design',
+  gallery: 'Trust & Portfolio',
   reviews: 'Reviews',
   website: 'Content',
   seo: 'SEO & Visibility',
-  final: 'Final Review',
+  final: 'Review & Publish',
   publish: 'Publish',
 };
 
@@ -25,8 +25,8 @@ export const MARKETING_NAVIGATION_TARGETS = {
 };
 
 const NEXT_STEP = {
-  overview: 'decision', decision: 'profile', profile: 'brand', brand: 'gallery', gallery: 'reviews',
-  reviews: 'website', website: 'seo', seo: 'final', final: 'publish', publish: 'overview',
+  overview: 'profile', decision: 'profile', profile: 'brand', brand: 'website', gallery: 'final',
+  reviews: 'gallery', website: 'gallery', seo: 'website', final: 'profile', publish: 'final',
 };
 
 const SUPPORTED_BY_STEP = {
