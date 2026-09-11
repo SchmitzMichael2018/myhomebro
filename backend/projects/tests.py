@@ -27763,6 +27763,31 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertTrue(CustomerRequest.objects.filter(pk=saved.id).exists())
 
+    def test_customer_portal_sync_assigns_unique_share_tokens_before_insert(self):
+        first = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="First private request",
+            description="First request details.",
+            status=CustomerRequest.STATUS_SUBMITTED,
+        )
+        second = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Second private request",
+            description="Second request details.",
+            status=CustomerRequest.STATUS_SUBMITTED,
+        )
+
+        first_intake = _sync_customer_request_source_intake(first)
+        second_intake = _sync_customer_request_source_intake(second)
+
+        self.assertTrue(first_intake.share_token)
+        self.assertTrue(second_intake.share_token)
+        self.assertNotEqual(first_intake.share_token, second_intake.share_token)
+
     def test_customer_portal_cancel_routed_request_expires_opportunity_and_notifies_contractor(self):
         from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
 

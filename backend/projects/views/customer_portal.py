@@ -2472,8 +2472,11 @@ def _sync_customer_request_source_intake(customer_request: CustomerRequest) -> P
             "origin": preserved_analysis.get("origin", ""),
         }
     if source_intake is None:
+        # share_token is unique but defaults to an empty string. Generate it
+        # before the initial INSERT so a second customer-portal request does
+        # not collide with an existing intake that already used the default.
+        defaults["share_token"] = secrets.token_urlsafe(32)
         source_intake = ProjectIntake.objects.create(**defaults)
-        source_intake.ensure_share_token(save=True)
         customer_request.source_intake = source_intake
         if customer_request.status == CustomerRequest.STATUS_SUBMITTED:
             customer_request.status = CustomerRequest.STATUS_MARKETPLACE_READY
