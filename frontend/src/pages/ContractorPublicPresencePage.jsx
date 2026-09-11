@@ -282,16 +282,18 @@ function AiSuggestionCard({ suggestion, onAccept, onRegenerate, onDismiss }) {
   if (!suggestion) return null;
   const configured = suggestion.configured !== false;
   const hasValue = Boolean(String(suggestion.suggested_value || '').trim());
+  const hasDraft = Boolean(suggestion.draft && Object.keys(suggestion.draft).length);
+  const showSummary = hasValue && !hasDraft;
   return (
     <div className={`mt-3 rounded-xl border p-4 text-sm ${configured ? 'border-blue-200 bg-blue-50 text-blue-950' : 'border-amber-200 bg-amber-50 text-amber-950'}`} data-testid={`ai-suggestion-${suggestion.target}`}>
       <div className="font-black">{configured ? 'Project Assistant suggestion ready' : 'Project Assistant is not configured yet'}</div>
-      {hasValue ? <p className="mt-2 leading-6">{suggestion.suggested_value}</p> : <p className="mt-2 leading-6">{suggestion.detail || 'Project Assistant is not configured yet.'}</p>}
+      {showSummary ? <p className="mt-2 leading-6">{suggestion.suggested_value}</p> : !hasDraft ? <p className="mt-2 leading-6">{suggestion.detail || 'Project Assistant is not configured yet.'}</p> : null}
       {Array.isArray(suggestion.suggestions) && suggestion.suggestions.length ? (
         <ul className="mt-2 list-disc space-y-1 pl-5">
           {suggestion.suggestions.slice(0, 5).map((item) => <li key={String(item)}>{String(item)}</li>)}
         </ul>
       ) : null}
-      {suggestion.draft && Object.keys(suggestion.draft).length ? (
+      {hasDraft ? (
         <dl className="mt-3 grid gap-2 rounded-lg border border-blue-100 bg-white p-3" data-testid={`ai-draft-${suggestion.target}`}>
           {Object.entries(suggestion.draft).map(([key, value]) => (
             <div key={key}>
@@ -308,7 +310,7 @@ function AiSuggestionCard({ suggestion, onAccept, onRegenerate, onDismiss }) {
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><strong>Review:</strong> {suggestion.warnings.join(' ')}</div>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        {hasValue ? <button type="button" onClick={onAccept} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white" data-testid={`ai-accept-${suggestion.target}`}>Accept</button> : null}
+        {hasValue || hasDraft ? <button type="button" onClick={onAccept} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white" data-testid={`ai-accept-${suggestion.target}`}>Accept</button> : null}
         <button type="button" onClick={onRegenerate} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-700">Regenerate</button>
         <button type="button" onClick={onDismiss} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700">Dismiss</button>
       </div>

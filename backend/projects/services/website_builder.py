@@ -566,6 +566,7 @@ def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, 
                         "You are Project Assistant helping a contractor prepare accurate public website content. "
                         "Use only the supplied public facts. Never invent licenses, insurance, awards, guarantees, reviews, "
                         "customer quotes, project results, years of experience, locations, or completed work. AI-generated "
+                        "Avoid unsupported quality claims such as expert, trusted, reliable, best, or quality craftsmanship. "
                         "visuals may be proposed only as decorative illustrations and never as portfolio evidence. Return "
                         "valid JSON with suggested_value, suggestions, draft, basis, and warnings. The draft object may use "
                         "headline, subheadline, cta_text, about, visual_direction, and image_brief. Keep copy concise."
