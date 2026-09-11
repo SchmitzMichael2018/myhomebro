@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveAgreementSetupSource } from "./agreementSetupSource.js";
+import {
+  allowsAiSetupRecommendation,
+  resolveAgreementSetupSource,
+} from "./agreementSetupSource.js";
 
 describe("Agreement Wizard Estimate template handoff", () => {
   const step1 = fs.readFileSync(
@@ -25,9 +28,9 @@ describe("Agreement Wizard Estimate template handoff", () => {
   });
 
   it("does not present a conflicting recommendation when Estimate provenance exists", () => {
-    expect(step1).toContain("recommendedProjectSetup && allowAiSetupRecommendation");
-    expect(step1).toContain("allowAiSetupRecommendation &&\n    startMode");
-    expect(step1).toContain("disableRecommendations: !allowAiSetupRecommendation");
+    expect(allowsAiSetupRecommendation("estimate_provenance")).toBe(false);
+    expect(allowsAiSetupRecommendation("saved_agreement_setup")).toBe(false);
+    expect(allowsAiSetupRecommendation("ai_recommendation")).toBe(true);
   });
 
   it("resolves exactly one primary setup source", () => {

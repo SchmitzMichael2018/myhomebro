@@ -11,7 +11,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
-import { resolveAgreementSetupSource } from "../lib/agreementSetupSource.js";
+import {
+  allowsAiSetupRecommendation,
+  resolveAgreementSetupSource,
+} from "../lib/agreementSetupSource.js";
+import { classifyLimitedFixtureScope } from "../lib/agreementDraftClassification.js";
 
 // Superseded Step 1 panels remain dormant until their markup is removed separately.
 const SHOW_LEGACY_STEP1_PANELS = false;
@@ -558,7 +562,7 @@ function inferWetBarProjectSetup(sourceText = "") {
   };
 }
 
-export function inferStep1ProjectClassificationConsistency({
+function inferStep1ProjectClassificationConsistency({
   sourceText = "",
   scopeText = "",
   suggestedProjectType = "",
@@ -579,23 +583,8 @@ export function inferStep1ProjectClassificationConsistency({
   // suggestion on a kitchen-faucet request).
   const classificationEvidence = evidenceText || combinedText;
 
-  const faucetInstallIntent =
-    /\b(faucet|tap)\b/i.test(classificationEvidence) &&
-    /\b(install|installation|replace|replacement)\b/i.test(classificationEvidence);
-  if (faucetInstallIntent) {
-    return {
-      project_type: "Plumbing",
-      project_subtype: "Fixture Installation",
-      project_title: /\bkitchen\b/i.test(classificationEvidence)
-        ? "Kitchen Faucet Replacement"
-        : "Faucet Replacement",
-      description:
-        "Remove the existing faucet, inspect accessible shutoffs and supply connections, install the replacement faucet, test operation and accessible connections for leaks, and clean the work area.",
-      reason: "The requested work is a limited plumbing-fixture replacement, not a room remodel.",
-      confidence: "high",
-      confidence_label: "High confidence",
-    };
-  }
+  const limitedFixtureSetup = classifyLimitedFixtureScope(classificationEvidence);
+  if (limitedFixtureSetup) return limitedFixtureSetup;
 
   const mediaRoomSetup = inferMediaRoomProjectSetup(classificationEvidence);
   if (mediaRoomSetup) return mediaRoomSetup;
@@ -1637,7 +1626,7 @@ function inferStartMode({
   return "manual";
 }
 
-export function buildDeterministicStep1Setup(sourceText = "") {
+function buildDeterministicStep1Setup(sourceText = "") {
   const cleaned = safeTrim(sourceText);
   const matchedRule = STEP1_LOCAL_FALLBACK_RULES.find((rule) =>
     rule.patterns.some((pattern) => pattern.test(cleaned))
@@ -3845,7 +3834,7 @@ export default function Step1Details({
     phone_number: assistantDraftPayload?.customer_phone || "",
   };
   const hasSavedAgreementSetup = primarySetupSource === "saved_agreement_setup";
-  const allowAiSetupRecommendation = primarySetupSource === "ai_recommendation";
+  const allowAiSetupRecommendation = allowsAiSetupRecommendation(primarySetupSource);
 
   const {
     templatesLoading,

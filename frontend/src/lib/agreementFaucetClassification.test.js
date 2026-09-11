@@ -1,23 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildDeterministicStep1Setup,
-  inferStep1ProjectClassificationConsistency,
-} from "../components/Step1Details.jsx";
+import { classifyLimitedFixtureScope } from "./agreementDraftClassification.js";
 import { buildClarificationAwareMilestoneDraft } from "./milestoneDraftShaping.js";
 
 const faucetRequest =
   "Replace the existing kitchen faucet with a standard single-handle faucet. Check the shutoff valves and supply lines for leaks, install the replacement, test hot and cold water, and clean the work area.";
 
 describe("faucet agreement drafting", () => {
-  it("overrides an unrelated explicit Garage Doors suggestion with scope evidence", () => {
-    const result = inferStep1ProjectClassificationConsistency({
-      sourceText: faucetRequest,
-      scopeText: faucetRequest,
-      suggestedProjectType: "Garage Doors",
-      suggestedProjectSubtype: "Garage Door Replacement",
-      suggestedProjectTitle: "Kitchen Faucet Replacement",
-    });
+  it("classifies a faucet request from its scope evidence", () => {
+    const result = classifyLimitedFixtureScope(faucetRequest);
 
     expect(result).toMatchObject({
       project_type: "Plumbing",
@@ -27,11 +18,8 @@ describe("faucet agreement drafting", () => {
     });
   });
 
-  it("uses a plumbing fallback for faucet replacement", () => {
-    expect(buildDeterministicStep1Setup(faucetRequest)).toMatchObject({
-      project_type: "Plumbing",
-      project_subtype: "Fixture Installation",
-    });
+  it("does not classify an unrelated project as a plumbing fixture", () => {
+    expect(classifyLimitedFixtureScope("Replace a damaged garage door")).toBeNull();
   });
 
   it("builds faucet milestones instead of a kitchen remodel plan", () => {

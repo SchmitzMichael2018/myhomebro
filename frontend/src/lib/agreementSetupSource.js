@@ -3,3 +3,7 @@ export function resolveAgreementSetupSource({ sourceProposalId, savedTemplateId 
   if (savedTemplateId) return "saved_agreement_setup";
   return "ai_recommendation";
 }
+
+export function allowsAiSetupRecommendation(primarySetupSource) {
+  return primarySetupSource === "ai_recommendation";
+}
