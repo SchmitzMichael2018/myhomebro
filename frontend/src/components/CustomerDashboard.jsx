@@ -1949,6 +1949,9 @@ function ReminderDetailModal({ reminder, loading = false, onClose, onCreateServi
 }
 
 function notificationDedupeKey(notification) {
+  if (notification?.requires_action === false && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification?.event_type || ""))) {
+    return [notification.event_type, notification.action_url || "resolved", String(notification.title || "").toLowerCase()].join("|");
+  }
   const createdAt = notification?.created_at ? new Date(notification.created_at).getTime() : 0;
   const bucket = Number.isFinite(createdAt) ? Math.floor(createdAt / (10 * 60 * 1000)) : 0;
   return [notification?.event_type || "", notification?.action_url || "", String(notification?.title || "").toLowerCase(), String(notification?.message || "").toLowerCase(), bucket].join("|");

@@ -4310,6 +4310,10 @@ def _serialize_smart_notification(row: SmartNotification) -> dict:
                 title = "Reimbursement approved"
                 message = f"You approved the {amount_label} reimbursement. No further action is needed."
             action_url = f"?workspace=payments&agreement={getattr(expense, 'agreement_id', '')}&reimbursement={expense.id}"
+        else:
+            title = "Reimbursement update"
+            message = "This reimbursement request no longer requires your review."
+            action_url = "portal:payments"
     return {
         "id": row.id,
         "event_type": _safe_text(row.event_type),
