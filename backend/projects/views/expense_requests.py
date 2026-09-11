@@ -253,6 +253,21 @@ class ExpenseRequestViewSet(viewsets.ModelViewSet):
             pass
         return Response(self.get_serializer(expense).data)
 
+    @action(detail=True, methods=["post"], url_path="resend-customer-notification")
+    def resend_customer_notification(self, request: Request, pk=None):
+        expense = self.get_object()
+        if expense.request_kind != ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT:
+            return Response({"detail": "This resend action applies only to customer approval requests."}, status=400)
+        if expense.status not in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER}:
+            return Response({"detail": "Only a pending customer approval request can be resent."}, status=400)
+        try:
+            from projects.services.workflow_notifications import notify_reimbursement_submitted
+
+            notify_reimbursement_submitted(expense=expense, is_resend=True)
+        except Exception:
+            return Response({"detail": "The customer notification could not be resent."}, status=500)
+        return Response({"detail": "Approval request resent to the customer by their enabled notification channels."})
+
     @action(detail=True, methods=["delete"], url_path=r"attachments/(?P<att_id>\d+)")
     def delete_attachment(self, request: Request, pk=None, att_id=None):
         exp = self.get_object()

@@ -89,12 +89,13 @@ function sendButtonLabel(status) {
   if (s === "draft") return "Sign & Send";
   if (s === "contractor_signed") return "Send";
   if (s === "sent_to_homeowner") return "Resend";
+  if (s === "submitted") return "Resend Approval Request";
   return "Send";
 }
 
 function canSend(status) {
   const s = normalizeStatus(status);
-  return ["draft", "contractor_signed", "sent_to_homeowner"].includes(s);
+  return ["draft", "contractor_signed", "sent_to_homeowner", "submitted"].includes(s);
 }
 
 function getAgreementId(er) {
@@ -675,10 +676,14 @@ export default function ExpensesPage() {
   }, []);
 
   const sendToHomeowner = useCallback(async (id) => {
-    const res = await tryPost([`/projects/expense-requests/${id}/send_to_homeowner/`], {});
+    const current = expenses.find((item) => String(item.id) === String(id));
+    const endpoint = normalizeStatus(current?.status) === "submitted"
+      ? `/projects/expense-requests/${id}/resend-customer-notification/`
+      : `/projects/expense-requests/${id}/send_to_homeowner/`;
+    const res = await tryPost([endpoint], {});
     if (!res.ok) throw res.err;
     return res.data;
-  }, []);
+  }, [expenses]);
 
   const homeownerAccept = useCallback(async (id) => {
     const res = await tryPost([`/projects/expense-requests/${id}/homeowner_accept/`], {});

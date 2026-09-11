@@ -5,6 +5,7 @@ import logging
 from typing import Iterable
 
 from django.conf import settings
+from django.utils import timezone
 
 from projects.models import ExpenseRequest, Notification, PublicContractorLead
 from projects.models_customer_portal import NotificationRule, SmartNotificationEvent
@@ -156,7 +157,7 @@ def notify_contractor_verification_status(*, contractor, action: str, actor_user
     )
 
 
-def notify_reimbursement_submitted(*, expense: ExpenseRequest) -> None:
+def notify_reimbursement_submitted(*, expense: ExpenseRequest, is_resend: bool = False) -> None:
     agreement = getattr(expense, "agreement", None)
     customer_email = _agreement_customer_email(agreement) if agreement is not None else ""
     if not customer_email:
@@ -173,7 +174,11 @@ def notify_reimbursement_submitted(*, expense: ExpenseRequest) -> None:
         context={
             "project_title": _agreement_title(agreement),
             "reimbursement_title": _reimbursement_title(expense),
-            "dedupe_key": f"reimbursement_submitted:{getattr(expense, 'id', '')}",
+            "dedupe_key": (
+                f"reimbursement_submitted:{getattr(expense, 'id', '')}:resend:{timezone.now().isoformat()}"
+                if is_resend
+                else f"reimbursement_submitted:{getattr(expense, 'id', '')}"
+            ),
         },
     )
 
