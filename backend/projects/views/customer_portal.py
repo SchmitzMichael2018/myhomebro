@@ -3625,6 +3625,8 @@ def _payments(email: str, request=None) -> list[dict]:
                 "released_to_contractor": bool(getattr(reimbursement, "released_at", None) or status_value == ExpenseRequest.Status.RELEASED),
                 "customer_payment_recorded": False,
                 "escrow_funding_record": False,
+                "is_actionable": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER}
+                and getattr(reimbursement, "contingency_stage", "") != ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT,
                 "dispute_status": "No dispute",
                 "dispute_status_label": "No dispute",
                 "date": _safe_dt(
@@ -3636,7 +3638,7 @@ def _payments(email: str, request=None) -> list[dict]:
                 "reference": f"Expense #{reimbursement.id}",
                 "agreement_id": getattr(agreement, "id", None),
                 "milestone_title": _safe_text(getattr(getattr(reimbursement, "milestone", None), "title", "")),
-                "action_target": "",
+                "action_target": f"?workspace=payments&agreement={getattr(agreement, 'id', '')}&reimbursement={reimbursement.id}",
                 "receipt_url": receipt_url,
                 "notes": _safe_text(getattr(reimbursement, "notes_to_homeowner", "")) or _safe_text(getattr(reimbursement, "description", "")),
                 "category": _safe_text(getattr(reimbursement, "category", "")),
@@ -4273,6 +4275,7 @@ def _serialize_smart_notification(row: SmartNotification) -> dict:
         project_title = _agreement_title(getattr(linked_invoice, "agreement", None))
         title = "Dispute correction recorded"
         message = f"No payment is required for {project_title or 'this correction'}."
+    requires_action = _notification_requires_customer_action(row)
     return {
         "id": row.id,
         "event_type": _safe_text(row.event_type),
@@ -4285,8 +4288,41 @@ def _serialize_smart_notification(row: SmartNotification) -> dict:
         "title": title,
         "message": message,
         "action_url": _safe_text(row.action_url),
+        "requires_action": requires_action,
         "created_at": _safe_dt(row.created_at),
     }
+
+
+def _notification_requires_customer_action(row: SmartNotification) -> bool:
+    """Resolve attention state from the live record, never from notification age/read state."""
+    event_type = _safe_text(row.event_type)
+    if event_type == SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE:
+        agreement = getattr(row, "agreement", None)
+        return bool(agreement and agreement.signed_by_contractor and not agreement.signed_by_homeowner)
+    if event_type == SmartNotificationEvent.ESCROW_NEEDS_FUNDING:
+        agreement = getattr(row, "agreement", None)
+        return bool(
+            agreement
+            and agreement.signed_by_contractor
+            and agreement.signed_by_homeowner
+            and not agreement.escrow_funded
+            and _safe_text(agreement.payment_mode).lower() != "direct"
+        )
+    if event_type == SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL:
+        milestone = getattr(row, "milestone", None)
+        return bool(milestone and _safe_text(milestone.subcontractor_completion_status).lower() == "submitted_for_review")
+    if event_type == SmartNotificationEvent.REIMBURSEMENT_SUBMITTED:
+        match = re.search(r"[?&]reimbursement=(\d+)", _safe_text(row.action_url))
+        expense = ExpenseRequest.objects.filter(pk=int(match.group(1))).first() if match else None
+        return bool(
+            expense
+            and expense.status in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER}
+            and expense.contingency_stage != ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT
+        )
+    if event_type == SmartNotificationEvent.CUSTOMER_BID_RECEIVED:
+        return True
+    # Marketplace routing and completed outcomes are recent activity, not homeowner work.
+    return False
 
 
 def _smart_notification_rows(email: str) -> list[dict]:

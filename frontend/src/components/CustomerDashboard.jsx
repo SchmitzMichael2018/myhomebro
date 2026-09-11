@@ -408,6 +408,7 @@ function isCustomerPaidPayment(payment) {
 function isActionablePayment(payment) {
   if (payment?.is_actionable === false) return false;
   if (isEscrowFundingPayment(payment) || isRefundPayment(payment)) return false;
+  if (isReimbursementPayment(payment)) return canReviewReimbursement(payment);
   return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
 }
 
@@ -579,7 +580,13 @@ function isArchivedNotification(notification) {
   return Boolean(notification?.is_archived || notification?.archived_at || notification?.status === "dismissed" || notification?.status === "archived");
 }
 
-const ACTIONABLE_NOTIFICATION_EVENTS = new Set(["agreement_needs_signature", "escrow_needs_funding", "milestone_needs_approval", "reimbursement_submitted", "customer_bid_received", "request_marketplace_ready"]);
+const ACTIONABLE_NOTIFICATION_EVENTS = new Set(["agreement_needs_signature", "escrow_needs_funding", "milestone_needs_approval", "reimbursement_submitted", "customer_bid_received"]);
+
+function isActionableNotification(notification) {
+  return isUnreadNotification(notification)
+    && notification?.requires_action !== false
+    && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification?.event_type || ""));
+}
 
 function hasOpenDispute(payment) {
   const value = String(payment?.dispute_status || payment?.dispute_status_label || "").toLowerCase();
@@ -1151,8 +1158,10 @@ function customerHasDocuments(portal = {}) {
 }
 
 function agreementNeedsCustomerAction(agreement = {}) {
+  if (agreement.signed_by_homeowner === true || agreement.is_fully_signed === true) return false;
+  if (agreement.signed_by_contractor === true && agreement.signed_by_homeowner === false) return true;
   const status = String(agreement.status || agreement.signature_status || agreement.agreement_status || agreement.state || "").toLowerCase();
-  return status.includes("signature") || status.includes("sent") || agreement.requires_signature === true || agreement.signed_by_homeowner === false || agreement.customer_action_required === true;
+  return status.includes("signature") || status.includes("sent") || agreement.requires_signature === true || agreement.customer_action_required === true;
 }
 
 function systemNeedsHomeownerAttention(system = {}) {
@@ -1356,7 +1365,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
     return isActionablePayment(payment);
   });
   const openDisputes = (portal?.payments || []).filter(hasOpenDispute);
-  const actionableNotifications = notifications.filter((notification) => notification.status !== "read" && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || "")));
+  const actionableNotifications = notifications.filter(isActionableNotification);
   const tenantMaintenanceNeedsAttention = (portal?.tenant_maintenance_requests || []).filter((request) => ["submitted", "under_review", "more_info_requested", "approved"].includes(String(request?.status || "").toLowerCase()));
   const needsAttention = [
     ...tenantMaintenanceNeedsAttention.slice(0, 3).map((request) => ({
@@ -1391,7 +1400,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
       body: `${payment.amount_label || "$0.00"} - ${payment.status_label || "Pending"}`,
       action: "Open Payments",
       tab: "payments",
-      destination: payment.action_target,
+      destination: payment.action_target || `?workspace=payments&agreement=${payment.agreement_id || ""}&reimbursement=${payment.record_id || ""}`,
       priority: 2,
     })),
   ].sort((a, b) => Number(a.priority || 9) - Number(b.priority || 9));
@@ -3886,7 +3895,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingDeliveryPreferences, deliveryPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab]);
 
   const mobilePrimaryAction = useMemo(() => {
-    const actionNotification = notifications.find((notification) => isUnreadNotification(notification) && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || "")) && notification.action_url);
+    const actionNotification = notifications.find((notification) => isActionableNotification(notification) && notification.action_url);
     if (actionNotification) {
       return {
         label: actionNotification.action_label || actionNotification.title || "Review update",

@@ -1044,6 +1044,7 @@ const portalPayload = {
       title: "Agreement needs signature",
       message: "Kitchen Remodel is waiting for a customer signature.",
       action_url: "/agreements/magic/portal-token",
+      requires_action: false,
       created_at: "2026-04-15T18:00:00Z",
     },
     {
@@ -4530,6 +4531,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Invoice for Kitchen Remodel");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Draw for Kitchen Remodel");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Main HVAC may need attention");
+  await expect(page.getByTestId("customer-overview-needs-attention")).not.toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-unified-recommendations")).toBeVisible();
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("Recommended for you");
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("HVAC Maintenance");
@@ -6296,8 +6298,10 @@ test("customer portal can approve escrow reimbursement requests from payments", 
   await expect(page.getByTestId("customer-payment-primary-reimbursement-99")).toHaveAttribute("href", "/files/materials-receipt.pdf");
   await page.getByTestId("customer-payment-approve-reimbursement-99").click();
   await expect.poll(() => approveCalled).toBe(true);
-  await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("Pending Release");
+  await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toHaveCount(0);
   await expect(page.getByTestId("customer-payment-approve-reimbursement-99")).toHaveCount(0);
+  await page.getByTestId("customer-dashboard-tab-overview").click();
+  await expect(page.getByTestId("customer-overview-needs-attention")).not.toContainText("$425.00 - Pending Release");
 });
 
 test("customer portal login failure and token password creation states render", async ({ page }) => {
