@@ -162,25 +162,96 @@ def notify_reimbursement_submitted(*, expense: ExpenseRequest, is_resend: bool =
     customer_email = _agreement_customer_email(agreement) if agreement is not None else ""
     if not customer_email:
         return
+    homeowner = getattr(agreement, "homeowner", None)
+    contractor = getattr(agreement, "contractor", None)
+    project = getattr(agreement, "project", None)
+    project_title = _agreement_title(agreement)
+    request_title = _reimbursement_title(expense)
+    is_contingency = getattr(expense, "funding_source", "") == ExpenseRequest.FundingSource.INCIDENTALS_RESERVE
+    request_label = "contingency approval request" if is_contingency else "reimbursement request"
+    base_url = _safe_text(
+        getattr(settings, "PUBLIC_FRONTEND_BASE_URL", "")
+        or getattr(settings, "FRONTEND_URL", "")
+        or getattr(settings, "SITE_URL", "")
+        or "https://www.myhomebro.com"
+    ).rstrip("/")
+    action_url = "/portal"
+    portal_url = f"{base_url}{action_url}"
+    dedupe_suffix = (
+        f"resend:{timezone.now().isoformat()}" if is_resend else "initial"
+    )
+    dedupe_base = f"reimbursement_submitted:{getattr(expense, 'id', '')}:{dedupe_suffix}"
+    context = {
+        "project_title": project_title,
+        "reimbursement_title": request_title,
+        "dedupe_key": dedupe_base,
+    }
     create_smart_notification(
         event_type=SmartNotificationEvent.REIMBURSEMENT_SUBMITTED,
         recipient_email=customer_email,
-        homeowner=getattr(agreement, "homeowner", None),
-        contractor=getattr(agreement, "contractor", None),
-        project=getattr(agreement, "project", None),
+        homeowner=homeowner,
+        contractor=contractor,
+        project=project,
         agreement=agreement,
         property_profile=None,
-        action_url="/portal",
-        context={
-            "project_title": _agreement_title(agreement),
-            "reimbursement_title": _reimbursement_title(expense),
-            "dedupe_key": (
-                f"reimbursement_submitted:{getattr(expense, 'id', '')}:resend:{timezone.now().isoformat()}"
-                if is_resend
-                else f"reimbursement_submitted:{getattr(expense, 'id', '')}"
-            ),
-        },
+        action_url=action_url,
+        context=context,
     )
+
+    preferences = notification_preferences_for_email(customer_email, homeowner=homeowner)
+    if not notification_category_enabled(preferences, "invoice_payment_updates"):
+        return
+
+    message = f"{request_title} for {project_title} is ready for your review."
+    if notification_channel_enabled(preferences, "email_enabled"):
+        email_key = f"{dedupe_base}:email"
+        create_smart_notification(
+            event_type=SmartNotificationEvent.REIMBURSEMENT_SUBMITTED,
+            recipient_email=customer_email,
+            context={**context, "dedupe_key": email_key},
+            channel=NotificationRule.CHANNEL_EMAIL,
+            homeowner=homeowner,
+            contractor=contractor,
+            project=project,
+            agreement=agreement,
+            action_url=action_url,
+        )
+        try:
+            send_postmark_email(
+                to_email=customer_email,
+                subject=f"MyHomeBro {request_label}: {project_title}",
+                text_body=f"{message}\n\nReview the request: {portal_url}",
+                html_body=(
+                    f"<p>{escape(message)}</p>"
+                    f"<p><a href=\"{escape(portal_url, quote=True)}\">Review the request in MyHomeBro</a></p>"
+                ),
+            )
+        except Exception:
+            logger.exception("Failed to email customer for expense request %s.", getattr(expense, "id", None))
+
+    if notification_channel_enabled(preferences, "sms_enabled"):
+        phone = normalize_phone_to_e164(getattr(homeowner, "phone_number", ""))
+        if phone:
+            sms_key = f"{dedupe_base}:sms"
+            result = send_compliant_sms(
+                phone,
+                f"MyHomeBro: {message} Review: {portal_url}",
+                related_object=agreement,
+                category="billing",
+                dedupe_key=sms_key,
+            )
+            if result.get("ok"):
+                create_smart_notification(
+                    event_type=SmartNotificationEvent.REIMBURSEMENT_SUBMITTED,
+                    recipient_email=customer_email,
+                    context={**context, "dedupe_key": sms_key, "phone_number": phone},
+                    channel=NotificationRule.CHANNEL_SMS,
+                    homeowner=homeowner,
+                    contractor=contractor,
+                    project=project,
+                    agreement=agreement,
+                    action_url=action_url,
+                )
 
 
 def notify_reimbursement_contractor_update(*, expense: ExpenseRequest, event_type: str, actor_user=None, reason: str = "") -> None:
