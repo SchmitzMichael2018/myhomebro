@@ -102,6 +102,67 @@ class EscrowReimbursementRequestTests(TestCase):
         self.assertIsNotNone(response.data["submitted_at"])
         self.assertEqual(response.data["escrow_ledger"]["available"], "1000.00")
 
+    def test_contingency_approval_does_not_release_before_final_receipt(self):
+        self.agreement.incidentals_reserve_amount = Decimal("250.00")
+        self.agreement.save(update_fields=["incidentals_reserve_amount"])
+        created = self.client.post(
+            "/api/projects/expense-requests/",
+            {
+                "agreement": self.agreement.id,
+                "description": "Unexpected blocking repair",
+                "amount": "125.00",
+                "request_kind": ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+                "funding_source": ExpenseRequest.FundingSource.INCIDENTALS_RESERVE,
+                "category": ExpenseRequest.Category.MATERIALS,
+                "receipt": self._receipt("estimate.pdf"),
+            },
+            format="multipart",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["contingency_stage"], ExpenseRequest.ContingencyStage.APPROVAL_REQUESTED)
+        token = _portal_token(self.homeowner.email)
+
+        approved = self.client.post(
+            f"/api/projects/customer-portal/{token}/reimbursements/{created.data['id']}/approve/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(approved.status_code, 200, approved.data)
+        expense = ExpenseRequest.objects.get(pk=created.data["id"])
+        self.assertEqual(expense.status, ExpenseRequest.Status.APPROVED)
+        self.assertEqual(expense.contingency_stage, ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT)
+        self.assertIsNone(expense.released_at)
+
+    def test_contractor_submits_final_contingency_receipt_for_customer_confirmation(self):
+        self.agreement.incidentals_reserve_amount = Decimal("250.00")
+        self.agreement.save(update_fields=["incidentals_reserve_amount"])
+        expense = ExpenseRequest.objects.create(
+            agreement=self.agreement,
+            created_by=self.user,
+            description="Unexpected blocking repair",
+            amount=Decimal("125.00"),
+            approved_amount=Decimal("125.00"),
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            funding_source=ExpenseRequest.FundingSource.INCIDENTALS_RESERVE,
+            category=ExpenseRequest.Category.MATERIALS,
+            status=ExpenseRequest.Status.APPROVED,
+            contingency_stage=ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT,
+        )
+
+        response = self.client.post(
+            f"/api/projects/expense-requests/{expense.id}/submit-final-receipt/",
+            {"amount": "118.50", "final_receipt": self._receipt("final-receipt.pdf")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        expense.refresh_from_db()
+        self.assertEqual(expense.amount, Decimal("118.50"))
+        self.assertEqual(expense.status, ExpenseRequest.Status.SUBMITTED)
+        self.assertEqual(expense.contingency_stage, ExpenseRequest.ContingencyStage.FINAL_RECEIPT_SUBMITTED)
+        self.assertTrue(bool(expense.final_receipt))
+
     def test_reimbursement_requires_receipt_or_proof(self):
         response = self.client.post(
             "/api/projects/expense-requests/",

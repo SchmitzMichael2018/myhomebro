@@ -382,6 +382,9 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
     if (!form.agreement) return toast.error("Please select an agreement.");
     if (!form.description.trim()) return toast.error("Add a short description.");
     if (!form.amount || Number(form.amount) <= 0) return toast.error("Enter a positive amount.");
+    if (selectedFundingSource === "incidentals_reserve" && !form.files?.length) {
+      return toast.error("Attach an estimate, quote, photo, or other supporting evidence.");
+    }
 
     await onAdd({
       agreement: form.agreement,
@@ -523,7 +526,9 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-4">
-        <label htmlFor="mhb-expensespage-524" className={labelClass}>Receipts / Files</label>
+        <label htmlFor="mhb-expensespage-524" className={labelClass}>
+          {selectedFundingSource === "incidentals_reserve" ? "Estimate / Supporting Evidence" : "Receipts / Files"}
+        </label>
         <input id="mhb-expensespage-524"
           type="file"
           multiple
@@ -551,7 +556,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
               checked={!!form.send_to_homeowner}
               onChange={onChange}
             />
-            Sign & Send to Customer immediately
+            {selectedFundingSource === "incidentals_reserve" ? "Send approval request to Customer" : "Sign & Send to Customer immediately"}
           </label>
         </div>
 
@@ -560,7 +565,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
           disabled={submitting}
           className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl border border-white/70 bg-white px-5 py-3 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-slate-700 disabled:text-sky-100/45 sm:w-auto"
         >
-          {submitting ? "Adding…" : "+ Add Expense"}
+          {submitting ? "Submitting…" : selectedFundingSource === "incidentals_reserve" ? "Request Contingency Approval" : "+ Add Expense"}
         </button>
       </div>
     </form>
@@ -800,6 +805,36 @@ export default function ExpensesPage() {
     }
   };
 
+  const handleFinalReceipt = async (er, event) => {
+    const receipt = event.target.files?.[0];
+    if (!receipt) return;
+    const entered = window.prompt("Enter the final receipt total", String(er.approved_amount || er.amount || ""));
+    if (entered === null) {
+      event.target.value = "";
+      return;
+    }
+    const amount = Number(entered);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid final amount.");
+      event.target.value = "";
+      return;
+    }
+    const fd = new FormData();
+    fd.append("amount", amount.toFixed(2));
+    fd.append("final_receipt", receipt);
+    try {
+      await api.post(`/projects/expense-requests/${er.id}/submit-final-receipt/`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success("Final receipt sent to the customer for confirmation.");
+      await fetchExpenseRequests();
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not submit final receipt.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const handleDeleteAttachment = async (attId) => {
     if (!activeExpense?.id) return;
     if (!window.confirm("Delete this attachment?")) return;
@@ -909,29 +944,44 @@ export default function ExpensesPage() {
   const handleAddExpenseRequest = async (form) => {
     setSubmitting(true);
     try {
+      const isContingency = form.funding_source === "incidentals_reserve";
+      const payload = isContingency ? new FormData() : {
+        agreement: Number(form.agreement),
+        description: form.description,
+        amount: form.amount,
+        incurred_date: form.incurred_date,
+        request_kind: form.request_kind || "direct_expense",
+        funding_source: form.funding_source || "reimbursement",
+        category: form.category || "other",
+        notes_to_homeowner: form.notes_to_homeowner || "",
+      };
+      if (isContingency) {
+        payload.append("agreement", String(form.agreement));
+        payload.append("description", form.description);
+        payload.append("amount", String(form.amount));
+        payload.append("incurred_date", form.incurred_date);
+        payload.append("request_kind", form.request_kind || "escrow_reimbursement");
+        payload.append("funding_source", "incidentals_reserve");
+        payload.append("category", form.category || "other");
+        payload.append("notes_to_homeowner", form.notes_to_homeowner || "");
+        payload.append("receipt", form.files[0]);
+      }
       const createRes = await tryPost(
         ["/projects/expense-requests/"],
-        {
-          agreement: Number(form.agreement),
-          description: form.description,
-          amount: form.amount,
-          incurred_date: form.incurred_date,
-          request_kind: form.request_kind || "direct_expense",
-          funding_source: form.funding_source || "reimbursement",
-          category: form.category || "other",
-          notes_to_homeowner: form.notes_to_homeowner || "",
-        }
+        payload,
+        isContingency ? { headers: { "Content-Type": "multipart/form-data" } } : undefined
       );
       if (!createRes.ok) throw createRes.err;
 
       const created = createRes.data;
 
-      if (form.files?.length) {
-        const up = await uploadAttachments(created.id, form.files);
+      const additionalFiles = isContingency ? form.files.slice(1) : form.files;
+      if (additionalFiles?.length) {
+        const up = await uploadAttachments(created.id, additionalFiles);
         if (!up.ok) toast.error("Created, but attachments upload failed.");
       }
 
-      if (form.send_to_homeowner) {
+      if (form.send_to_homeowner && form.funding_source !== "incidentals_reserve") {
         await tryPatch([`/projects/expense-requests/${created.id}/`], {
           notes_to_homeowner: form.notes_to_homeowner || "",
         });
@@ -940,6 +990,8 @@ export default function ExpensesPage() {
         await contractorSign(created.id);
         await sendToHomeowner(created.id);
         toast.success("Expense created & sent.");
+      } else if (form.funding_source === "incidentals_reserve") {
+        toast.success("Contingency approval requested.");
       } else {
         toast.success("Expense created.");
       }
@@ -1291,6 +1343,12 @@ export default function ExpensesPage() {
                   </span>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
+                  {er.contingency_stage === "approved_pending_receipt" ? (
+                    <label className="cursor-pointer rounded-lg border border-emerald-300/40 bg-emerald-400/15 px-3 py-2 text-sm font-bold text-emerald-100 hover:bg-emerald-400/25">
+                      Submit Final Receipt
+                      <input type="file" className="hidden" accept="image/*,.pdf" onChange={(evt) => handleFinalReceipt(er, evt)} />
+                    </label>
+                  ) : null}
                   <label className="cursor-pointer rounded-lg border border-white/16 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/15">
                     Upload
                     <input type="file" multiple className="hidden" accept="image/*,.pdf" onChange={(evt) => handleUpload(er, evt)} />

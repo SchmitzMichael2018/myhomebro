@@ -1341,7 +1341,7 @@ export default function CustomerProjectWorkspace({
       } else {
         onRefresh?.();
       }
-      toast.success(action === "approve" ? "Reimbursement approved" : "Reimbursement denied");
+      toast.success(action === "approve" ? (data?.detail || "Request approved") : "Request denied");
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Could not update reimbursement.");
     } finally {
@@ -2167,7 +2167,7 @@ export default function CustomerProjectWorkspace({
                                         disabled={Boolean(reimbursementAction)}
                                         className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
                                       >
-                                        {reimbursementAction === `approve-${payment.record_id}` ? "Approving..." : "Approve Reimbursement"}
+                                        {reimbursementAction === `approve-${payment.record_id}` ? "Approving..." : (payment.approval_action_label || "Approve Reimbursement")}
                                       </button>
                                       <button
                                         type="button"

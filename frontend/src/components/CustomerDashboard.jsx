@@ -883,7 +883,7 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
       if (data?.portal && typeof onPortalUpdate === "function") {
         onPortalUpdate(data.portal);
       }
-      toast.success(action === "approve" ? "Reimbursement approved" : "Reimbursement denied");
+      toast.success(action === "approve" ? (data?.detail || "Request approved") : "Request denied");
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Could not update reimbursement.");
     } finally {
@@ -952,7 +952,7 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
               {canReviewReimbursement(payment) ? (
                 <>
                   <button type="button" data-testid={`customer-payment-approve-reimbursement-${payment.record_id}`} onClick={() => runReimbursementAction("approve")} disabled={Boolean(busyAction)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60">
-                    {busyAction === "approve" ? "Approving..." : "Approve Reimbursement"}
+                    {busyAction === "approve" ? "Approving..." : (payment.approval_action_label || "Approve Reimbursement")}
                   </button>
                   <button
                     type="button"

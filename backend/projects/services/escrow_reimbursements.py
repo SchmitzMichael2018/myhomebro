@@ -107,7 +107,10 @@ def incidentals_reserve_summary(agreement: Agreement | None, *, exclude_expense_
         for expense in _incidentals_queryset(agreement, exclude_id=exclude_expense_id):
             status = str(getattr(expense, "status", "") or "").lower()
             amount = money(getattr(expense, "amount", 0))
-            if status in spent_statuses or getattr(expense, "released_at", None):
+            stage = str(getattr(expense, "contingency_stage", "") or "").lower()
+            if stage == ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT:
+                pending += amount
+            elif status in spent_statuses or getattr(expense, "released_at", None):
                 spent += amount
             elif status in pending_statuses:
                 pending += amount
@@ -206,9 +209,18 @@ def validate_reimbursement(expense: ExpenseRequest, *, require_receipt: bool = T
         if money(expense.amount) > money(reserve.get("remaining")):
             return ReimbursementValidation(False, "Requested amount exceeds remaining Incidentals Reserve.", ledger)
     if require_receipt:
-        has_receipt = bool(getattr(expense, "receipt", None)) or expense.attachments.exists()
+        is_approval_request = (
+            is_incidentals
+            and getattr(expense, "contingency_stage", "") == ExpenseRequest.ContingencyStage.APPROVAL_REQUESTED
+        )
+        has_receipt = (
+            bool(getattr(expense, "final_receipt", None))
+            if is_incidentals and not is_approval_request
+            else bool(getattr(expense, "receipt", None)) or expense.attachments.exists()
+        )
         if not has_receipt:
-            return ReimbursementValidation(False, "Receipt or proof attachment is required.", ledger)
+            detail = "Estimate, quote, photo, or other supporting evidence is required." if is_approval_request else "Final receipt is required."
+            return ReimbursementValidation(False, detail, ledger)
     if money(expense.amount) > money(ledger.get("available")):
         return ReimbursementValidation(False, "Requested amount exceeds available escrow.", ledger)
     return ReimbursementValidation(True, "", ledger)
@@ -412,6 +424,11 @@ def release_reimbursement_transfer(expense: ExpenseRequest, *, reviewed_by=None)
 @transaction.atomic
 def submit_reimbursement(expense: ExpenseRequest) -> ExpenseRequest:
     locked = ExpenseRequest.objects.select_for_update().select_related("agreement").get(pk=expense.pk)
+    if (
+        locked.funding_source == ExpenseRequest.FundingSource.INCIDENTALS_RESERVE
+        and not locked.contingency_stage
+    ):
+        locked.contingency_stage = ExpenseRequest.ContingencyStage.APPROVAL_REQUESTED
     validation = validate_reimbursement(locked)
     if not validation.ok:
         raise ValueError(validation.detail)
@@ -419,7 +436,7 @@ def submit_reimbursement(expense: ExpenseRequest) -> ExpenseRequest:
     locked.status = ExpenseRequest.Status.SUBMITTED
     locked.submitted_at = locked.submitted_at or timezone.now()
     locked.contractor_signed_at = locked.contractor_signed_at or locked.submitted_at
-    locked.save(update_fields=["request_kind", "status", "submitted_at", "contractor_signed_at", "updated_at"])
+    locked.save(update_fields=["request_kind", "status", "submitted_at", "contractor_signed_at", "contingency_stage", "updated_at"])
     try:
         from projects.services.workflow_notifications import notify_reimbursement_submitted
 
@@ -456,6 +473,8 @@ def approve_reimbursement(expense: ExpenseRequest, *, reviewed_by=None) -> Expen
     locked.reviewed_by = reviewed_by
     locked.available_escrow_at_approval = money(validation.ledger["available"])
     locked.release_error = ""
+    if locked.contingency_stage == ExpenseRequest.ContingencyStage.FINAL_RECEIPT_SUBMITTED:
+        locked.contingency_stage = ExpenseRequest.ContingencyStage.FINALIZED
     locked.save(
         update_fields=[
             "status",
@@ -464,6 +483,7 @@ def approve_reimbursement(expense: ExpenseRequest, *, reviewed_by=None) -> Expen
             "reviewed_by",
             "available_escrow_at_approval",
             "release_error",
+            "contingency_stage",
             "updated_at",
         ]
     )
@@ -523,11 +543,13 @@ def mark_reimbursement_released(expense: ExpenseRequest, *, stripe_transfer_id: 
     if not validation.ok:
         raise ValueError(validation.detail)
     locked.status = ExpenseRequest.Status.RELEASED
+    if locked.funding_source == ExpenseRequest.FundingSource.INCIDENTALS_RESERVE:
+        locked.contingency_stage = ExpenseRequest.ContingencyStage.FINALIZED
     locked.released_at = timezone.now()
     locked.paid_at = locked.released_at
     if stripe_transfer_id:
         locked.stripe_transfer_id = stripe_transfer_id
-    locked.save(update_fields=["status", "released_at", "paid_at", "stripe_transfer_id", "updated_at"])
+    locked.save(update_fields=["status", "released_at", "paid_at", "stripe_transfer_id", "contingency_stage", "updated_at"])
     try:
         from projects.models import Notification
         from projects.services.workflow_notifications import notify_reimbursement_contractor_update

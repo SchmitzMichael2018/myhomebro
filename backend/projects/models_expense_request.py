@@ -47,6 +47,13 @@ class ExpenseRequest(models.Model):
         DELIVERY = "delivery", "Delivery"
         OTHER = "other", "Other"
 
+    class ContingencyStage(models.TextChoices):
+        NOT_APPLICABLE = "", "Not applicable"
+        APPROVAL_REQUESTED = "approval_requested", "Approval requested"
+        APPROVED_PENDING_RECEIPT = "approved_pending_receipt", "Approved — final receipt needed"
+        FINAL_RECEIPT_SUBMITTED = "final_receipt_submitted", "Final receipt submitted"
+        FINALIZED = "finalized", "Finalized"
+
     agreement = models.ForeignKey(
         "projects.Agreement",
         on_delete=models.CASCADE,
@@ -83,6 +90,16 @@ class ExpenseRequest(models.Model):
 
     # Legacy single receipt (keep for compatibility; multi-files are in ExpenseRequestAttachment)
     receipt = models.FileField(upload_to="expense_requests/receipt/", null=True, blank=True)
+    final_receipt = models.FileField(upload_to="expense_requests/final_receipt/", null=True, blank=True)
+    contingency_stage = models.CharField(
+        max_length=32,
+        choices=ContingencyStage.choices,
+        blank=True,
+        default=ContingencyStage.NOT_APPLICABLE,
+        db_index=True,
+    )
+    approved_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    final_receipt_submitted_at = models.DateTimeField(null=True, blank=True)
 
     notes_to_homeowner = models.TextField(blank=True, default="")
 

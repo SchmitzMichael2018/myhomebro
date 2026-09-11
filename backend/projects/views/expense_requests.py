@@ -5,6 +5,7 @@ from django.conf import settings
 from django.http import FileResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from decimal import Decimal, InvalidOperation
 
 from rest_framework import permissions, status as drf_status, viewsets
 from rest_framework.decorators import action
@@ -218,6 +219,39 @@ class ExpenseRequestViewSet(viewsets.ModelViewSet):
 
         ser = ExpenseRequestAttachmentSerializer(created, many=True, context={"request": request})
         return Response(ser.data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="submit-final-receipt")
+    def submit_final_receipt(self, request: Request, pk=None):
+        expense = self.get_object()
+        if expense.funding_source != ExpenseRequest.FundingSource.INCIDENTALS_RESERVE:
+            return Response({"detail": "Final receipts apply only to contingency requests."}, status=400)
+        if expense.contingency_stage != ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT:
+            return Response({"detail": "Customer approval is required before submitting the final receipt."}, status=400)
+        receipt = request.FILES.get("final_receipt") or request.FILES.get("receipt")
+        if not receipt:
+            return Response({"detail": "A final receipt is required."}, status=400)
+        try:
+            actual_amount = Decimal(str(request.data.get("amount") or expense.approved_amount or expense.amount)).quantize(Decimal("0.01"))
+        except (InvalidOperation, TypeError, ValueError):
+            return Response({"detail": "Enter a valid final amount."}, status=400)
+        if actual_amount <= 0:
+            return Response({"detail": "Final amount must be greater than zero."}, status=400)
+        expense.amount = actual_amount
+        expense.final_receipt = receipt
+        expense.final_receipt_submitted_at = timezone.now()
+        expense.contingency_stage = ExpenseRequest.ContingencyStage.FINAL_RECEIPT_SUBMITTED
+        expense.status = ExpenseRequest.Status.SUBMITTED
+        expense.submitted_at = timezone.now()
+        expense.save(update_fields=[
+            "amount", "final_receipt", "final_receipt_submitted_at", "contingency_stage",
+            "status", "submitted_at", "updated_at",
+        ])
+        try:
+            from projects.services.workflow_notifications import notify_reimbursement_submitted
+            notify_reimbursement_submitted(expense=expense)
+        except Exception:
+            pass
+        return Response(self.get_serializer(expense).data)
 
     @action(detail=True, methods=["delete"], url_path=r"attachments/(?P<att_id>\d+)")
     def delete_attachment(self, request: Request, pk=None, att_id=None):

@@ -3621,9 +3621,16 @@ def _payments(email: str, request=None) -> list[dict]:
                 "funding_source_label": "Incidentals Reserve"
                 if _safe_text(getattr(reimbursement, "funding_source", "")) == ExpenseRequest.FundingSource.INCIDENTALS_RESERVE
                 else "Reimbursement",
+                "contingency_stage": _safe_text(getattr(reimbursement, "contingency_stage", "")),
+                "approved_amount": _safe_text(getattr(reimbursement, "approved_amount", "")),
+                "final_receipt_url": _safe_file_url(getattr(reimbursement, "final_receipt", None)),
+                "approval_action_label": "Approve contingency request"
+                if getattr(reimbursement, "contingency_stage", "") in {"", ExpenseRequest.ContingencyStage.APPROVAL_REQUESTED}
+                else "Approve final receipt",
                 "escrow_ledger": ledger_payload,
                 "incidentals_reserve": serialize_incidentals_reserve(incidentals_reserve_summary(agreement, exclude_expense_id=reimbursement.id)) if agreement else None,
-                "can_approve": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER},
+                "can_approve": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER}
+                and getattr(reimbursement, "contingency_stage", "") != ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT,
                 "can_deny": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER, ExpenseRequest.Status.APPROVED, ExpenseRequest.Status.PENDING_RELEASE},
                 "approve_url": f"/api/projects/customer-portal/{{token}}/reimbursements/{reimbursement.id}/approve/",
                 "deny_url": f"/api/projects/customer-portal/{{token}}/reimbursements/{reimbursement.id}/deny/",
@@ -10377,13 +10384,35 @@ class CustomerPortalReimbursementApproveView(APIView):
         )
         if _agreement_customer_email(expense.agreement) != email:
             return Response({"detail": "You can only approve reimbursement requests for your own project."}, status=status.HTTP_403_FORBIDDEN)
+        if (
+            expense.funding_source == ExpenseRequest.FundingSource.INCIDENTALS_RESERVE
+            and expense.contingency_stage in {"", ExpenseRequest.ContingencyStage.APPROVAL_REQUESTED}
+        ):
+            expense.approved_amount = expense.amount
+            expense.contingency_stage = ExpenseRequest.ContingencyStage.APPROVED_PENDING_RECEIPT
+            expense.status = ExpenseRequest.Status.APPROVED
+            expense.homeowner_acted_at = timezone.now()
+            expense.approved_at = expense.homeowner_acted_at
+            expense.save(update_fields=[
+                "approved_amount", "contingency_stage", "status", "homeowner_acted_at", "approved_at", "updated_at"
+            ])
+            return Response(
+                {
+                    "detail": "Contingency approved. The contractor must submit the final receipt before funds can be released.",
+                    "reimbursement_id": expense.id,
+                    "status": expense.status,
+                    "contingency_stage": expense.contingency_stage,
+                    "portal": _build_customer_portal_payload(email, request=request),
+                },
+                status=status.HTTP_200_OK,
+            )
         try:
             expense = approve_reimbursement(expense, reviewed_by=request.user if getattr(request.user, "is_authenticated", False) else None)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
-                "detail": "Reimbursement approved and released." if expense.status == ExpenseRequest.Status.RELEASED else "Reimbursement approved and queued for escrow release.",
+                "detail": "Final receipt approved and funds released." if expense.status == ExpenseRequest.Status.RELEASED else "Final receipt approved and queued for escrow release.",
                 "reimbursement_id": expense.id,
                 "status": expense.status,
                 "stripe_transfer_id": expense.stripe_transfer_id,
