@@ -852,6 +852,31 @@ def classify_type_subtype(
             "Detected water-heater scope. Using plumbing water-heater classification.",
         )
 
+    # A single faucet is plumbing fixture work, not evidence of a kitchen or
+    # bathroom remodel. Prefer repair language when both repair and replacement
+    # terms appear (for example, "repair ... without replacing the fixture").
+    faucet_scope = _norm_text(f"{description}\n{scope_text}")
+    if "faucet" in faucet_scope or re.search(r"\btap\b", faucet_scope):
+        faucet_repair = any(
+            signal in faucet_scope
+            for signal in ["repair", "fix", "leaking", "leaky", "drip", "dripping"]
+        )
+        if faucet_repair:
+            return (
+                "Plumbing",
+                "Faucet Repair",
+                "Detected faucet repair scope. Using type 'Plumbing' and subtype 'Faucet Repair'.",
+            )
+        if any(
+            signal in faucet_scope
+            for signal in ["install", "installation", "replace", "replacement"]
+        ):
+            return (
+                "Plumbing",
+                "Fixture Installation",
+                "Detected faucet replacement scope. Using type 'Plumbing' and subtype 'Fixture Installation'.",
+            )
+
     hvac_signals = ["hvac", "air conditioner", "ac unit", "a/c", "furnace", "heat pump", "mini split", "mini-split"]
     if any(sig in hay_norm for sig in hvac_signals):
         if any(sig in hay_norm for sig in ["noise", "loud", "rattle", "grind", "buzz", "not cooling", "not heating", "repair"]):

@@ -8183,11 +8183,17 @@ Exclusions
         self.assertEqual(payload["project_subtype"], "Siding Replacement")
         self.assertEqual(payload["draft"]["project_type"], "Siding")
         self.assertEqual(payload["draft"]["project_subtype"], "Siding Replacement")
-        self.assertIn("Recommended from your description", payload["confidence_label"])
+        self.assertEqual(payload["confidence_label"], "Medium confidence")
         self.assertTrue(payload["description"])
         self.assertIn("classification", payload)
 
     def test_ai_agreement_description_falls_back_to_basement_for_finish_basement(self):
+        remodel_type = ProjectType.objects.create(name="Remodel", is_system=True)
+        ProjectSubtype.objects.create(
+            project_type=remodel_type,
+            name="Basement",
+            is_system=True,
+        )
         with patch(
             "projects.services.ai.project_understanding.generate_or_improve_description",
             side_effect=RuntimeError("OpenAI unavailable"),
@@ -8209,6 +8215,53 @@ Exclusions
         self.assertEqual(payload["project_subtype"], "Basement")
         self.assertEqual(payload["project_title"], "Basement Finishing")
         self.assertIn("basement", payload["description"].lower())
+
+    def test_ai_agreement_description_distinguishes_faucet_replacement_from_repair(self):
+        plumbing_type = ProjectType.objects.create(name="Plumbing", is_system=True)
+        ProjectSubtype.objects.create(
+            project_type=plumbing_type,
+            name="Fixture Installation",
+            is_system=True,
+        )
+        ProjectSubtype.objects.create(
+            project_type=plumbing_type,
+            name="Faucet Repair",
+            is_system=True,
+        )
+
+        cases = [
+            (
+                "Replace the existing kitchen faucet and test the supply connections for leaks.",
+                "Fixture Installation",
+                "replac",
+            ),
+            (
+                "Repair the leaking bathroom faucet without replacing the fixture.",
+                "Faucet Repair",
+                "repair",
+            ),
+        ]
+        for description, expected_subtype, expected_description_word in cases:
+            with self.subTest(expected_subtype), patch(
+                "projects.services.ai.project_understanding.generate_or_improve_description",
+                side_effect=RuntimeError("OpenAI unavailable"),
+            ):
+                response = self.client.post(
+                    "/api/projects/agreements/ai/description/",
+                    {
+                        "agreement_id": self.agreement.id,
+                        "mode": "generate",
+                        "current_description": description,
+                    },
+                    format="json",
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["project_type"], "Plumbing")
+            self.assertEqual(payload["project_subtype"], expected_subtype)
+            self.assertIn(expected_description_word, payload["description"].lower())
+            self.assertNotIn("garage", payload["description"].lower())
 
     def test_ai_agreement_description_falls_back_to_pool_for_pool_house(self):
         with patch(
