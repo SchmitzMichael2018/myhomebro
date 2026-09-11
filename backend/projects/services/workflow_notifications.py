@@ -5,6 +5,7 @@ import logging
 from typing import Iterable
 
 from django.conf import settings
+from django.core import signing
 from django.utils import timezone
 
 from projects.models import ExpenseRequest, Notification, PublicContractorLead
@@ -175,7 +176,11 @@ def notify_reimbursement_submitted(*, expense: ExpenseRequest, is_resend: bool =
         or getattr(settings, "SITE_URL", "")
         or "https://www.myhomebro.com"
     ).rstrip("/")
-    action_url = "/portal"
+    portal_token = signing.dumps(
+        {"email": customer_email.lower().strip()},
+        salt="myhomebro.customer-portal",
+    )
+    action_url = f"/portal/{portal_token}?workspace=payments&agreement={getattr(agreement, 'id', '')}&reimbursement={getattr(expense, 'id', '')}"
     portal_url = f"{base_url}{action_url}"
     dedupe_suffix = (
         f"resend:{timezone.now().isoformat()}" if is_resend else "initial"
