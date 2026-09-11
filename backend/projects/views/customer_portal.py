@@ -4243,6 +4243,7 @@ HOMEOWNER_VISIBLE_NOTIFICATION_EVENTS = {
 
 
 def _notification_identity(row: SmartNotification) -> tuple:
+    event_type = _safe_text(row.event_type)
     created_at = getattr(row, "created_at", None)
     bucket = 0
     if created_at:
@@ -4250,7 +4251,10 @@ def _notification_identity(row: SmartNotification) -> tuple:
             bucket = int(created_at.timestamp() // 600)
         except Exception:
             bucket = 0
+    reimbursement_match = re.search(r"[?&]reimbursement=(\d+)", _safe_text(row.action_url)) if event_type == SmartNotificationEvent.REIMBURSEMENT_SUBMITTED else None
     object_key = (
+        f"reimbursement:{reimbursement_match.group(1)}" if reimbursement_match else None
+    ) or (
         getattr(row, "invoice_id", None)
         or getattr(row, "draw_request_id", None)
         or getattr(row, "milestone_id", None)
@@ -4260,7 +4264,15 @@ def _notification_identity(row: SmartNotification) -> tuple:
         or getattr(row, "property_profile_id", None)
         or f"{_safe_text(row.title).lower()}:{_safe_text(row.message).lower()}"
     )
-    return (_safe_text(row.event_type), object_key, bucket)
+    if event_type in {
+        SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE,
+        SmartNotificationEvent.ESCROW_NEEDS_FUNDING,
+        SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL,
+        SmartNotificationEvent.REIMBURSEMENT_SUBMITTED,
+        SmartNotificationEvent.REQUEST_MARKETPLACE_READY,
+    }:
+        bucket = 0
+    return (event_type, object_key, bucket)
 
 
 def _serialize_smart_notification(row: SmartNotification) -> dict:
