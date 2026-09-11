@@ -17,6 +17,10 @@ import {
   useElements,
 } from "@stripe/react-stripe-js";
 import { getStripePublishableKey } from "../lib/runtimeConfig";
+import {
+  ESCROW_ALREADY_FUNDED_MESSAGE,
+  ESCROW_PAYMENT_PROCESSED_MESSAGE,
+} from "../lib/escrowFundingMessages";
 
 const STRIPE_PUBLISHABLE_KEY = getStripePublishableKey();
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
@@ -64,7 +68,7 @@ function FundingPaymentForm({ clientSecret, amountLabel }) {
   if (alreadyPaid) {
     return (
       <div className="p-6 text-green-700 bg-green-50 border border-green-200 rounded-2xl">
-        ✅ This escrow payment has already been processed.
+        ✅ {ESCROW_PAYMENT_PROCESSED_MESSAGE}
       </div>
     );
   }
@@ -228,9 +232,9 @@ export default function PublicFund() {
     return (
       <Shell>
         <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <div className="text-lg font-bold text-accent">Escrow is fully funded</div>
+          <div className="text-lg font-bold text-accent">Escrow already funded</div>
           <div className="mt-2 text-sm text-accent">
-            ✅ No additional payment is required.
+            ✅ {ESCROW_ALREADY_FUNDED_MESSAGE}
           </div>
         </div>
       </Shell>
