@@ -14,6 +14,8 @@ const buildEmptyReviewForm = (context = {}) => ({
   rating: 5,
   title: '',
   review_text: '',
+  liked_most: '',
+  could_improve: '',
   linked_invoice: context.linked_invoice || '',
   linked_milestone: context.linked_milestone || '',
 });
@@ -484,9 +486,11 @@ export default function PublicProfile() {
                         <div className="text-sm font-semibold text-slate-900">{review.customer_name}</div>
                         {review.title ? <div className="mt-1 text-sm text-slate-700">{review.title}</div> : null}
                       </div>
-                      <div className="text-sm font-bold text-slate-900">{review.rating}/5</div>
+                      <div className="text-lg font-bold tracking-wide text-amber-500" aria-label={`${review.rating} out of 5 stars`}>{'★'.repeat(review.rating)}<span className="text-slate-300">{'★'.repeat(5 - review.rating)}</span></div>
                     </div>
                     {review.review_text ? <p className="mt-3 text-sm text-slate-700">{review.review_text}</p> : null}
+                    {review.liked_most ? <p className="mt-3 text-sm text-slate-700"><span className="font-bold">Liked most:</span> {review.liked_most}</p> : null}
+                    {review.could_improve ? <p className="mt-2 text-sm text-slate-700"><span className="font-bold">Could be improved:</span> {review.could_improve}</p> : null}
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                       {review.is_verified ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Verified</span> : null}
                       {review.linked_invoice_id ? <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-1 font-semibold text-blue-700">Invoice linked</span> : null}
@@ -567,15 +571,12 @@ export default function PublicProfile() {
               className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               placeholder="Your name"
             />
-            <input
-              type="number"
-              min="1"
-              max="5"
-              value={reviewForm.rating}
-              onChange={(e) => setReviewForm((prev) => ({ ...prev, rating: Number(e.target.value || 5) }))}
-              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Rating"
-            />
+            <fieldset className="rounded-xl border border-slate-300 px-3 py-2">
+              <legend className="px-1 text-xs font-bold text-slate-600">Overall rating</legend>
+              <div className="flex gap-1" aria-label={`${reviewForm.rating} out of 5 stars`}>
+                {[1, 2, 3, 4, 5].map((star) => <button key={star} type="button" onClick={() => setReviewForm((prev) => ({ ...prev, rating: star }))} className={`text-3xl leading-none ${star <= reviewForm.rating ? 'text-amber-400' : 'text-slate-300'}`} aria-label={`${star} star${star === 1 ? '' : 's'}`}>★</button>)}
+              </div>
+            </fieldset>
             <input
               value={reviewForm.title}
               onChange={(e) => setReviewForm((prev) => ({ ...prev, title: e.target.value }))}
@@ -589,6 +590,8 @@ export default function PublicProfile() {
               className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
               placeholder="Share your experience"
             />
+            <textarea value={reviewForm.liked_most} onChange={(e) => setReviewForm((prev) => ({ ...prev, liked_most: e.target.value }))} rows={3} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="What did you like most?" />
+            <textarea value={reviewForm.could_improve} onChange={(e) => setReviewForm((prev) => ({ ...prev, could_improve: e.target.value }))} rows={3} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="What, if anything, could have been better?" />
             {reviewForm.linked_invoice || reviewForm.linked_milestone ? (
               <div className="md:col-span-2 flex flex-wrap gap-2 text-xs text-slate-500">
                 {reviewForm.linked_invoice ? <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-1 font-semibold text-blue-700">Invoice linked</span> : null}

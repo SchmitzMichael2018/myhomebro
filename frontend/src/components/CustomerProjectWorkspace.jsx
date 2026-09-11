@@ -390,7 +390,7 @@ function customerDisputeStatus(payment) {
 
 function ReviewPromptCard({ project, token, onPortalUpdate }) {
   const review = project?.review || {};
-  const [form, setForm] = useState({ rating: 5, title: "", review_text: "" });
+  const [form, setForm] = useState({ rating: 5, title: "", review_text: "", liked_most: "", could_improve: "" });
   const [submitting, setSubmitting] = useState(false);
   const agreementId = review.agreement_id || project?.agreement_id;
   const existing = review.existing_review;
@@ -450,15 +450,9 @@ function ReviewPromptCard({ project, token, onPortalUpdate }) {
         <div className="mt-4 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
           <label className="block text-sm font-semibold text-slate-200">
             Rating
-            <select
-              value={form.rating}
-              onChange={(event) => setForm((current) => ({ ...current, rating: Number(event.target.value || 5) }))}
-              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
-            >
-              {[5, 4, 3, 2, 1].map((rating) => (
-                <option key={rating} value={rating}>{rating} star{rating === 1 ? "" : "s"}</option>
-              ))}
-            </select>
+            <span className="mt-2 flex gap-1" aria-label={`${form.rating} out of 5 stars`}>
+              {[1, 2, 3, 4, 5].map((star) => <button key={star} type="button" onClick={() => setForm((current) => ({ ...current, rating: star }))} className={`text-3xl leading-none ${star <= form.rating ? "text-amber-300" : "text-slate-600"}`} aria-label={`${star} star${star === 1 ? "" : "s"}`}>★</button>)}
+            </span>
           </label>
           <label className="block text-sm font-semibold text-slate-200">
             Review title
@@ -480,6 +474,10 @@ function ReviewPromptCard({ project, token, onPortalUpdate }) {
             placeholder="What went well? What should future customers know?"
           />
         </label>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="block text-sm font-semibold text-slate-200">What did you like most?<textarea value={form.liked_most} onChange={(event) => setForm((current) => ({ ...current, liked_most: event.target.value }))} rows={3} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" placeholder="Communication, workmanship, scheduling…" /></label>
+          <label className="block text-sm font-semibold text-slate-200">What could have been better?<textarea value={form.could_improve} onChange={(event) => setForm((current) => ({ ...current, could_improve: event.target.value }))} rows={3} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" placeholder="Optional constructive feedback" /></label>
+        </div>
         <button
           type="button"
           onClick={submit}

@@ -90,6 +90,8 @@ def serialize_review(review: ContractorReview | None) -> dict | None:
         "rating": review.rating,
         "title": review.title,
         "review_text": review.review_text,
+        "liked_most": review.liked_most,
+        "could_improve": review.could_improve,
         "customer_name": review.customer_name,
         "customer_email": review.customer_email,
         "moderation_status": review.moderation_status,
@@ -102,7 +104,7 @@ def serialize_review(review: ContractorReview | None) -> dict | None:
 
 
 @transaction.atomic
-def submit_customer_review(*, agreement: Agreement, customer_email: str, rating: int, title: str = "", review_text: str = "", customer_name: str = "") -> ContractorReview:
+def submit_customer_review(*, agreement: Agreement, customer_email: str, rating: int, title: str = "", review_text: str = "", liked_most: str = "", could_improve: str = "", customer_name: str = "") -> ContractorReview:
     eligibility = review_eligibility(agreement, customer_email)
     if not eligibility.get("eligible"):
         raise ValueError(eligibility.get("reason") or "This project is not eligible for review yet.")
@@ -134,6 +136,8 @@ def submit_customer_review(*, agreement: Agreement, customer_email: str, rating:
             "rating": rating_value,
             "title": _safe_text(title)[:255],
             "review_text": _safe_text(review_text),
+            "liked_most": _safe_text(liked_most),
+            "could_improve": _safe_text(could_improve),
             "project_type": _safe_text(getattr(agreement, "project_type", "")),
             "project_subtype": _safe_text(getattr(agreement, "project_subtype", "")),
             "is_verified": True,

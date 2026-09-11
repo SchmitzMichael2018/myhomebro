@@ -17,6 +17,7 @@ from projects.models import (
     ContractorWebsitePage,
     PublicContractorLead,
 )
+from projects.models_contractor_discovery import ContractorDirectoryListing
 from projects.serializers.public_presence import (
     ContractorGalleryItemSerializer,
     ContractorPublicProfileSerializer,
@@ -827,6 +828,15 @@ def build_website_profile_payload(
         ratings = [int(row.rating) for row in reviews_qs if row.rating]
         average_rating = round(sum(ratings) / len(ratings), 2) if ratings else None
     gallery_count = gallery_qs.count()
+    google_listing = (
+        ContractorDirectoryListing.objects.filter(
+            claimed_contractor=contractor,
+            google_review_count__gt=0,
+            google_rating__isnull=False,
+        )
+        .order_by("-last_synced_at", "-google_review_count")
+        .first()
+    )
     readiness = _build_readiness_checklist(
         contractor=contractor,
         profile=profile,
@@ -929,6 +939,9 @@ def build_website_profile_payload(
             "average_rating": average_rating,
             "count": review_count,
             "selected": selected_reviews,
+            "google_rating": google_listing.google_rating if google_listing else None,
+            "google_review_count": google_listing.google_review_count if google_listing else 0,
+            "google_maps_url": google_listing.google_maps_url if google_listing else "",
         },
         "gallery": {
             "count": gallery_count,

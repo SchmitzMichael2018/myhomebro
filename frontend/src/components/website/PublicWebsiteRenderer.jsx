@@ -254,16 +254,24 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
 
       {sections.includes('reviews') ? (
         <section className="border-t border-slate-200 px-6 py-8 md:px-8">
-          <h2 className="text-2xl font-black">{reviewsBlock.heading || 'Customer Reviews'}</h2>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-black">{reviewsBlock.heading || 'Customer Reviews'}</h2>
+              {reviews.count > 0 && reviews.average_rating ? <div className="mt-2 text-sm font-bold text-amber-500" aria-label={`${reviews.average_rating} out of 5 stars`}>{'★'.repeat(Math.round(reviews.average_rating))}<span className="text-slate-300">{'★'.repeat(5 - Math.round(reviews.average_rating))}</span> <span className="ml-1 text-slate-600">{reviews.average_rating}/5 · {reviews.count} MyHomeBro review{reviews.count === 1 ? '' : 's'}</span></div> : null}
+            </div>
+            {reviews.google_review_count > 0 && reviews.google_rating ? <a href={reviews.google_maps_url || undefined} target={reviews.google_maps_url ? '_blank' : undefined} rel={reviews.google_maps_url ? 'noreferrer' : undefined} className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-black text-blue-800">Google ★ {reviews.google_rating}/5 · {reviews.google_review_count} review{reviews.google_review_count === 1 ? '' : 's'}</a> : null}
+          </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             {(reviews.selected || []).slice(0, 4).map((review) => (
               <figure key={review.id || review.reviewer_name} className="rounded-xl border border-slate-200 bg-slate-50 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-bold text-slate-900">{review.rating || 5}/5</div>
+                  <div className="text-lg font-bold tracking-wide text-amber-500" aria-label={`${review.rating || 5} out of 5 stars`}>{'★'.repeat(review.rating || 5)}<span className="text-slate-300">{'★'.repeat(5 - (review.rating || 5))}</span></div>
                   {review.is_verified ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-800">Verified customer</span> : <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-900">Contractor-provided</span>}
                 </div>
                 {review.title ? <div className="mt-3 text-sm font-black text-slate-900">{review.title}</div> : null}
                 <blockquote className="mt-2 text-sm leading-6 text-slate-700">{review.review_text || review.public_comment || review.comment || 'Great work and clear communication.'}</blockquote>
+                {review.liked_most ? <p className="mt-3 text-sm text-slate-700"><span className="font-bold">Liked most:</span> {review.liked_most}</p> : null}
+                {review.could_improve ? <p className="mt-2 text-sm text-slate-700"><span className="font-bold">Could be improved:</span> {review.could_improve}</p> : null}
                 <figcaption className="mt-3 text-xs font-semibold text-slate-500">{review.reviewer_name || review.customer_name || 'Customer'}</figcaption>
               </figure>
             ))}

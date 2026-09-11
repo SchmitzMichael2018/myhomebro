@@ -10454,6 +10454,8 @@ class CustomerPortalReviewSubmitView(APIView):
                 rating=request.data.get("rating"),
                 title=request.data.get("title", ""),
                 review_text=request.data.get("review_text", ""),
+                liked_most=request.data.get("liked_most", ""),
+                could_improve=request.data.get("could_improve", ""),
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

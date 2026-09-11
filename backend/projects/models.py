@@ -900,6 +900,8 @@ class ContractorReview(models.Model):
     rating = models.PositiveSmallIntegerField()
     title = models.CharField(max_length=255, blank=True, default="")
     review_text = models.TextField(blank=True, default="")
+    liked_most = models.TextField(blank=True, default="")
+    could_improve = models.TextField(blank=True, default="")
     moderation_status = models.CharField(
         max_length=20,
         choices=MODERATION_CHOICES,

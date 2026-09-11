@@ -1012,6 +1012,8 @@ class PublicContractorReviewsView(APIView):
             rating=serializer.validated_data["rating"],
             title=serializer.validated_data.get("title", ""),
             review_text=serializer.validated_data.get("review_text", ""),
+            liked_most=serializer.validated_data.get("liked_most", ""),
+            could_improve=serializer.validated_data.get("could_improve", ""),
             linked_invoice=linked_invoice,
             linked_milestone=linked_milestone,
             is_verified=is_verified,
