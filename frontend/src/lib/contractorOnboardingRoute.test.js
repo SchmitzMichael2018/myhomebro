@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeRequiredOnboarding } from "./contractorOnboardingRoute.js";
+import {
+  normalizeRequiredOnboarding,
+  resolveAuthenticatedEntry,
+} from "./contractorOnboardingRoute.js";
 
 describe("normalizeRequiredOnboarding", () => {
   it("honors the backend required completion flag", () => {
@@ -34,5 +37,13 @@ describe("normalizeRequiredOnboarding", () => {
         step: "not-a-real-step",
       }).step
     ).toBe("region");
+  });
+});
+
+describe("resolveAuthenticatedEntry", () => {
+  it("routes homeowner identities to the customer portal", async () => {
+    await expect(
+      resolveAuthenticatedEntry({ identity_type: "homeowner" })
+    ).resolves.toBe("/portal");
   });
 });

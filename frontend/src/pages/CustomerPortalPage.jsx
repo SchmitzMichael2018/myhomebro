@@ -200,7 +200,7 @@ export default function CustomerPortalPage() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [passwordSaved, setPasswordSaved] = useState(false);
-  const [loading, setLoading] = useState(Boolean(token));
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [portal, setPortal] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -212,9 +212,19 @@ export default function CustomerPortalPage() {
 
     async function loadPortal() {
       if (!token) {
-        setLoading(false);
+        setLoading(true);
         setLoadError("");
-        setPortal(null);
+        try {
+          const { data } = await api.get("/projects/customer-portal/account/");
+          if (!mounted) return;
+          setPortal(data);
+        } catch {
+          if (!mounted) return;
+          // An unauthenticated visitor should see the normal portal login form.
+          setPortal(null);
+        } finally {
+          if (mounted) setLoading(false);
+        }
         return;
       }
 
