@@ -1104,16 +1104,25 @@ export default function ExpensesPage() {
       const value = getReserveValue(a, ["incidentals_reserve_used"]);
       return sum + Number(value || 0);
     }, 0);
+    const hasReservePendingSummary = escrowAgreements.some(
+      (a) => getReserveValue(a, ["incidentals_reserve_pending"]) !== null,
+    );
+    const hasReserveSpentSummary = escrowAgreements.some(
+      (a) => getReserveValue(a, ["incidentals_reserve_used"]) !== null,
+    );
     const fallbackPending = incidentals
       .filter((x) => x._statusBucket === "pending")
       .reduce((sum, x) => sum + Number(x.amount || 0), 0);
     const fallbackSpent = incidentals
-      .filter((x) => x._statusBucket === "approved")
+      .filter((x) => ["finalized", "released", "paid"].includes(normalizeStatus(x.contingency_stage || x.status)))
       .reduce((sum, x) => sum + Number(x.amount || 0), 0);
-    const incidentalsPending = reservePending || fallbackPending;
-    const incidentalsSpent = reserveSpent || fallbackSpent;
+    const incidentalsPending = hasReservePendingSummary ? reservePending : fallbackPending;
+    const incidentalsSpent = hasReserveSpentSummary ? reserveSpent : fallbackSpent;
+    const directSpent = all
+      .filter((x) => x._fundingKey === "reimbursement" && x._statusBucket === "approved")
+      .reduce((sum, x) => sum + Number(x.amount || 0), 0);
     return {
-      totalSpent: all.reduce((sum, x) => sum + Number(x.amount || 0), 0),
+      totalSpent: directSpent + incidentalsSpent,
       pendingReimbursements: pending.filter((x) => x._fundingKey === "reimbursement").length,
       approvedExpenses: approved.length,
       rejectedExpenses: rejected.length,
@@ -1184,7 +1193,7 @@ export default function ExpensesPage() {
           <div>
             <div className="text-lg font-bold text-white">Incidentals Reserve</div>
             <p className="mt-1 max-w-3xl text-sm text-sky-100/70">
-              Escrow incidentals are tracked as a separate project budget bucket. Unused reserve refunding is future behavior and is not applied here.
+              Customer-approved requests remain pending until the contractor submits a final receipt and the customer confirms it. Unused reserve stays available for project closeout.
             </p>
           </div>
           <div className="grid min-w-[320px] grid-cols-4 gap-2 text-center">
