@@ -27788,6 +27788,28 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(second_intake.share_token)
         self.assertNotEqual(first_intake.share_token, second_intake.share_token)
 
+    def test_customer_portal_matching_request_can_be_edited_without_resetting_status(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Kitchen faucet",
+            description="Replace the kitchen faucet.",
+            status=CustomerRequest.STATUS_MARKETPLACE_READY,
+        )
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/",
+            {"address_line1": "123 Test Project Lane", "city": "San Antonio", "state": "TX", "postal_code": "78245"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        saved.refresh_from_db()
+        self.assertEqual(saved.status, CustomerRequest.STATUS_MARKETPLACE_READY)
+        self.assertEqual(saved.address_line1, "123 Test Project Lane")
+
     def test_customer_portal_cancel_routed_request_expires_opportunity_and_notifies_contractor(self):
         from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
 
