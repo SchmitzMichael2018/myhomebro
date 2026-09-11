@@ -4276,6 +4276,28 @@ def _serialize_smart_notification(row: SmartNotification) -> dict:
         title = "Dispute correction recorded"
         message = f"No payment is required for {project_title or 'this correction'}."
     requires_action = _notification_requires_customer_action(row)
+    action_url = _safe_text(row.action_url)
+    if not requires_action and _safe_text(row.event_type) == SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE:
+        agreement = getattr(row, "agreement", None)
+        if agreement and getattr(agreement, "signed_by_homeowner", False):
+            title = "Agreement signed"
+            message = f"{_agreement_title(agreement) or 'Your agreement'} was signed successfully."
+            action_url = "portal:projects"
+    if not requires_action and _safe_text(row.event_type) == SmartNotificationEvent.REIMBURSEMENT_SUBMITTED:
+        match = re.search(r"[?&]reimbursement=(\d+)", action_url)
+        expense = ExpenseRequest.objects.filter(pk=int(match.group(1))).first() if match else None
+        if expense:
+            amount_label = f"${Decimal(str(expense.amount or 0)):.2f}"
+            if expense.status in {ExpenseRequest.Status.RELEASED, ExpenseRequest.Status.PAID}:
+                title = "Reimbursement released"
+                message = f"The {amount_label} reimbursement was released successfully."
+            elif expense.status == ExpenseRequest.Status.DENIED:
+                title = "Reimbursement declined"
+                message = f"The {amount_label} reimbursement was declined."
+            elif expense.status in {ExpenseRequest.Status.APPROVED, ExpenseRequest.Status.PENDING_RELEASE, ExpenseRequest.Status.HOMEOWNER_ACCEPTED}:
+                title = "Reimbursement approved"
+                message = f"You approved the {amount_label} reimbursement. No further action is needed."
+            action_url = f"?workspace=payments&agreement={getattr(expense, 'agreement_id', '')}&reimbursement={expense.id}"
     return {
         "id": row.id,
         "event_type": _safe_text(row.event_type),
@@ -4287,7 +4309,7 @@ def _serialize_smart_notification(row: SmartNotification) -> dict:
         "archive_reason": _safe_text(row.archive_reason),
         "title": title,
         "message": message,
-        "action_url": _safe_text(row.action_url),
+        "action_url": action_url,
         "requires_action": requires_action,
         "created_at": _safe_dt(row.created_at),
     }

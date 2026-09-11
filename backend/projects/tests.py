@@ -23229,12 +23229,16 @@ class CustomerPortalAccessTests(TestCase):
         self.assertFalse(reimbursement["is_actionable"])
         self.assertIn(f"reimbursement={expense.id}", reimbursement["action_target"])
         stale_events = {
-            row["event_type"]: row["requires_action"]
+            row["event_type"]: row
             for row in response.data["notifications"]
             if row["event_type"] in {SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE, SmartNotificationEvent.REIMBURSEMENT_SUBMITTED}
         }
-        self.assertFalse(stale_events[SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE])
-        self.assertFalse(stale_events[SmartNotificationEvent.REIMBURSEMENT_SUBMITTED])
+        self.assertFalse(stale_events[SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE]["requires_action"])
+        self.assertEqual(stale_events[SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE]["title"], "Agreement signed")
+        self.assertEqual(stale_events[SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE]["action_url"], "portal:projects")
+        self.assertFalse(stale_events[SmartNotificationEvent.REIMBURSEMENT_SUBMITTED]["requires_action"])
+        self.assertEqual(stale_events[SmartNotificationEvent.REIMBURSEMENT_SUBMITTED]["title"], "Reimbursement approved")
+        self.assertIn("No further action is needed", stale_events[SmartNotificationEvent.REIMBURSEMENT_SUBMITTED]["message"])
 
     def test_customer_portal_profile_updates_account_type_and_company_fields(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
