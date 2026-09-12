@@ -15,6 +15,8 @@ frontend/node_modules/
 node_modules/
 frontend/dist/
 frontend/playwright/.auth/
+/frontend-dist-*.tgz
+/homeowner-portal-login-*.tgz
 
 # Django outputs
 staticfiles/
@@ -35,6 +37,9 @@ db.sqlite3.locked-*
 db.sqlite3.pre-*
 recovered.sql
 backups/
+/output/
+/qa-artifacts/
+/tmp/
 *.sqlite3.metadata.json
 *.sqlite3.sha256
 
