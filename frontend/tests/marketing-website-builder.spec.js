@@ -491,6 +491,7 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
   });
 
   await page.route(/\/api\/projects\/public\/websites\/bright-build-co\/intake\/?$/, async (route) => {
+    expect(route.request().headers()['content-type']).toContain('application/json');
     await route.fulfill({
       status: 201,
       contentType: 'application/json',
@@ -1402,15 +1403,15 @@ test('Pro contractor can edit Design & Content, open full preview, and publish a
   await page.getByTestId('website-builder-hero-headline').fill('Premium remodeling, handled clearly');
   await page.getByTestId('content-save-continue').click();
   await expect(page.getByText('Website page saved.')).toBeVisible();
-  await expect(page.getByTestId('online-presence-seo-tab')).toBeVisible();
+  await expect(page.getByTestId('public-presence-gallery-tab')).toBeVisible();
 
   await page.goto('/app/marketing/preview?mode=mobile', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('full-preview-mobile-frame')).toBeVisible();
   await expect(page.getByTestId('public-website-renderer')).toContainText('Premium remodeling, handled clearly');
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
-  await page.getByTestId('website-builder-publish-button').click();
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: 'Review & Publish' }).click();
+  await page.getByTestId('final-publish-website').click();
   await expect(page.getByText('Website published.', { exact: true })).toBeVisible();
 
   await page.goto('/websites/bright-build-co', { waitUntil: 'domcontentloaded' });

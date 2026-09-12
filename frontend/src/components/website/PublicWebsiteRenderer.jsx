@@ -129,15 +129,22 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
     }
     setSubmitState({ status: 'submitting', message: '' });
     try {
-      const data = new FormData();
-      Object.entries(intakeForm).forEach(([key, value]) => {
-        if (key === 'files') return;
-        data.append(key, key === 'contact_consent' ? String(Boolean(value)) : value || '');
-      });
-      (intakeForm.files || []).forEach((file) => data.append('photos', file));
-      const response = await api.post(`/projects/public/websites/${encodeURIComponent(slug)}/intake/`, data, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const files = intakeForm.files || [];
+      let data;
+      if (files.length) {
+        data = new FormData();
+        Object.entries(intakeForm).forEach(([key, value]) => {
+          if (key === 'files') return;
+          data.append(key, key === 'contact_consent' ? String(Boolean(value)) : value || '');
+        });
+        files.forEach((file) => data.append('photos', file));
+      } else {
+        data = { ...intakeForm, files: undefined };
+      }
+      // Let Axios/the browser select the JSON content type or generate the
+      // multipart boundary. Manually forcing multipart can leave a no-photo
+      // request without a usable boundary in real browsers.
+      const response = await api.post(`/projects/public/websites/${encodeURIComponent(slug)}/intake/`, data);
       setSubmitState({
         status: 'success',
         message: response?.data?.message || `Your request was sent to ${businessName}.`,
