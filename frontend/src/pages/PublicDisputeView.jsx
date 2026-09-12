@@ -509,7 +509,7 @@ export default function PublicDisputeView() {
                 data-testid="public-dispute-send-button"
                 type="submit"
                 disabled={posting || (!reply.trim() && files.length === 0)}
-                className="rounded-xl bg-emerald-600 px-5 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
+                className="min-h-11 rounded-xl bg-emerald-600 px-5 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
                 {posting ? "Sending…" : "Send Response to Contractor"}
               </button>
@@ -616,8 +616,8 @@ export default function PublicDisputeView() {
                 <p className="mt-2">{allocation.explanation}</p>
                 <p className="mt-2 text-xs text-slate-600">Authorization records your agreement to these exact amounts. It does not by itself move money.</p>
                 <div className="mt-3 flex gap-2">
-                  <button type="button" onClick={() => runAction(`allocation-${allocation.id}`, `/api/projects/disputes/public/${id}/escrow-allocations/${allocation.id}/authorize/?token=${encodeURIComponent(token)}`, { authorization: "authorize", attestation: true }, "Allocation authorized.")} className="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white">Authorize exact amounts</button>
-                  <button type="button" onClick={() => runAction(`allocation-${allocation.id}`, `/api/projects/disputes/public/${id}/escrow-allocations/${allocation.id}/authorize/?token=${encodeURIComponent(token)}`, { authorization: "reject", attestation: true }, "Allocation rejected.")} className="rounded-lg bg-white px-3 py-2 font-bold text-rose-700 ring-1 ring-rose-300">Reject</button>
+                  <button type="button" onClick={() => runAction(`allocation-${allocation.id}`, `/api/projects/disputes/public/${id}/escrow-allocations/${allocation.id}/authorize/?token=${encodeURIComponent(token)}`, { authorization: "authorize", attestation: true }, "Allocation authorized.")} className="min-h-11 rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white">Authorize exact amounts</button>
+                  <button type="button" onClick={() => runAction(`allocation-${allocation.id}`, `/api/projects/disputes/public/${id}/escrow-allocations/${allocation.id}/authorize/?token=${encodeURIComponent(token)}`, { authorization: "reject", attestation: true }, "Allocation rejected.")} className="min-h-11 rounded-lg bg-white px-3 py-2 font-bold text-rose-700 ring-1 ring-rose-300">Reject</button>
                 </div>
               </div>
             ))}
