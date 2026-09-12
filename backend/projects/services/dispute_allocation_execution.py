@@ -37,6 +37,51 @@ def _source_invoice(hold: DisputePaymentHold):
     return None
 
 
+def reconcile_agreement_escrow_payments_from_stripe(agreement_id: int, stripe) -> int:
+    """Backfill legacy Payment charge details only after Stripe verifies them.
+
+    Older funding callbacks sometimes persisted the PaymentIntent but not its
+    latest charge. Never infer that relationship from ordering or amount.
+    """
+    repaired = 0
+    candidates = Payment.objects.filter(agreement_id=agreement_id, status="succeeded").exclude(
+        stripe_payment_intent_id__isnull=True
+    ).exclude(stripe_payment_intent_id="").filter(
+        Q(stripe_charge_id__isnull=True) | Q(stripe_charge_id="") | Q(amount_cents=0)
+    ).order_by("created_at", "id")
+    key_is_test = str(getattr(settings, "STRIPE_SECRET_KEY", "") or "").startswith("sk_test_")
+    for payment in candidates:
+        intent = stripe.PaymentIntent.retrieve(
+            str(payment.stripe_payment_intent_id), expand=["latest_charge"]
+        )
+        if str(getattr(intent, "status", "") or "").lower() != "succeeded":
+            continue
+        if bool(getattr(intent, "livemode", False)) == key_is_test:
+            raise ValueError("Stripe funding mode does not match the configured environment.")
+        metadata = getattr(intent, "metadata", {}) or {}
+        metadata_agreement = str(metadata.get("agreement_id", "") if hasattr(metadata, "get") else "").strip()
+        if metadata_agreement and metadata_agreement != str(agreement_id):
+            raise ValueError("Stripe funding metadata does not match this agreement.")
+        charge = getattr(intent, "latest_charge", None)
+        charge_id = _stripe_id(charge)
+        if not charge_id or not bool(getattr(charge, "paid", False)):
+            continue
+        amount_received = int(getattr(intent, "amount_received", 0) or getattr(intent, "amount", 0) or 0)
+        if amount_received <= 0:
+            continue
+        update_fields = []
+        if str(payment.stripe_charge_id or "") != charge_id:
+            payment.stripe_charge_id = charge_id
+            update_fields.append("stripe_charge_id")
+        if int(payment.amount_cents or 0) != amount_received:
+            payment.amount_cents = amount_received
+            update_fields.append("amount_cents")
+        if update_fields:
+            payment.save(update_fields=update_fields)
+            repaired += 1
+    return repaired
+
+
 def _released_legacy_gross_cents(agreement_id: int) -> int:
     """Gross escrow consumption not yet represented by allocation source rows."""
     settlement_ids = DisputeEscrowAllocation.objects.filter(
@@ -506,15 +551,19 @@ def execute_dispute_escrow_allocation(allocation_id: int, *, actor=None) -> Disp
     """Execute with durable source and retry records around each Stripe call."""
     if not getattr(settings, "DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED", False):
         raise ValueError("Escrow allocation execution is disabled until production payment operations enable it.")
-    allocation = _prepare_sources(allocation_id, actor=actor)
-    if allocation.status == DisputeEscrowAllocation.STATUS_EXECUTED:
-        return allocation
     stripe_key = str(getattr(settings, "STRIPE_SECRET_KEY", "") or "").strip()
     if not stripe_key:
         raise ValueError("Stripe is not configured.")
     import stripe
 
     stripe.api_key = stripe_key
+    agreement_id = DisputeEscrowAllocation.objects.values_list(
+        "dispute__agreement_id", flat=True
+    ).get(pk=allocation_id)
+    reconcile_agreement_escrow_payments_from_stripe(agreement_id, stripe)
+    allocation = _prepare_sources(allocation_id, actor=actor)
+    if allocation.status == DisputeEscrowAllocation.STATUS_EXECUTED:
+        return allocation
     try:
         source_ids = allocation.funding_sources.order_by(
             "payment__created_at", "payment_id"

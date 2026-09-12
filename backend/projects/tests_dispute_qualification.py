@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -25,6 +26,7 @@ from projects.services.dispute_workflow import (
     initialize_dispute_workflow,
     release_expired_hold,
 )
+from projects.services.dispute_allocation_execution import reconcile_agreement_escrow_payments_from_stripe
 
 
 @override_settings(DISPUTE_QUALIFICATION_BUSINESS_DAYS=3, DISPUTE_QUALIFICATION_GRACE_HOURS=24)
@@ -307,6 +309,39 @@ class DisputeQualificationWorkflowTests(TestCase):
         self.assertEqual(allocation.status, DisputeEscrowAllocation.STATUS_READY_FOR_EXECUTION)
         self.assertIsNone(allocation.executed_at)
         self.assertEqual(allocation.execution_reference, "")
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_dispute")
+    def test_legacy_funding_charge_is_backfilled_only_from_verified_stripe_intent(self):
+        from payments.models import Payment
+
+        payment = Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_legacy_funding",
+            stripe_charge_id="",
+            amount_cents=0,
+            status="succeeded",
+        )
+        stripe_client = SimpleNamespace(
+            PaymentIntent=SimpleNamespace(
+                retrieve=lambda *_args, **_kwargs: SimpleNamespace(
+                    id="pi_legacy_funding",
+                    status="succeeded",
+                    livemode=False,
+                    amount_received=60000,
+                    metadata={"agreement_id": str(self.agreement.id)},
+                    latest_charge=SimpleNamespace(id="ch_verified_funding", paid=True),
+                )
+            )
+        )
+
+        repaired = reconcile_agreement_escrow_payments_from_stripe(
+            self.agreement.id, stripe_client
+        )
+
+        payment.refresh_from_db()
+        self.assertEqual(repaired, 1)
+        self.assertEqual(payment.stripe_charge_id, "ch_verified_funding")
+        self.assertEqual(payment.amount_cents, 60000)
 
     @override_settings(DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED=True, STRIPE_SECRET_KEY="sk_test_dispute")
     @patch("payments.fees.calculate_platform_fee_cents_for_invoice", return_value=1000)
