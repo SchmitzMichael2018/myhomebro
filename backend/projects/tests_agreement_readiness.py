@@ -36,6 +36,14 @@ class AgreementReadinessTests(SimpleTestCase):
     def test_complete_agreement_is_ready(self):
         self.assertEqual(agreement_readiness(_agreement()), {"ready": True, "blockers": []})
 
+    def test_project_scope_is_used_when_agreement_scope_field_is_blank(self):
+        result = agreement_readiness(_agreement(
+            description="",
+            project=SimpleNamespace(description="Install the accepted bathroom fixture and patch the mounting holes."),
+        ))
+
+        self.assertEqual(result, {"ready": True, "blockers": []})
+
     def test_scope_outcome_and_warranty_are_required_when_applicable(self):
         result = agreement_readiness(_agreement(
             description="",

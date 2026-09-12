@@ -14,7 +14,12 @@ def agreement_readiness(agreement) -> dict[str, Any]:
     """Return the minimum customer-facing contract blockers."""
     blockers: list[dict[str, str]] = []
 
-    scope = str(getattr(agreement, "description", "") or "").strip()
+    project = getattr(agreement, "project", None)
+    scope = str(
+        getattr(agreement, "description", "")
+        or getattr(project, "description", "")
+        or ""
+    ).strip()
     if not scope or scope.lower() in PLACEHOLDER_SCOPES:
         blockers.append({"key": "scope", "message": "Add a complete Scope of Work before sending."})
 

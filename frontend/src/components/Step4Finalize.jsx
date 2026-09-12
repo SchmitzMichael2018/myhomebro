@@ -1512,7 +1512,11 @@ export default function Step4Finalize({
     },
     {
       key: "scope",
-      ok: Boolean(safeMilestoneStr(agreement?.scope_of_work || agreement?.description)),
+      ok: Boolean(
+        safeMilestoneStr(
+          agreement?.scope_of_work || agreement?.description || agreement?.project?.description
+        )
+      ),
       goodLabel: "Scope of Work is included",
       warnLabel: "Add a complete Scope of Work before sending",
     },
