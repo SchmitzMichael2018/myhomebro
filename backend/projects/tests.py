@@ -6889,6 +6889,30 @@ class ContractorBidsWorkspaceTests(TestCase):
         forbidden = other_client.get("/api/projects/contractor/bids/")
         self.assertEqual(forbidden.status_code, 404)
 
+    def test_contractor_workspace_uses_intake_budget_range_when_no_numeric_budget_exists(self):
+        self.new_public_intake.ai_project_budget = None
+        self.new_public_intake.budget_range_text = "Under $500"
+        self.new_public_intake.ai_analysis_payload = {
+            **self.new_public_intake.ai_analysis_payload,
+            "estimate_preview": {},
+        }
+        self.new_public_intake.save(
+            update_fields=["ai_project_budget", "budget_range_text", "ai_analysis_payload", "updated_at"]
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/contractor/bids/")
+
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item
+            for item in response.json()["results"]
+            if item["source_kind"] == "lead" and item["source_id"] == self.new_public_lead.id
+        )
+        self.assertEqual(row["budget_range_text"], "Under $500")
+        self.assertEqual(row["budget_text"], "Under $500")
+        self.assertEqual(row["request_snapshot"]["budget"], "Under $500")
+
     def test_filters_apply_by_status_and_project_class(self):
         self.client.force_authenticate(user=self.contractor_user)
         response = self.client.get(

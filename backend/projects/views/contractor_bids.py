@@ -435,7 +435,8 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
     budget_label = (
         f"${Decimal(str(budget_value)).quantize(Decimal('0.01')):,.2f}"
         if budget_value not in {None, ""}
-        else _safe_text(getattr(lead, "budget_text", ""))
+        else _safe_text(getattr(source_intake, "budget_range_text", ""))
+        or _safe_text(getattr(lead, "budget_text", ""))
         or _safe_text(analysis.get("suggested_total_price"))
     )
     timeline_value = getattr(source_intake, "ai_project_timeline_days", None) if source_intake else None

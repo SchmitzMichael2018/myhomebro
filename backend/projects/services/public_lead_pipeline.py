@@ -169,7 +169,10 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
                 else ""
             )
         ),
-        "budget_text": _format_budget(getattr(intake, "ai_project_budget", None)),
+        "budget_text": (
+            _format_budget(getattr(intake, "ai_project_budget", None))
+            or (getattr(intake, "budget_range_text", "") or "").strip()
+        ),
         "ai_analysis": {
             **analysis,
             "property_type": (getattr(intake, "property_type", "") or "").strip(),
