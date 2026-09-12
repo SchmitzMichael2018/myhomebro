@@ -1479,6 +1479,11 @@ export default function Step4Finalize({
       : "";
   const platformFeeHelperText =
     "This estimate is based on milestone work and excludes unused contingency. MyHomeBro fees are applied as payments are successfully released and stop at the project cap. Stripe processing fees are separate and depend on the customer's payment method.";
+  const serverSigningReadiness = agreement?.signing_readiness;
+  const serverConfirmsScope = Boolean(
+    serverSigningReadiness &&
+      !safeArray(serverSigningReadiness.blockers).some((blocker) => blocker?.key === "scope")
+  );
   const summaryBreakdownRows = [
     {
       key: "project-total",
@@ -1516,7 +1521,7 @@ export default function Step4Finalize({
         safeMilestoneStr(
           agreement?.scope_of_work || agreement?.description || agreement?.project?.description
         )
-      ),
+      ) || serverConfirmsScope,
       goodLabel: "Scope of Work is included",
       warnLabel: "Add a complete Scope of Work before sending",
     },
