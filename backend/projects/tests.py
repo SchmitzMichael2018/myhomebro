@@ -1878,6 +1878,44 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertGreaterEqual(len(rows), 4)
         self.assertIn("Protection & demolition", [row["title"] for row in rows])
 
+    def test_service_uses_project_title_when_small_agreement_description_is_blank(self):
+        self.project.title = "Bathroom fixture repair"
+        self.project.save(update_fields=["title"])
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="",
+            project_type="Handyman",
+            project_subtype="General Repair",
+            total_cost=Decimal("225.00"),
+            milestone_count=3,
+        )
+        AgreementAIScope.objects.create(agreement=agreement, answers={})
+
+        with patch(
+            "projects.ai.agreement_milestone_writer._require_openai_client",
+            return_value=self._mock_openai_response(
+                [
+                    {
+                        "order": 1,
+                        "title": "Demo and Protection",
+                        "description": "Prepare the bathroom remodel.",
+                        "amount": 225,
+                        "start_date": "",
+                        "completion_date": "",
+                    }
+                ]
+            ),
+        ), patch(
+            "projects.ai.agreement_milestone_writer._model_name",
+            return_value="test-model",
+        ):
+            result = suggest_scope_and_milestones(agreement=agreement, notes="")
+
+        self.assertEqual(result["milestones"][0]["title"], "Fixture Repair and Installation")
+        self.assertEqual(result["milestones"][0]["amount"], 225.0)
+
     def test_service_shifts_past_ai_milestone_dates_forward_to_today(self):
         agreement = self._agreement()
         base_milestones = [

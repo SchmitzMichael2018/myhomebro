@@ -1818,12 +1818,21 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
     client = _require_openai_client()
     model = _model_name()
 
+    project = getattr(agreement, "project", None)
+    project_title = _safe_str(getattr(project, "title", ""))
+    project_description = _safe_str(getattr(project, "description", ""))
+    scope_context = (
+        _safe_str(getattr(agreement, "scope_of_work", ""))
+        or _safe_str(getattr(agreement, "description", ""))
+        or project_description
+        or project_title
+    )
     total_cost = float(getattr(agreement, "total_cost", 0) or 0)
     milestone_count = int(getattr(agreement, "milestone_count", 3) or 3)
     small_service_scope = _is_small_service_scope(
         project_type=getattr(agreement, "project_type", "") or "",
         project_subtype=getattr(agreement, "project_subtype", "") or "",
-        description=getattr(agreement, "description", "") or "",
+        description=scope_context,
         total_budget=total_cost,
     )
 
@@ -1869,10 +1878,10 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
 
     user_json = {
         "agreement_id": getattr(agreement, "id", None),
-        "project_title": getattr(getattr(agreement, "project", None), "title", "") or "",
+        "project_title": project_title,
         "project_type": getattr(agreement, "project_type", "") or "",
         "project_subtype": getattr(agreement, "project_subtype", "") or "",
-        "scope_of_work": getattr(agreement, "scope_of_work", "") or getattr(agreement, "description", "") or "",
+        "scope_of_work": scope_context,
         "original_description": getattr(agreement, "description", "") or "",
         "clarification_answers": _agreement_answers_snapshot(agreement) or dict(
             getattr(agreement, "clarification_answers", {}) or {}
@@ -1970,7 +1979,7 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
     milestones = _shape_milestone_rows_for_clarifications(
         project_type=getattr(agreement, "project_type", "") or "",
         project_subtype=getattr(agreement, "project_subtype", "") or "",
-        description=getattr(agreement, "description", "") or scope_text,
+        description=scope_context or scope_text,
         clarification_answers=answers,
         total_budget=total_cost,
         amount_mode="preserve_base",
