@@ -9,6 +9,11 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 
+def generate_project_intake_share_token() -> str:
+    """Return a token at construction time so the unique field is never blank."""
+    return secrets.token_urlsafe(32)
+
+
 class ProjectIntake(models.Model):
     PROJECT_CLASS_CHOICES = [
         ("residential", "Residential"),
@@ -202,7 +207,12 @@ class ProjectIntake(models.Model):
     ai_analysis_payload = models.JSONField(default=dict, blank=True)
 
     # Public intake send/share flow
-    share_token = models.CharField(max_length=64, blank=True, default="", unique=True)
+    share_token = models.CharField(
+        max_length=64,
+        blank=True,
+        default=generate_project_intake_share_token,
+        unique=True,
+    )
     sent_to_email = models.EmailField(blank=True, default="")
     sent_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)

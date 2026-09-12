@@ -595,6 +595,28 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(lead.public_profile, self.profile)
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_WEBSITE)
         self.assertEqual(lead.ai_analysis["source_label"], "Website")
+
+        second_response = self.client.post(
+            f"/api/projects/public/websites/{self.profile.slug}/intake/",
+            {
+                "full_name": "Taylor Website",
+                "email": "taylor@example.com",
+                "project_type": "Fixture repair",
+                "raw_description": "Replace a loose towel bar.",
+            },
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(second_response.status_code, 201)
+        tokens = list(
+            ProjectIntake.objects.filter(
+                customer_email__in=["jordan@example.com", "taylor@example.com"]
+            ).values_list("share_token", flat=True)
+        )
+        self.assertEqual(len(tokens), 2)
+        self.assertTrue(all(tokens))
+        self.assertEqual(len(set(tokens)), 2)
+
         customer = Homeowner.objects.get(created_by=self.contractor, email="jordan@example.com")
         self.assertEqual(customer.full_name, "Jordan Website")
         self.assertEqual(customer.phone_number, "555-333-4444")
