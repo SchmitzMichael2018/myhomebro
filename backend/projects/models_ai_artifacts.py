@@ -80,15 +80,27 @@ class DisputeAIArtifact(models.Model):
     @staticmethod
     def compute_digest(evidence_context: Dict[str, Any]) -> str:
         """
-        Deterministic hash of evidence context used for cache/version logic.
+        Deterministic hash of substantive evidence used for cache/version logic.
+
+        ``meta.generated_at`` describes when the snapshot was assembled, not a
+        change to the case. Including it makes every request look unique and
+        prevents an otherwise identical recommendation from using its cache.
         """
+        digest_context = evidence_context
+        if isinstance(evidence_context, dict):
+            digest_context = dict(evidence_context)
+            meta = digest_context.get("meta")
+            if isinstance(meta, dict):
+                stable_meta = dict(meta)
+                stable_meta.pop("generated_at", None)
+                digest_context["meta"] = stable_meta
         try:
             raw = json.dumps(
-                evidence_context,
+                digest_context,
                 sort_keys=True,
                 ensure_ascii=False,
                 default=str,
             )
         except Exception:
-            raw = str(evidence_context)
+            raw = str(digest_context)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()

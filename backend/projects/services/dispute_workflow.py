@@ -75,6 +75,18 @@ def dispute_has_financial_source(dispute: Dispute) -> bool:
     )
 
 
+def agreement_has_platform_escrow(dispute: Dispute) -> bool:
+    agreement = getattr(dispute, "agreement", None)
+    if agreement is None:
+        return False
+    if bool(getattr(agreement, "escrow_funded", False)):
+        return True
+    try:
+        return Decimal(str(getattr(agreement, "escrow_funded_amount", 0) or 0)) > 0
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+
+
 def source_is_hold_eligible(dispute: Dispute) -> bool:
     """Return whether the identified source is still in a platform-controlled review/payment state."""
     invoice = getattr(dispute, "payment_request", None)
@@ -186,7 +198,12 @@ def initialize_dispute_workflow(dispute: Dispute, *, now=None) -> Dispute:
     urgent, urgent_reason = detect_urgent_review(dispute)
     has_source = dispute_has_financial_source(dispute)
     payment_mode = str(getattr(dispute.agreement, "payment_mode", "escrow") or "escrow").strip().lower()
-    has_platform_hold = has_source and source_is_hold_eligible(dispute) and payment_mode != "direct"
+    has_platform_hold = (
+        has_source
+        and source_is_hold_eligible(dispute)
+        and payment_mode != "direct"
+        and agreement_has_platform_escrow(dispute)
+    )
 
     dispute.fee_amount = Decimal("0.00")
     dispute.fee_paid = True  # compatibility: participation is no longer fee-gated

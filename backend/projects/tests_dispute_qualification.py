@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from projects.models import Agreement, AgreementPaymentMode, Contractor, Homeowner, Milestone, Project
+from projects.models_ai_artifacts import DisputeAIArtifact
 from projects.models_dispute import Dispute, DisputeEscrowAllocation, DisputePaymentHold, DisputeWorkPauseRequest
 from projects.services.dispute_workflow import (
     assess_dispute_qualification,
@@ -37,6 +38,8 @@ class DisputeQualificationWorkflowTests(TestCase):
             contractor=self.contractor,
             homeowner=self.homeowner,
             description="Door project agreement",
+            escrow_funded=True,
+            escrow_funded_amount=Decimal("600.00"),
         )
         self.milestone_one = Milestone.objects.create(
             agreement=self.agreement, order=1, title="Door installation", amount=Decimal("400.00")
@@ -68,6 +71,18 @@ class DisputeQualificationWorkflowTests(TestCase):
         values.update(overrides)
         return Dispute.objects.create(**values)
 
+    def test_ai_evidence_digest_ignores_snapshot_generation_time(self):
+        first = {"meta": {"generated_at": timezone.now(), "dispute_id": 7}, "claims": [{"description": "Door rubs"}]}
+        second = {
+            "meta": {"generated_at": timezone.now() + timedelta(minutes=5), "dispute_id": 7},
+            "claims": [{"description": "Door rubs"}],
+        }
+
+        self.assertEqual(
+            DisputeAIArtifact.compute_digest(first),
+            DisputeAIArtifact.compute_digest(second),
+        )
+
     def test_complete_escrow_claim_qualifies_and_holds_only_selected_milestone(self):
         dispute = initialize_dispute_workflow(self._create_dispute())
         self.assertEqual(dispute.qualification_status, Dispute.QUALIFICATION_QUALIFIED)
@@ -92,6 +107,17 @@ class DisputeQualificationWorkflowTests(TestCase):
         self.agreement.payment_mode = AgreementPaymentMode.DIRECT
         self.agreement.save(update_fields=["payment_mode"])
         dispute = initialize_dispute_workflow(self._create_dispute())
+        self.assertFalse(dispute.escrow_frozen)
+        self.assertEqual(dispute.payment_hold.status, DisputePaymentHold.STATUS_NO_HOLD)
+
+    def test_unfunded_escrow_agreement_is_documented_without_false_hold(self):
+        self.agreement.escrow_funded = False
+        self.agreement.escrow_funded_amount = Decimal("0.00")
+        self.agreement.save(update_fields=["escrow_funded", "escrow_funded_amount"])
+
+        dispute = initialize_dispute_workflow(self._create_dispute())
+
+        self.assertEqual(dispute.qualification_status, Dispute.QUALIFICATION_QUALIFIED)
         self.assertFalse(dispute.escrow_frozen)
         self.assertEqual(dispute.payment_hold.status, DisputePaymentHold.STATUS_NO_HOLD)
 
