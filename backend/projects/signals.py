@@ -8,7 +8,7 @@ from django.db.models.signals import post_save, pre_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import Agreement, Contractor, ContractorReview, Invoice, Milestone
+from .models import Agreement, Contractor, ContractorReview, Invoice, InvoiceStatus, Milestone
 from .models_dispute import Dispute
 from .notifications import notify_invoice_created
 from .tasks import task_generate_full_agreement_pdf, task_send_invoice_notification
@@ -127,6 +127,11 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
     After a new Invoice is created, notify the homeowner.
     """
     _capture_milestone_performance_from_invoice(instance, "invoice_created" if created else "invoice_saved")
+    # Settlement invoices document money that has already been allocated. They
+    # are not payment requests and must never send a misleading "new invoice"
+    # email or SMS to the homeowner.
+    if instance.status == InvoiceStatus.SETTLED:
+        return
     if created and not getattr(instance, "_defer_customer_notification", False):
         invoice_id = instance.id
 

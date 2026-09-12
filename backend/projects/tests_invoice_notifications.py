@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner, Invoice, Project
+from projects.models import Agreement, Contractor, Homeowner, Invoice, InvoiceStatus, Project
 from projects.models_sms import SMSConsent
 from projects.notifications import notify_invoice_created
 from projects.services.sms_automation import evaluate_sms_automation
@@ -53,6 +53,19 @@ class InvoiceNotificationTests(TestCase):
 
         notify.assert_called_once()
         self.assertEqual(notify.call_args.args[0].id, invoice.id)
+
+    @override_settings(CELERY_NOTIFICATIONS_ENABLED=False)
+    @patch("projects.signals.notify_invoice_created")
+    def test_settled_invoice_does_not_send_payment_request_notification(self, notify):
+        with self.captureOnCommitCallbacks(execute=True):
+            Invoice.objects.create(
+                agreement=self.agreement,
+                amount=Decimal("200.00"),
+                status=InvoiceStatus.SETTLED,
+                escrow_released=True,
+            )
+
+        notify.assert_not_called()
 
     @override_settings(CELERY_NOTIFICATIONS_ENABLED=True)
     @patch("projects.signals.notify_invoice_created")
