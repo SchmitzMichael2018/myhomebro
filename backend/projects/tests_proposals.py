@@ -1271,7 +1271,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
         accepted.refresh_from_db()
         self.assertEqual(accepted.snapshot["pricing"]["line_items"][0]["total"], "1000.00")
 
-    def test_template_estimate_missing_lineage_creates_blocked_draft_without_guessing(self):
+    def test_contractor_entered_line_item_uses_exact_line_item_identity_for_milestone(self):
         homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=707)
         template = ProjectTemplate.objects.create(contractor=self.contractor, name="Authoritative bathroom template")
         proposal.selected_template = template
@@ -1283,14 +1283,18 @@ class ProposalWorkspaceFoundationTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         agreement = Agreement.objects.get(pk=response.data["id"])
-        self.assertFalse(agreement.milestones.exists())
+        self.assertEqual(agreement.milestones.count(), 1)
+        milestone = agreement.milestones.get()
+        source_line_item = proposal.line_items.get()
+        self.assertEqual(milestone.amount, Decimal("500.00"))
+        self.assertEqual(milestone.accepted_estimate_line_item_id, source_line_item.id)
+        self.assertEqual(milestone.accepted_estimate_source_key, f"proposal-line-item:{source_line_item.id}")
         reconciliation = response.data["accepted_estimate_basis"]["milestone_reconciliation"]
-        self.assertFalse(reconciliation["reconciles"])
+        self.assertTrue(reconciliation["reconciles"])
         self.assertEqual(reconciliation["expected_commercial_amount"], "500.00")
-        self.assertEqual(reconciliation["actual_milestone_amount"], "0.00")
-        self.assertEqual(reconciliation["difference"], "500.00")
-        self.assertEqual(reconciliation["missing_lineage_rows"][0]["description"], "Installation")
-        self.assertEqual(reconciliation["missing_lineage_rows"][0]["amount"], "500.00")
+        self.assertEqual(reconciliation["actual_milestone_amount"], "500.00")
+        self.assertEqual(reconciliation["difference"], "0.00")
+        self.assertEqual(reconciliation["missing_lineage_rows"], [])
         proposal.refresh_from_db()
         self.assertEqual(proposal.converted_agreement, agreement)
         self.assertIsNotNone(proposal.converted_at)
@@ -1298,8 +1302,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(review.decision, ProposalReviewVersion.DECISION_ACCEPTED)
 
         from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
-        with self.assertRaisesRegex(ValueError, r"Accepted commercial amount: \$500.00.*Installation \(500.00\)"):
-            assert_pricing_ready_for_agreement(agreement)
+        assert_pricing_ready_for_agreement(agreement)
 
     def test_qa_bathroom_estimate_commercial_milestones_exclude_reserve_and_reconcile(self):
         homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=708)

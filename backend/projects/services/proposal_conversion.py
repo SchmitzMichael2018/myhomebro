@@ -35,6 +35,11 @@ def _mapping_identity(row: dict) -> str:
     if row.get("source_milestone_order") and row.get("source_milestone_name"):
         normalized_name = " ".join(str(row["source_milestone_name"]).strip().lower().split())
         return f"order-name:{row['source_milestone_order']}:{normalized_name}"
+    # Contractor-entered estimates do not necessarily originate from a template.
+    # The accepted line-item id is still exact immutable provenance, so use it as
+    # the one-to-one milestone identity instead of blocking agreement conversion.
+    if row.get("proposal_line_item_id"):
+        return f"proposal-line-item:{row['proposal_line_item_id']}"
     return ""
 
 
@@ -301,7 +306,7 @@ def finalize_proposal_conversion(*, context: ProposalConversionContext, agreemen
                 accepted_estimate_amount=amount,
                 accepted_estimate_line_item_id=bucket["line_item_ids"][0] if len(bucket["line_item_ids"]) == 1 else None,
                 accepted_estimate_review_version=context.review.version,
-                accepted_estimate_source_key=row.get("source_milestone_key") or str(row.get("source_template_milestone_id")),
+                accepted_estimate_source_key=_mapping_identity(row),
                 pricing_source_note=f"Accepted Estimate v{context.review.version}",
             )
     if proposal.converted_agreement_id and proposal.converted_agreement_id != agreement.id:
