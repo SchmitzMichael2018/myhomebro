@@ -126,6 +126,12 @@ def build_dispute_recommendation_prompt(
         "- Never determine fault, liability, negligence, fraud, legal responsibility, or who wins.\n"
         "- Never instruct the platform to release funds, refund funds, split funds, or create a binding outcome.\n"
         "- Base recommendations strictly on the provided evidence context.\n"
+        "- First separate the submission into individual performance/payment claims. Preserve allegations as allegations; never restate them as proven facts.\n"
+        "- For each claim report milestone connection (direct, partial, unrelated), evidence status, materiality, cure availability, missing information, and recommended hold action.\n"
+        "- A concern may be documented even when it does not qualify for a continued payment hold. Do not treat payment-hold qualification as a decision on the underlying merits or warranty rights.\n"
+        "- Flag credible safety danger, active property damage, unauthorized payment, falsified completion, abandonment, threats, harassment, serious misconduct, or legal restrictions for urgent human review. Do not make legal or criminal findings.\n"
+        "- Ignore discriminatory or identity-based assertions when analyzing work performance, while preserving that a conduct-review flag may be appropriate.\n"
+        "- Never infer that the entire project must stop from a milestone payment dispute. Work-pause requests are a separate human workflow.\n"
         "- Follow this evidence-first sequence: customer complaint and requested outcome, signed agreement terms and scope, area-specific photos or video, then the contractor's current statement.\n"
         "- Treat a complaint as specific only when it identifies the affected area or item, describes the observed condition, and states the requested correction.\n"
         "- If the complaint is not specific enough, make the first recommendation a request for the missing location, condition, and requested correction details.\n"
@@ -160,6 +166,11 @@ def build_dispute_recommendation_prompt(
             "title": getattr(dispute, "title", None) or "Dispute",
             "summary": getattr(dispute, "summary", None),
             "requested_outcome": getattr(dispute, "requested_outcome", None),
+            "expected_result": getattr(dispute, "expected_result", None),
+            "requested_resolution": getattr(dispute, "requested_resolution", None),
+            "qualification_status": getattr(dispute, "qualification_status", None),
+            "missing_information": getattr(dispute, "missing_information", None),
+            "urgent_review": getattr(dispute, "urgent_review", None),
             "amount_in_dispute": getattr(dispute, "amount_in_dispute", None),
             "homeowner_position": getattr(dispute, "homeowner_position", None),
             "contractor_position": getattr(dispute, "contractor_position", None),
@@ -173,6 +184,37 @@ def build_dispute_recommendation_prompt(
             "type": "object",
             "additionalProperties": False,
             "properties": {
+                "qualification_assessment": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "claims": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "claim": {"type": "string"},
+                                    "milestone_connection": {"type": "string", "enum": ["direct", "partial", "unrelated"]},
+                                    "qualification_result": {"type": "string", "enum": ["qualified", "insufficient_information", "unqualified", "urgent_human_review"]},
+                                    "evidence_status": {"type": "string", "enum": ["sufficient", "incomplete", "conflicting", "unavailable", "not_reasonably_applicable"]},
+                                    "missing_information": {"type": "array", "items": {"type": "string"}},
+                                    "materiality": {"type": "string", "enum": ["minor", "material", "potentially_critical"]},
+                                    "cure_availability": {"type": "string"},
+                                    "neutral_expertise_may_be_needed": {"type": "boolean"},
+                                    "recommended_hold_action": {"type": "string", "enum": ["maintain", "request_information", "release", "escalate"]},
+                                    "confidence": {"type": "number"},
+                                    "neutral_explanation": {"type": "string"},
+                                },
+                                "required": ["claim", "milestone_connection", "qualification_result", "evidence_status", "missing_information", "materiality", "cure_availability", "neutral_expertise_may_be_needed", "recommended_hold_action", "confidence", "neutral_explanation"],
+                            },
+                        },
+                        "urgent_human_review": {"type": "boolean"},
+                        "conduct_review_flag": {"type": "boolean"},
+                        "advisory_note": {"type": "string"},
+                    },
+                    "required": ["claims", "urgent_human_review", "conduct_review_flag", "advisory_note"],
+                },
                 "overview": {
                     "type": "object",
                     "additionalProperties": False,
@@ -334,6 +376,7 @@ def build_dispute_recommendation_prompt(
                 },
             },
             "required": [
+                "qualification_assessment",
                 "overview",
                 "recommendation",
                 "contractor_solution_review",

@@ -53,7 +53,7 @@ def _milestone_is_rework(m: Milestone) -> bool:
 
 def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
     """
-    Read-only, deterministic evidence snapshot for AI / mediation.
+    Read-only, deterministic evidence snapshot for AI-assisted dispute review.
 
     Rules:
     - NO side effects
@@ -193,9 +193,17 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
         "contractor_response": _party_statement_text(getattr(dispute, "contractor_response", None)),
         "homeowner_response": _customer_complaint_text(getattr(dispute, "homeowner_response", None)),
         "admin_notes": getattr(dispute, "admin_notes", None),
-        "fee_paid": getattr(dispute, "fee_paid", None),
-        "fee_paid_at": _safe_dt(getattr(dispute, "fee_paid_at", None)),
+        "expected_result": getattr(dispute, "expected_result", None),
+        "requested_resolution": getattr(dispute, "requested_resolution", None),
+        "evidence_unavailable_reason": getattr(dispute, "evidence_unavailable_reason", None),
+        "contractor_notified": getattr(dispute, "contractor_notified", None),
+        "prior_notice_explanation": getattr(dispute, "prior_notice_explanation", None),
+        "qualification_status": getattr(dispute, "qualification_status", None),
+        "missing_information": getattr(dispute, "missing_information", None),
+        "urgent_review": getattr(dispute, "urgent_review", None),
+        "urgent_reason": getattr(dispute, "urgent_reason", None),
         "escrow_frozen": getattr(dispute, "escrow_frozen", None),
+        "payment_hold": None,
         "response_due_at": _safe_dt(getattr(dispute, "response_due_at", None)),
         "proposal_due_at": _safe_dt(getattr(dispute, "proposal_due_at", None)),
         "created_at": _safe_dt(getattr(dispute, "created_at", None)),
@@ -203,6 +211,39 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
         "resolved_at": _safe_dt(getattr(dispute, "resolved_at", None)),
         "last_activity_at": _safe_dt(getattr(dispute, "last_activity_at", None)),
     }
+
+    try:
+        hold = dispute.payment_hold
+        dispute_data["payment_hold"] = {
+            "status": hold.status,
+            "amount_cents": hold.amount_cents,
+            "currency": hold.currency,
+            "milestone_id": hold.milestone_id,
+            "invoice_id": hold.invoice_id,
+            "draw_request_id": hold.draw_request_id,
+            "expense_id": hold.expense_id,
+            "release_due_at": _safe_dt(hold.release_due_at),
+        }
+    except Exception:
+        pass
+
+    claims_data = []
+    try:
+        for claim in dispute.claims.all().order_by("sequence", "id"):
+            claims_data.append({
+                "id": claim.id,
+                "sequence": claim.sequence,
+                "description": claim.description,
+                "expected_result": claim.expected_result,
+                "requested_remedy": claim.requested_remedy,
+                "milestone_connection": claim.milestone_connection,
+                "evidence_status": claim.evidence_status,
+                "missing_information": claim.missing_information,
+                "contractor_response": claim.contractor_response,
+                "status": claim.status,
+            })
+    except Exception:
+        pass
 
     return {
         "meta": {
@@ -216,4 +257,5 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
         "dispute": dispute_data,
         "evidence": evidence_data,
         "party_statements": statements_data,
+        "claims": claims_data,
     }

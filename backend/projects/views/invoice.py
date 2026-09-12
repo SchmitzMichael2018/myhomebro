@@ -29,6 +29,7 @@ from projects.services.agreement_completion import recompute_and_apply_agreement
 
 # ✅ passive pricing capture
 from projects.services.pricing_observations import record_pricing_observation_for_invoice
+from projects.services.dispute_workflow import invoice_has_active_dispute_hold
 
 logger = logging.getLogger(__name__)
 
@@ -286,19 +287,6 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
     return {"MessageID": "", "Message": provider_message}
 
 
-def _agreement_has_active_dispute(agreement) -> bool:
-    """
-    HARD LOCK:
-    Block submit/resend while any active dispute exists on the agreement.
-    """
-    if not agreement:
-        return False
-    try:
-        return agreement.disputes.filter(status__in=("initiated", "open", "under_review")).exists()
-    except Exception:
-        return False
-
-
 def _recompute_completion_for_invoice(invoice: Invoice) -> None:
     """
     Safe helper. Only marks agreement completed if truly eligible.
@@ -388,9 +376,9 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can create a Direct Pay link for this invoice.")
 
-        if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
+        if invoice_has_active_dispute_hold(invoice):
             return Response(
-                {"detail": "This agreement has an active dispute. Direct Pay link creation is paused."},
+                {"detail": "This invoice has an active source-specific dispute hold. Direct Pay link creation is paused."},
                 status=400,
             )
 
@@ -432,8 +420,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can submit invoice notifications.")
 
-        if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
-            return Response({"detail": "This agreement has an active dispute. Invoice submission is paused."}, status=400)
+        if invoice_has_active_dispute_hold(invoice):
+            return Response({"detail": "This invoice or milestone has an active dispute hold. Invoice submission is paused."}, status=400)
 
         if getattr(invoice, "escrow_released", False) or str(invoice.status or "").lower() == "paid":
             return Response({"detail": "This invoice is already paid/released and cannot be re-submitted."}, status=400)
@@ -487,8 +475,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can resend invoice notifications.")
 
-        if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
-            return Response({"detail": "This agreement has an active dispute. Invoice resend is paused."}, status=400)
+        if invoice_has_active_dispute_hold(invoice):
+            return Response({"detail": "This invoice or milestone has an active dispute hold. Invoice resend is paused."}, status=400)
 
         if getattr(invoice, "escrow_released", False) or str(invoice.status or "").lower() == "paid":
             return Response({"detail": "This invoice is already paid/released and cannot be resent."}, status=400)

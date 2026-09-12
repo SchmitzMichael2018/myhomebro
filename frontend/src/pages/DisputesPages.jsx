@@ -114,8 +114,26 @@ const hasAnyResponse = (d) => {
 };
 
 const canRespond = (d) => {
-  return Boolean(d?.fee_paid) && canRespondToDispute(d?.status);
+  return canRespondToDispute(d?.status);
 };
+
+const isQualified = (d) => ["qualified"].includes(String(d?.qualification_status || "qualified").toLowerCase());
+
+const qualificationLabel = (d) => ({
+  pending: "Qualification review",
+  information_needed: "Customer information needed",
+  qualified: "Qualified dispute",
+  not_qualified: "Payment hold closed",
+  urgent_review: "Urgent human review",
+}[String(d?.qualification_status || "qualified").toLowerCase()] || "Qualification review");
+
+const holdLabel = (d) => ({
+  temporary: "Temporary administrative hold",
+  continued: "Qualified payment hold",
+  expiration_pending: "Hold expiration pending",
+  released: "Payment hold closed",
+  no_hold: "Documentation only — no platform hold",
+}[String(d?.payment_hold?.status || "").toLowerCase()] || (d?.escrow_frozen ? "Payment hold active" : "No active hold"));
 
 // ✅ UX refinement: cancel only if early AND nobody has responded yet
 const canCancel = (d) => {
@@ -137,7 +155,8 @@ const nextStepLabel = (d, isAdmin) => {
   if (resolution === "rework_required") return "Rework required";
   if (isDisputeTerminal(s)) return "Resolved";
 
-  if (!d?.fee_paid) return "Waiting on fee";
+  if (["pending", "information_needed"].includes(String(d?.qualification_status || "").toLowerCase())) return qualificationLabel(d);
+  if (String(d?.qualification_status || "").toLowerCase() === "urgent_review") return "Urgent human review";
 
   const pendingProposal = Array.isArray(d?.resolution_proposals)
     ? d.resolution_proposals.some((proposal) =>
@@ -265,7 +284,7 @@ function disputeBoardKey(d, isAdmin = false) {
   if (resolution === "rework_required") return "rework_required";
   if (status === "canceled") return "canceled";
   if (isDisputeTerminal(status)) return "resolved";
-  if (!d?.fee_paid) return "waiting_fee";
+  if (["pending", "information_needed"].includes(String(d?.qualification_status || "").toLowerCase())) return "awaiting_evidence";
   if (!hasEvidence(d)) return "awaiting_evidence";
   if (isAdmin && (status === "under_review" || (hasHome && hasCont))) return "awaiting_admin_review";
   if (!hasCont) return "waiting_contractor";
@@ -364,11 +383,15 @@ function getActiveDeadline(dispute) {
   const status = String(dispute?.status || "").toLowerCase();
   const hasProposal = Boolean(dispute?.proposal) || Boolean(dispute?.proposal_sent_at);
 
+  if (["pending", "information_needed"].includes(String(dispute?.qualification_status || "").toLowerCase()) && dispute?.qualification_due_at) {
+    return { type: "qualification", due_at: dispute.qualification_due_at };
+  }
+
   if (hasProposal && dispute?.proposal_due_at) {
     return { type: "proposal", due_at: dispute.proposal_due_at };
   }
 
-  if (status === "open" && dispute?.fee_paid && dispute?.response_due_at) {
+  if (status === "open" && dispute?.response_due_at) {
     return { type: "response", due_at: dispute.response_due_at };
   }
 
@@ -402,7 +425,7 @@ function DeadlineBadge({ dispute, now }) {
   const t = timeRemainingLabel(active.due_at, now);
   if (!t) return null;
 
-  const label = active.type === "proposal" ? "Decision" : "Response";
+  const label = active.type === "proposal" ? "Decision" : active.type === "qualification" ? "Qualification" : "Response";
 
   if (t.isOverdue) {
     return (
@@ -427,7 +450,7 @@ function DeadlineLine({ dispute, now }) {
   const t = timeRemainingLabel(active.due_at, now);
   if (!t) return null;
 
-  const label = active.type === "proposal" ? "Proposal decision due" : "Response due";
+  const label = active.type === "proposal" ? "Proposal decision due" : active.type === "qualification" ? "Qualification information due" : "Response due";
   return (
     <div className="text-sm text-slate-700">
       <span className="font-extrabold">{label}:</span>{" "}
@@ -550,8 +573,8 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
   if (!open || !dispute) return null;
 
   const submit = async () => {
-    if (!dispute?.fee_paid) {
-      toast.error("Fee must be paid before proposing a resolution.");
+    if (!isQualified(dispute)) {
+      toast.error("Complete dispute qualification before proposing a resolution.");
       return;
     }
 
@@ -856,9 +879,7 @@ function buildResolutionTimeline(dispute, proposal, attachments) {
     rows.push({ at, title, detail, source });
   };
   add(dispute?.created_at, "Resolution case opened", customerFacingDisputeDescription(dispute?.description) || dispute?.reason, "Case record");
-  if (dispute?.fee_paid_at || dispute?.fee_paid) {
-    add(dispute?.fee_paid_at || dispute?.updated_at, "Dispute fee paid and hold reviewed", dispute?.escrow_frozen ? "Escrow hold active where applicable." : "No active escrow hold recorded.", "Payment hold");
-  }
+  if (dispute?.qualification_started_at) add(dispute.qualification_started_at, "Temporary administrative hold reviewed", holdLabel(dispute), "Payment hold");
   if (dispute?.homeowner_response) add(dispute?.responded_at || dispute?.updated_at, "Customer statement submitted", dispute.homeowner_response, "Party statement");
   if (dispute?.contractor_response && !proposal) add(dispute?.responded_at || dispute?.updated_at, "Contractor statement submitted", dispute.contractor_response, "Party statement");
   if (proposal) add(proposal.proposed_at || dispute?.updated_at, "Resolution proposal submitted", proposal.notes || proposal.proposal_type, "Proposal");
@@ -1029,8 +1050,8 @@ function PaymentImpact({ dispute }) {
   return (
     <WorkspaceSection title="Payment Impact" eyebrow="No Automatic Money Movement" testId="resolution-workspace-payment-impact">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <InfoTile label="Escrow/payment status" value={dispute.escrow_frozen ? "Held or frozen where applicable" : "No active hold"} tone={dispute.escrow_frozen ? "warning" : "default"} />
-        <InfoTile label="Fee" value={dispute.fee_paid ? "Paid" : money(dispute.fee_amount || 0)} />
+        <InfoTile label="Payment status" value={holdLabel(dispute)} tone={dispute.escrow_frozen ? "warning" : "default"} />
+        <InfoTile label="Qualification" value={qualificationLabel(dispute)} />
         <InfoTile label="Approved amount" value={dispute.approved_amount != null ? money(dispute.approved_amount) : "Not decided"} />
         <InfoTile label="Disputed remainder" value={dispute.disputed_remainder != null ? money(dispute.disputed_remainder) : "Not decided"} />
         <InfoTile label="Financial outcome" value={dispute.financial_disposition ? labelFor(dispute.financial_disposition, FINANCIAL_LABELS) : "Manual review pending"} />
@@ -1053,7 +1074,7 @@ function HumanDecisionPanel({ dispute, isAdmin, isContractor, isClosedCase, onOp
         <InfoTile label="Reject / counter" value="Submit a party statement or proposal" />
         <InfoTile label="Request evidence" value="Upload evidence and document the request in response notes" />
         <InfoTile label="Request inspection" value="Record in proposal or admin notes" />
-        <InfoTile label="Request mediation" value="Escalate to admin review" />
+        <InfoTile label="Outside assistance" value="Arrange independently, then upload the written directive" />
         <InfoTile label="Modify resolution" value="Human users edit proposal/admin resolution before saving" />
       </div>
       {(proposals.length || agreements.length || documents.length) ? (
@@ -1077,13 +1098,148 @@ function HumanDecisionPanel({ dispute, isAdmin, isContractor, isClosedCase, onOp
         </div>
       ) : null}
       <div className="mt-4 flex flex-wrap justify-end gap-2">
-        {isContractor && !isClosedCase ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">Prepare Resolution Proposal</button> : null}
+        {isContractor && !isClosedCase ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!isQualified(dispute)} type="button">Prepare Resolution Proposal</button> : null}
         {!isClosedCase ? <button className="mhb-btn" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">{isContractor ? "Send Customer Message" : "Add Customer Statement"}</button> : null}
         {isAdmin && !isClosedCase ? <button className="mhb-btn primary" onClick={onOpenResolve} disabled={!canResolveAdmin(dispute)} type="button">Record Human Resolution</button> : null}
         <button className="mhb-btn primary" onClick={onClose} type="button">Close Workspace</button>
       </div>
     </WorkspaceSection>
   );
+}
+
+function WorkPausePanel({ dispute, onChanged }) {
+  const [reasonType, setReasonType] = useState("voluntary");
+  const [explanation, setExplanation] = useState("");
+  const [scope, setScope] = useState("");
+  const [busy, setBusy] = useState(false);
+  const pauses = Array.isArray(dispute?.work_pause_requests) ? dispute.work_pause_requests : [];
+  const submit = async () => {
+    if (!explanation.trim()) return toast.error("Explain why work should pause.");
+    setBusy(true);
+    try {
+      await api.post(`/projects/disputes/${dispute.id}/work-pauses/`, { reason_type: reasonType, explanation, scope });
+      toast.success("Work-pause request recorded. The payment hold was not changed.");
+      setExplanation(""); setScope(""); onChanged?.();
+    } catch (error) { toast.error(error?.response?.data?.detail || "Could not request a work pause."); }
+    finally { setBusy(false); }
+  };
+  return <WorkspaceSection title="Work Pause" eyebrow="Separate from payment hold">
+    <p className="text-sm text-slate-600">A payment dispute does not automatically stop the project. Use this only when work or site access should pause for safety, mutual agreement, an external process, or termination review.</p>
+    {pauses.length ? <div className="mt-3 grid gap-2">{pauses.map((pause) => <div key={pause.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"><div className="flex justify-between gap-2"><strong>{String(pause.reason_type).replaceAll("_", " ")}</strong><Badge tone={pause.status === "accepted" ? "warn" : "default"}>{pause.status}</Badge></div><div className="mt-1">{pause.explanation}</div>{pause.scope ? <div className="mt-1 text-slate-500">Scope: {pause.scope}</div> : null}</div>)}</div> : null}
+    {!isClosed(dispute) ? <div className="mt-4 grid gap-2 md:grid-cols-3"><select value={reasonType} onChange={(event) => setReasonType(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2"><option value="voluntary">Voluntary pause</option><option value="safety">Safety or hostile conditions</option><option value="site_access">Site access unavailable</option><option value="external_process">External resolution process</option><option value="termination_review">Termination review</option></select><input value={scope} onChange={(event) => setScope(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Work or area to pause" /><input value={explanation} onChange={(event) => setExplanation(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Reason and relevant facts" /><button className="mhb-btn md:col-start-3" type="button" disabled={busy} onClick={submit}>{busy ? "Submitting…" : "Request Work Pause"}</button></div> : null}
+  </WorkspaceSection>;
+}
+
+function QualificationAdminControls({ dispute, onChanged }) {
+  const [decision, setDecision] = useState("qualified");
+  const [reason, setReason] = useState("");
+  const [reactivate, setReactivate] = useState(false);
+  const [extensionReason, setExtensionReason] = useState("");
+  const [days, setDays] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const override = async () => {
+    if (!reason.trim()) return toast.error("A human override reason is required.");
+    setBusy(true);
+    try { await api.post(`/projects/disputes/${dispute.id}/qualification-override/`, { qualification_status: decision, reason, reactivate_source_hold: reactivate }); toast.success("Human qualification decision recorded in the audit trail."); setReason(""); onChanged?.(); }
+    catch (error) { toast.error(error?.response?.data?.detail || "Could not record the override."); }
+    finally { setBusy(false); }
+  };
+  const extend = async () => {
+    if (!extensionReason.trim()) return toast.error("Explain why the extension is justified.");
+    setBusy(true);
+    try { await api.post(`/projects/disputes/${dispute.id}/qualification-extension/`, { reason: extensionReason, business_days: Number(days) }); toast.success("Qualification deadline extended and audited."); setExtensionReason(""); onChanged?.(); }
+    catch (error) { toast.error(error?.response?.data?.detail || "Could not extend the deadline."); }
+    finally { setBusy(false); }
+  };
+  return <div className="mt-4 rounded-xl border border-slate-300 bg-slate-100 p-4">
+    <div className="text-sm font-extrabold text-slate-950">Staff qualification controls</div>
+    <p className="mt-1 text-xs text-slate-600">Every exception requires a reason. Reopening a released source hold is a separate explicit choice and never moves funds.</p>
+    <div className="mt-3 grid gap-2 lg:grid-cols-[180px_1fr_auto]">
+      <select value={decision} onChange={(event) => setDecision(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="qualified">Qualified</option><option value="not_qualified">Not qualified</option><option value="urgent_review">Urgent human review</option></select>
+      <input value={reason} onChange={(event) => setReason(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder="Required reason and supporting facts" />
+      <button type="button" disabled={busy} onClick={override} className="mhb-btn primary">Record Override</button>
+      <label className="flex items-center gap-2 text-xs font-semibold text-rose-800 lg:col-span-3"><input type="checkbox" checked={reactivate} onChange={(event) => setReactivate(event.target.checked)} /> Explicitly reactivate this source hold if it previously expired</label>
+    </div>
+    <div className="mt-4 grid gap-2 border-t border-slate-300 pt-4 lg:grid-cols-[120px_1fr_auto]">
+      <input type="number" min="1" max="10" value={days} onChange={(event) => setDays(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2" aria-label="Extension business days" />
+      <input value={extensionReason} onChange={(event) => setExtensionReason(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder="Reason for extension" />
+      <button type="button" disabled={busy} onClick={extend} className="mhb-btn">Extend Business Days</button>
+    </div>
+  </div>;
+}
+
+function EscrowAllocationPanel({ dispute, isAdmin, onChanged }) {
+  const holdCents = Number(dispute?.payment_hold?.amount_cents || 0);
+  const [contractor, setContractor] = useState("");
+  const [homeowner, setHomeowner] = useState("");
+  const [explanation, setExplanation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const allocations = Array.isArray(dispute?.escrow_allocations) ? dispute.escrow_allocations : [];
+  const propose = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/projects/disputes/${dispute.id}/escrow-allocations/`, { contractor_amount_cents: Math.round(Number(contractor || 0) * 100), homeowner_amount_cents: Math.round(Number(homeowner || 0) * 100), explanation });
+      toast.success("Allocation proposed for explicit authorization."); onChanged?.();
+    } catch (error) { toast.error(error?.response?.data?.detail || "Could not propose allocation."); }
+    finally { setBusy(false); }
+  };
+  const authorize = async (id) => { try { await api.post(`/projects/disputes/${dispute.id}/escrow-allocations/${id}/authorize/`, { authorization: "authorize", attestation: true }); toast.success("Your authorization was recorded."); onChanged?.(); } catch (error) { toast.error(error?.response?.data?.detail || "Could not authorize allocation."); } };
+  const confirm = async (id) => { try { await api.post(`/projects/disputes/${dispute.id}/escrow-allocations/${id}/confirm/`, {}); toast.success("Allocation validated. No funds were moved."); onChanged?.(); } catch (error) { toast.error(error?.response?.data?.detail || "Could not validate allocation."); } };
+  const execute = async (id) => {
+    if (!window.confirm("Execute this authorized exact-dollar allocation? This may refund the customer and transfer the contractor award through Stripe.")) return;
+    try { await api.post(`/projects/disputes/${dispute.id}/escrow-allocations/${id}/execute/`, {}); toast.success("Authorized allocation executed."); onChanged?.(); }
+    catch (error) { toast.error(error?.response?.data?.detail || "Could not execute allocation."); }
+  };
+  if (!holdCents && !allocations.length) return null;
+  return <WorkspaceSection title="Escrow Allocation" eyebrow="Explicit financial instructions" tone="warning">
+    <p className="text-sm text-slate-700">Held source: {money(holdCents / 100)}. A split must total exactly this amount and requires both parties’ authorization or a case-linked external directive, followed by staff validation. Validation does not move money.</p>
+    {allocations.map((row) => <div key={row.id} className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><div className="flex flex-wrap justify-between gap-2"><strong>{money(row.contractor_amount_cents / 100)} contractor / {money(row.homeowner_amount_cents / 100)} homeowner</strong><Badge tone={["ready_for_execution", "executed"].includes(row.status) ? "good" : "warn"}>{String(row.status).replaceAll("_", " ")}</Badge></div><div className="mt-1">{row.explanation}</div>{row.execution_error ? <div className="mt-2 rounded-lg border border-rose-300 bg-rose-50 p-2 text-rose-900">Retryable execution issue: {row.execution_error}</div> : null}<div className="mt-2 flex flex-wrap gap-2">{!row.contractor_authorized_at && !isAdmin ? <button className="mhb-btn" type="button" onClick={() => authorize(row.id)}>Authorize Contractor Allocation</button> : null}{isAdmin && row.status === "authorized" ? <button className="mhb-btn primary" type="button" onClick={() => confirm(row.id)}>Validate for Execution</button> : null}{isAdmin && row.status === "ready_for_execution" ? <button className="mhb-btn primary" type="button" onClick={() => execute(row.id)}>Execute Authorized Allocation</button> : null}</div></div>)}
+    {!isClosed(dispute) ? <div className="mt-4 grid gap-2 md:grid-cols-3"><input type="number" min="0" step="0.01" value={contractor} onChange={(event) => setContractor(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Contractor dollars" /><input type="number" min="0" step="0.01" value={homeowner} onChange={(event) => setHomeowner(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Homeowner dollars" /><input value={explanation} onChange={(event) => setExplanation(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Basis for proposed allocation" /><button className="mhb-btn md:col-start-3" type="button" disabled={busy} onClick={propose}>{busy ? "Submitting…" : "Propose Allocation"}</button></div> : null}
+  </WorkspaceSection>;
+}
+
+function ExternalDirectivePanel({ dispute, onChanged }) {
+  const [file, setFile] = useState(null);
+  const [documentType, setDocumentType] = useState("external_decision");
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const upload = async () => {
+    if (!file) return toast.error("Choose the written directive or inspection document.");
+    const form = new FormData(); form.append("file", file); form.append("document_type", documentType); form.append("title", title || file.name);
+    setBusy(true);
+    try { await api.post(`/projects/disputes/${dispute.id}/external-documents/`, form); toast.success("External document added to the case record."); setFile(null); setTitle(""); onChanged?.(); }
+    catch (error) { toast.error(error?.response?.data?.detail || "Could not upload the external document."); }
+    finally { setBusy(false); }
+  };
+  return <WorkspaceSection title="Outside Documentation" eyebrow="Party-arranged process">
+    <p className="text-sm text-slate-600">MyHomeBro does not select or supervise an outside inspector, mediator, arbitrator, court, or attorney. Upload their written directive here so the authorized payment instructions can be validated against this dispute.</p>
+    {!isClosed(dispute) ? <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2"><option value="external_decision">Outside decision or order</option><option value="mutual_instructions">Mutual written instructions</option><option value="inspection_report">Inspection report</option><option value="other">Other record</option></select><input value={title} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Document title" /><input type="file" accept="application/pdf,image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" /><button type="button" className="mhb-btn" disabled={busy || !file} onClick={upload}>{busy ? "Uploading…" : "Add to Case Record"}</button></div> : null}
+  </WorkspaceSection>;
+}
+
+function ClaimResponseInline({ dispute, claim, enabled, onChanged }) {
+  const [position, setPosition] = useState("propose_cure");
+  const [response, setResponse] = useState("");
+  const [accessRequired, setAccessRequired] = useState(false);
+  const [cureAction, setCureAction] = useState("");
+  const [cureDeadline, setCureDeadline] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!enabled) return claim.contractor_response ? <div className="mt-2 text-sm"><b>Contractor response:</b> {claim.contractor_response}</div> : null;
+  const submit = async () => {
+    if (!response.trim()) return toast.error("Add a response to this claim.");
+    setBusy(true);
+    try {
+      await api.post(`/projects/disputes/${dispute.id}/claims/${claim.id}/respond/`, {
+        contractor_position: position,
+        response,
+        access_required: accessRequired,
+        cure_proposal: cureAction.trim() ? { action: cureAction.trim(), target_date: cureDeadline || null } : {},
+      });
+      toast.success("Claim response recorded."); setResponse(""); onChanged?.();
+    } catch (error) { toast.error(error?.response?.data?.detail || "Could not save the claim response."); }
+    finally { setBusy(false); }
+  };
+  return <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3 md:grid-cols-[220px_1fr_auto]"><select value={position} onChange={(event) => setPosition(event.target.value)} className="rounded-lg border border-slate-300 px-2 py-2 text-sm"><option value="accept_responsibility">Accept responsibility</option><option value="dispute_allegation">Dispute allegation</option><option value="request_inspection">Request inspection</option><option value="propose_cure">Propose cure</option></select><input value={response} onChange={(event) => setResponse(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Respond to this specific claim" /><button type="button" className="mhb-btn" disabled={busy} onClick={submit}>{busy ? "Saving…" : "Save Response"}</button><label className="flex items-center gap-2 text-xs font-semibold text-slate-600"><input type="checkbox" checked={accessRequired} onChange={(event) => setAccessRequired(event.target.checked)} /> Site access is needed</label>{["propose_cure", "request_inspection"].includes(position) ? <><input value={cureAction} onChange={(event) => setCureAction(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Inspection or cure action" /><input type="date" value={cureDeadline} onChange={(event) => setCureDeadline(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" /></> : null}</div>;
 }
 
 function DetailsModal({
@@ -1098,6 +1254,7 @@ function DetailsModal({
   onOpenProposal,
   now,
   aiEnabled,
+  onRefresh,
 }) {
   if (!open || !dispute) return null;
 
@@ -1129,7 +1286,7 @@ function DetailsModal({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {isContractor && !isClosed(dispute) ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">Prepare Resolution Proposal</button> : null}
+            {isContractor && !isClosed(dispute) ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!isQualified(dispute)} type="button">Prepare Resolution Proposal</button> : null}
             {!isClosed(dispute) ? <button className="mhb-btn" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">Send Customer Message</button> : null}
             <button className="mhb-btn primary" onClick={onClose} type="button">Back to Cases</button>
           </div>
@@ -1162,6 +1319,20 @@ function DetailsModal({
             <InfoTile label="Amount held" value={dispute.escrow_frozen ? "Escrow hold active" : "No active hold"} tone={dispute.escrow_frozen ? "warning" : "default"} />
           </div>
         </div>
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-xs font-extrabold uppercase tracking-wide text-blue-700">Payment-hold qualification</div><div className="mt-1 text-lg font-extrabold">{qualificationLabel(dispute)}</div></div><Badge tone={dispute.qualification_status === "qualified" ? "good" : dispute.urgent_review ? "danger" : "warn"}>{holdLabel(dispute)}</Badge></div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <InfoTile label="Expected agreement result" value={dispute.expected_result || "Not supplied"} />
+            <InfoTile label="Requested correction" value={dispute.requested_resolution || "Not supplied"} />
+            <InfoTile label="Contractor notified" value={dispute.contractor_notified === true ? "Yes" : dispute.contractor_notified === false ? "No" : "Not answered"} />
+            <InfoTile label="Qualification deadline" value={dispute.qualification_due_at ? new Date(dispute.qualification_due_at).toLocaleString() : "Not applicable"} />
+          </div>
+          {Array.isArray(dispute.missing_information) && dispute.missing_information.length ? <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Information still needed</strong><ul className="mt-1 list-disc pl-5">{dispute.missing_information.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+          {dispute.urgent_reason ? <div className="mt-3 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm font-semibold text-rose-950">Urgent human review: {dispute.urgent_reason}</div> : null}
+          <p className="mt-3 text-xs leading-5 text-blue-800">Qualification controls only whether the identified payment source remains held. It is not a finding of fault and does not decide separate warranty rights.</p>
+        </div>
+          {Array.isArray(dispute.claims) && dispute.claims.length ? <div className="mt-4"><div className="text-sm font-extrabold text-slate-950">Structured claims</div><div className="mt-2 grid gap-2">{dispute.claims.map((claim) => <div key={claim.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap justify-between gap-2"><strong>Claim {claim.sequence}: {claim.description}</strong><Badge tone={claim.status === "qualified" ? "good" : "warn"}>{String(claim.status || "pending").replaceAll("_", " ")}</Badge></div><div className="mt-2 grid gap-2 text-sm md:grid-cols-2"><div><b>Expected:</b> {claim.expected_result || "Not supplied"}</div><div><b>Requested:</b> {claim.requested_remedy || "Not supplied"}</div></div><ClaimResponseInline dispute={dispute} claim={claim} enabled={isContractor && isQualified(dispute) && !isClosed(dispute)} onChanged={onRefresh} /></div>)}</div></div> : null}
+          {isAdmin && !isClosed(dispute) ? <QualificationAdminControls dispute={dispute} onChanged={onRefresh} /> : null}
       </section>
 
       <section id="resolution-record" className="scroll-mt-52 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1207,6 +1378,9 @@ function DetailsModal({
           <PaymentImpact dispute={dispute} />
         </div>
       </details>
+      <WorkPausePanel dispute={dispute} onChanged={onRefresh} />
+      <ExternalDirectivePanel dispute={dispute} onChanged={onRefresh} />
+      <EscrowAllocationPanel dispute={dispute} isAdmin={isAdmin} onChanged={onRefresh} />
       <div className="hidden" aria-hidden="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={toneFor(dispute.status)}>{statusText || "—"}</Badge>
@@ -1253,7 +1427,7 @@ function DetailsModal({
       <section className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><div className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-700">Step 5</div><h3 className="mt-1 text-xl font-extrabold text-slate-950">Proposed Resolution</h3></div>
-          {isContractor && !isClosed(dispute) ? <button className="mhb-btn primary" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">{proposal ? "Update Resolution Proposal" : "Prepare Resolution Proposal"}</button> : null}
+          {isContractor && !isClosed(dispute) ? <button className="mhb-btn primary" onClick={onOpenProposal} disabled={!isQualified(dispute)} type="button">{proposal ? "Update Resolution Proposal" : "Prepare Resolution Proposal"}</button> : null}
         </div>
         <div className="mt-4">{proposal ? <ProposalCard proposal={proposal} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">No resolution has been proposed yet. Use the customer request, supporting record, contractor response, and AI guidance to prepare one.</div>}</div>
       </section>
@@ -1641,6 +1815,16 @@ export default function DisputesPages() {
     if (!supportsDisputesApi) await fetchFallback();
   };
 
+  const refreshActiveDispute = async () => {
+    if (!activeDispute?.id) return refreshAll();
+    try {
+      const { data } = await api.get(`/projects/disputes/${activeDispute.id}/workspace/`);
+      setActiveDispute(data);
+    } finally {
+      await refreshAll();
+    }
+  };
+
   useEffect(() => {
     (async () => {
       await fetchNewApi();
@@ -1665,16 +1849,6 @@ export default function DisputesPages() {
       refreshAll();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Cancel failed.");
-    }
-  };
-
-  const payFee = async (d) => {
-    try {
-      await api.post(`/projects/disputes/${d.id}/pay-fee/`);
-      toast.success("Fee paid. Escrow hold active.");
-      refreshAll();
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Payment failed.");
     }
   };
 
@@ -1792,14 +1966,6 @@ export default function DisputesPages() {
 
     return (
       <div className="flex flex-wrap gap-2 items-center">
-        {!isClosed(d) ? (
-          !d.fee_paid ? (
-            <button className="mhb-btn" onClick={() => payFee(d)} title="Pay dispute fee and place an escrow hold where applicable" type="button">
-              Pay Fee
-            </button>
-          ) : null
-        ) : null}
-
         <button
           className="mhb-btn"
           onClick={() => {
@@ -1831,7 +1997,7 @@ export default function DisputesPages() {
               setActiveDispute(d);
               setProposalOpen(true);
             }}
-            disabled={!d.fee_paid || isClosed(d)}
+            disabled={!isQualified(d) || isClosed(d)}
             type="button"
           >
             Propose
@@ -1952,11 +2118,7 @@ export default function DisputesPages() {
                   ) : null}
                 </td>
                 <td className="p-2">
-                  {d.escrow_frozen ? (
-                    <Badge tone="info" className="bg-slate-900 text-white">Escrow Hold Active</Badge>
-                  ) : (
-                    <span className={operationalDisputes ? "text-sky-100/55" : "text-slate-500"}>No active hold</span>
-                  )}
+                  <Badge tone={d.escrow_frozen ? "info" : "default"} className={d.escrow_frozen ? "bg-slate-900 text-white" : ""}>{holdLabel(d)}</Badge>
                 </td>
                 <td className="p-2">
                   {d.financial_disposition ? (
@@ -1964,11 +2126,7 @@ export default function DisputesPages() {
                   ) : (
                     <span className={operationalDisputes ? "text-sky-100/55" : "text-slate-500"}>Pending review</span>
                   )}
-                  {!isClosed(d) ? (
-                    <div className={`mt-1 text-xs font-bold ${d.fee_paid ? "text-emerald-300" : operationalDisputes ? "text-sky-100/70" : "text-slate-600"}`}>
-                      {d.fee_paid ? "Fee paid" : `Fee ${money(d.fee_amount || 0)}`}
-                    </div>
-                  ) : null}
+                  {!isClosed(d) ? <div className={`mt-1 text-xs font-bold ${operationalDisputes ? "text-sky-100/70" : "text-slate-600"}`}>{qualificationLabel(d)}</div> : null}
                 </td>
                 <td className="p-2">
                   <Badge tone={pillToneForNext(nextStepLabel(d, isAdmin))}>{nextStepLabel(d, isAdmin)}</Badge>
@@ -2144,6 +2302,7 @@ export default function DisputesPages() {
         onOpenProposal={() => setProposalOpen(true)}
         now={now}
         aiEnabled={aiDisputesEnabled}
+        onRefresh={refreshActiveDispute}
       />
 
       <ProposalModal open={proposalOpen} dispute={activeDispute} onClose={() => setProposalOpen(false)} onProposed={refreshAll} />

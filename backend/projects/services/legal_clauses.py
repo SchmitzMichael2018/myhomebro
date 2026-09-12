@@ -60,8 +60,11 @@ def _payment_clause(payment_mode: Optional[str]) -> Clause:
         "Payment & Escrow",
         "Payments are funded to escrow and released per approved milestones. After a milestone is submitted for approval, "
         "Customer will have seventy-two (72) hours to approve or dispute through the platform. If no response is received "
-        "within 72 hours, funds for that milestone may be automatically released. A timely dispute blocks release of the "
-        "disputed amount until the parties authorize a resolution or release is otherwise legally authorized."
+        "within 72 hours, funds for that milestone may be automatically released. A submitted concern temporarily pauses "
+        "release only for the identified milestone or payment while the customer supplies the required claim information. "
+        "The claim normally must qualify within three (3) business days, subject to a final notice and grace period or a "
+        "documented extension. A qualified claim continues that source-specific administrative hold until the parties "
+        "authorize a resolution or release is otherwise legally authorized."
     )
 
 
@@ -173,13 +176,17 @@ def build_legal_notices(
     # 10) Dispute Resolution
     clauses.append((
         "Dispute Resolution",
-        "A timely milestone dispute blocks release of the disputed amount. The parties may submit statements, photographs, "
+        "There is no platform fee merely to report or participate in a dispute. A submitted concern temporarily pauses only "
+        "the identified milestone or payment while qualification information is gathered; other work and undisputed payment "
+        "sources continue unless the parties separately agree to a work pause. The parties may submit statements, photographs, "
         "documents, messages, and other supporting information through MyHomeBro. Project Assistant may organize that "
         "information and suggest non-binding resolution options. Automated summaries and recommendations do not determine "
         "fault or legal liability, do not constitute an inspection, mediation, arbitration award, or legal advice, and do "
         "not release, refund, split, or transfer funds. The parties must expressly authorize any negotiated resolution or "
-        "financial disposition. Undisputed amounts may be released when mutually authorized. If the parties do not agree, "
-        "they retain the external remedies available under applicable law."
+        "financial disposition. Exact-dollar split instructions require mutual authorization or a dispute-linked written "
+        "directive from an outside authority, validation against the held amount, and a separate authorized execution step. "
+        "MyHomeBro does not arrange or serve as an inspector, mediator, arbitrator, or court. If the parties do not agree, "
+        "they may arrange their own outside process and upload its written directive."
     ))
 
     # 11) Limitation of Liability

@@ -42,6 +42,11 @@ from .views.diy_planner import (
 from .views.dispute import (
     DisputeViewSet,
     public_dispute_detail,
+    public_dispute_qualification,
+    public_dispute_allocation_authorize,
+    public_dispute_work_pause_respond,
+    public_dispute_claim_access,
+    public_dispute_external_document,
     public_dispute_message,
     public_dispute_accept,
     public_dispute_reject,
@@ -1236,6 +1241,11 @@ urlpatterns = [
     # Public dispute decision
     # -------------------------------------------------
     path("disputes/public/<int:dispute_id>/", public_dispute_detail),
+    path("disputes/public/<int:dispute_id>/qualification/", public_dispute_qualification),
+    path("disputes/public/<int:dispute_id>/escrow-allocations/<int:allocation_id>/authorize/", public_dispute_allocation_authorize),
+    path("disputes/public/<int:dispute_id>/work-pauses/<int:pause_id>/respond/", public_dispute_work_pause_respond),
+    path("disputes/public/<int:dispute_id>/claims/<int:claim_id>/access/", public_dispute_claim_access),
+    path("disputes/public/<int:dispute_id>/external-documents/", public_dispute_external_document),
     path("disputes/public/<int:dispute_id>/messages/", public_dispute_message),
     path("disputes/public/<int:dispute_id>/accept/", public_dispute_accept),
     path("disputes/public/<int:dispute_id>/reject/", public_dispute_reject),

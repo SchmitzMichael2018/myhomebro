@@ -1,6 +1,7 @@
 # backend/projects/views/dispute.py
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 
@@ -15,18 +16,46 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.response import Response
 
-from ..models_dispute import Dispute, DisputeAttachment, DisputeWorkOrder
+from ..models_dispute import (
+    Dispute,
+    DisputeAttachment,
+    DisputeEscrowAllocation,
+    DisputePaymentHold,
+    DisputeWorkOrder,
+    DisputeWorkPauseRequest,
+)
 from ..models_dispute import (
     ResolutionAgreement,
     ResolutionAgreementSignature,
     ResolutionCaseTimelineEvent,
+    ResolutionDocument,
     ResolutionProposal,
 )
 from ..services.dispute_status import is_terminal_dispute_status
+from ..services.dispute_allocation_execution import execute_dispute_escrow_allocation
+from ..services.dispute_workflow import (
+    active_dispute_for_source,
+    assess_dispute_qualification,
+    close_payment_hold,
+    extend_qualification_deadline,
+    initialize_dispute_workflow,
+    infer_hold_amount_cents,
+    override_dispute_qualification,
+)
 from ..serializers.dispute import (
     DisputeSerializer,
     DisputeCreateSerializer,
     DisputeRespondSerializer,
+    DisputeQualificationExtensionSerializer,
+    DisputeQualificationOverrideSerializer,
+    DisputeQualificationUpdateSerializer,
+    DisputeWorkPauseRequestSerializer,
+    DisputeWorkPauseResponseSerializer,
+    DisputeAllocationCreateSerializer,
+    DisputeAllocationAuthorizeSerializer,
+    DisputeEscrowAllocationSerializer,
+    DisputeClaimAccessSerializer,
+    DisputeClaimResponseSerializer,
     DisputeResolveSerializer,
     DisputeAttachmentSerializer,
     DisputePublicSerializer,
@@ -65,11 +94,13 @@ try:
         email_homeowner_proposal_sent,
         email_contractor_status_update,
         email_admin_dispute_update,
+        notify_homeowner_qualification,
     )
 except Exception:
     email_homeowner_proposal_sent = None
     email_contractor_status_update = None
     email_admin_dispute_update = None
+    notify_homeowner_qualification = None
 
 PROPOSAL_PREFIX = "MHB_PROPOSAL_V1:"
 DISPUTE_TERMINAL_MESSAGE = "This dispute is resolved and can no longer be modified."
@@ -144,9 +175,8 @@ def _is_contractor_actor_for_dispute(user, dispute: Dispute) -> bool:
     if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
         return True
 
-    # Creator of dispute is contractor side (your contractor console)
     if getattr(dispute, "created_by_id", None) == getattr(user, "id", None):
-        return True
+        return getattr(dispute, "initiator", "") != "homeowner"
 
     # Best-effort: compare against agreement contractor relationship
     email = (getattr(user, "email", "") or "").strip().lower()
@@ -309,7 +339,7 @@ def _status_for_resolution_type(resolution_type: str, fallback_outcome: str = ""
     mapping = {
         Dispute.RESOLUTION_CONTRACTOR_PREVAILS: "resolved_contractor",
         Dispute.RESOLUTION_CUSTOMER_PREVAILS: "resolved_homeowner",
-        Dispute.RESOLUTION_PARTIAL: "resolved_partial",
+        Dispute.RESOLUTION_PARTIAL: "under_review",
         Dispute.RESOLUTION_REWORK_REQUIRED: "under_review",
         Dispute.RESOLUTION_ADMIN_CLOSURE: "canceled",
     }
@@ -427,11 +457,19 @@ class DisputeViewSet(viewsets.ModelViewSet):
         agreement = ser.validated_data.get("agreement")
         if not _user_can_create_dispute_for_agreement(request.user, agreement):
             return Response({"detail": "You cannot open a dispute for this agreement."}, status=403)
-        dispute = ser.save()
-
-        dispute.ensure_public_token()
-        dispute.last_activity_at = timezone.now()
-        dispute.save(update_fields=["public_token", "last_activity_at", "updated_at"])
+        source = active_dispute_for_source(
+            agreement=agreement,
+            milestone=ser.validated_data.get("milestone"),
+            invoice=ser.validated_data.get("payment_request"),
+            draw_request=ser.validated_data.get("draw_request"),
+            expense=ser.validated_data.get("expense"),
+        )
+        if source:
+            return Response(
+                {"detail": "An active dispute already exists for this payment source.", "dispute_id": source.id},
+                status=409,
+            )
+        dispute = initialize_dispute_workflow(ser.save())
         ensure_case_created_event(dispute, actor=request.user)
 
         if email_admin_dispute_update:
@@ -445,6 +483,8 @@ class DisputeViewSet(viewsets.ModelViewSet):
             )
         except Exception:
             pass
+        if notify_homeowner_qualification:
+            notify_homeowner_qualification(dispute, "submitted")
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=201)
 
@@ -476,47 +516,358 @@ class DisputeViewSet(viewsets.ModelViewSet):
         if blocked is not None:
             return blocked
 
-        if dispute.fee_paid:
-            return Response({"detail": "Fee already paid."}, status=200)
-
-        now = timezone.now()
-        dispute.fee_paid = True
-        dispute.fee_paid_at = now
-        dispute.status = "open"
-        dispute.escrow_frozen = True
-
-        if hasattr(dispute, "set_response_deadline_now"):
-            dispute.set_response_deadline_now()
-        else:
-            dispute.last_activity_at = now
-
-        dispute.save(update_fields=[
-            "fee_paid", "fee_paid_at", "status", "escrow_frozen",
-            "response_due_at", "deadline_hours", "deadline_tier", "last_activity_at",
-            "updated_at"
-        ])
-        record_timeline_event(
-            dispute,
-            ResolutionCaseTimelineEvent.EVENT_PAYMENT_HOLD_APPLIED,
-            "Dispute fee paid and payment hold applied",
-            actor=request.user,
-            description="No funds were released. Hold state was recorded for human review.",
-            related_object=dispute,
+        # Backward-compatible endpoint for older clients. Opening and
+        # participating in a dispute no longer requires a fee.
+        dispute = initialize_dispute_workflow(dispute)
+        return Response(
+            {
+                **DisputeSerializer(dispute, context={"request": request}).data,
+                "detail": "No dispute fee is required. The case workflow is active.",
+            },
+            status=200,
         )
 
-        if email_admin_dispute_update:
-            from django.conf import settings as dj_settings
-            email_admin_dispute_update(dispute, getattr(dj_settings, "DISPUTE_ADMIN_EMAIL", "") or "", "Fee paid / escrow frozen")
-        try:
-            notify_dispute_event(
-                dispute=dispute,
-                event_type=Notification.EVENT_DISPUTE_UPDATED,
-                actor_user=request.user,
-            )
-        except Exception:
-            pass
-
+    @action(detail=True, methods=["patch"], url_path="qualification")
+    def qualification(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        prior_qualification_status = dispute.qualification_status
+        blocked = _block_if_archived(dispute) or _block_if_terminal(dispute)
+        if blocked is not None:
+            return blocked
+        if _is_contractor_actor_for_dispute(request.user, dispute) and not request.user.is_staff:
+            return Response({"detail": "Customer qualification information must be supplied by the customer."}, status=403)
+        ser = DisputeQualificationUpdateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        for field_name, value in ser.validated_data.items():
+            setattr(dispute, field_name, value)
+        dispute.save(update_fields=[*ser.validated_data.keys(), "updated_at"])
+        dispute = assess_dispute_qualification(dispute, actor=request.user)
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+            "Dispute qualification information updated",
+            actor=request.user,
+            description=dispute.qualification_explanation,
+            related_object=dispute,
+            metadata={
+                "qualification_status": dispute.qualification_status,
+                "missing_information": dispute.missing_information,
+            },
+        )
+        if dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED and prior_qualification_status != Dispute.QUALIFICATION_QUALIFIED:
+            try:
+                notify_dispute_event(dispute=dispute, event_type=Notification.EVENT_DISPUTE_UPDATED, actor_user=request.user)
+            except Exception:
+                pass
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminUser], url_path="qualification-extension")
+    def qualification_extension(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        ser = DisputeQualificationExtensionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        dispute = extend_qualification_deadline(
+            dispute,
+            reason=ser.validated_data["reason"],
+            business_days=ser.validated_data["business_days"],
+            actor=request.user,
+        )
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+            "Qualification deadline extended",
+            actor=request.user,
+            description=ser.validated_data["reason"],
+            related_object=dispute,
+            metadata={"qualification_due_at": dispute.qualification_due_at.isoformat()},
+        )
+        return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminUser], url_path="qualification-override")
+    def qualification_override(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        ser = DisputeQualificationOverrideSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            dispute = override_dispute_qualification(dispute, **ser.validated_data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+            "Human qualification override recorded",
+            actor=request.user,
+            description=ser.validated_data["reason"],
+            related_object=dispute,
+            metadata={
+                "qualification_status": dispute.qualification_status,
+                "source_hold_reactivated": ser.validated_data["reactivate_source_hold"],
+                "funds_moved": False,
+            },
+        )
+        return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
+
+    @action(detail=True, methods=["post"], url_path=r"claims/(?P<claim_id>[^/.]+)/respond")
+    def claim_respond(self, request, pk=None, claim_id=None):
+        dispute: Dispute = self.get_object()
+        if not _is_contractor_actor_for_dispute(request.user, dispute):
+            return Response({"detail": "Only the contractor may submit a claim response."}, status=403)
+        if dispute.qualification_status != Dispute.QUALIFICATION_QUALIFIED:
+            return Response({"detail": "This claim must qualify before the contractor response stage."}, status=400)
+        claim = dispute.claims.filter(pk=claim_id).first()
+        if not claim:
+            return Response({"detail": "Claim not found."}, status=404)
+        ser = DisputeClaimResponseSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        claim.contractor_position = ser.validated_data["contractor_position"]
+        claim.contractor_response = ser.validated_data["response"].strip()
+        claim.access_required = ser.validated_data.get("access_required")
+        claim.cure_proposal = ser.validated_data.get("cure_proposal") or {}
+        claim.save()
+        dispute.contractor_response = "\n\n".join(
+            f"Claim {row.sequence}: {row.contractor_response}"
+            for row in dispute.claims.exclude(contractor_response="").order_by("sequence", "id")
+        )
+        dispute.responded_at = timezone.now()
+        dispute.last_activity_at = dispute.responded_at
+        dispute.save(update_fields=["contractor_response", "responded_at", "last_activity_at", "updated_at"])
+        create_party_statement(
+            dispute,
+            author=request.user,
+            text=claim.contractor_response,
+            party_role="contractor",
+            metadata={"claim_id": claim.id, "contractor_position": claim.contractor_position},
+        )
+        return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
+
+    @action(detail=True, methods=["post"], url_path=r"claims/(?P<claim_id>[^/.]+)/access")
+    def claim_access(self, request, pk=None, claim_id=None):
+        dispute: Dispute = self.get_object()
+        if _is_contractor_actor_for_dispute(request.user, dispute) and not request.user.is_staff:
+            return Response({"detail": "The customer must record the access decision."}, status=403)
+        claim = dispute.claims.filter(pk=claim_id).first()
+        if not claim:
+            return Response({"detail": "Claim not found."}, status=404)
+        if claim.access_required is not True:
+            return Response({"detail": "The contractor has not requested access for this claim."}, status=400)
+        ser = DisputeClaimAccessSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        claim.customer_access_response = ser.validated_data["access_permitted"]
+        claim.customer_access_notes = ser.validated_data.get("notes", "")
+        claim.save()
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+            "Customer recorded site-access decision",
+            actor=request.user,
+            description=claim.customer_access_notes,
+            related_object=claim,
+            metadata={"access_permitted": claim.customer_access_response},
+        )
+        return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
+
+    @action(detail=True, methods=["get", "post"], url_path="work-pauses")
+    def work_pauses(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        if request.method == "GET":
+            return Response(DisputeWorkPauseRequestSerializer(dispute.work_pause_requests.all(), many=True).data)
+        blocked = _block_if_archived(dispute) or _block_if_terminal(dispute)
+        if blocked is not None:
+            return blocked
+        ser = DisputeWorkPauseRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        pause = ser.save(dispute=dispute, requested_by=request.user)
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_WORK_PAUSE_UPDATED,
+            "Work pause requested",
+            actor=request.user,
+            description=pause.explanation,
+            related_object=pause,
+            metadata={"reason_type": pause.reason_type, "scope": pause.scope, "payment_hold_unchanged": True},
+        )
+        return Response(DisputeWorkPauseRequestSerializer(pause).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path=r"work-pauses/(?P<pause_id>[^/.]+)/respond")
+    def work_pause_respond(self, request, pk=None, pause_id=None):
+        dispute: Dispute = self.get_object()
+        pause = dispute.work_pause_requests.filter(pk=pause_id).first()
+        if not pause:
+            return Response({"detail": "Work pause request not found."}, status=404)
+        ser = DisputeWorkPauseResponseSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        decision = ser.validated_data["decision"]
+        if pause.requested_by_id == request.user.id and not request.user.is_staff and decision != "end":
+            return Response({"detail": "The requesting party cannot accept its own work-pause request."}, status=403)
+        if decision == "end" and pause.status != DisputeWorkPauseRequest.STATUS_ACCEPTED:
+            return Response({"detail": "Only an accepted work pause can be ended."}, status=400)
+        pause.status = {
+            "accept": DisputeWorkPauseRequest.STATUS_ACCEPTED,
+            "decline": DisputeWorkPauseRequest.STATUS_DECLINED,
+            "end": DisputeWorkPauseRequest.STATUS_ENDED,
+        }[decision]
+        pause.responded_by = request.user
+        pause.response_reason = ser.validated_data.get("reason", "")
+        pause.responded_at = timezone.now()
+        if decision == "end":
+            pause.ended_at = pause.responded_at
+        pause.save(update_fields=["status", "responded_by", "response_reason", "responded_at", "ended_at"])
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_WORK_PAUSE_UPDATED,
+            f"Work pause {pause.status}",
+            actor=request.user,
+            description=pause.response_reason,
+            related_object=pause,
+            metadata={"payment_hold_unchanged": True},
+        )
+        return Response(DisputeWorkPauseRequestSerializer(pause).data, status=200)
+
+    @action(detail=True, methods=["get", "post"], url_path="escrow-allocations")
+    def escrow_allocations(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        if request.method == "GET":
+            return Response(DisputeEscrowAllocationSerializer(dispute.escrow_allocations.all(), many=True).data)
+        blocked = _block_if_archived(dispute) or _block_if_terminal(dispute)
+        if blocked is not None:
+            return blocked
+        try:
+            hold = dispute.payment_hold
+        except DisputePaymentHold.DoesNotExist:
+            return Response({"detail": "This case has no platform-held payment source to allocate."}, status=400)
+        if hold.status == DisputePaymentHold.STATUS_NO_HOLD or hold.amount_cents <= 0:
+            return Response({"detail": "This case has no platform-held payment source to allocate."}, status=400)
+        ser = DisputeAllocationCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        external_document = ser.validated_data.get("external_authority_document")
+        if external_document and external_document.dispute_id != dispute.id:
+            return Response({"detail": "The authority document must belong to this dispute."}, status=400)
+        contractor_cents = ser.validated_data["contractor_amount_cents"]
+        homeowner_cents = ser.validated_data["homeowner_amount_cents"]
+        if contractor_cents + homeowner_cents != hold.amount_cents:
+            return Response(
+                {"detail": "Allocation must exactly equal the held amount.", "held_amount_cents": hold.amount_cents},
+                status=400,
+            )
+        allocation = DisputeEscrowAllocation.objects.create(
+            dispute=dispute,
+            payment_hold=hold,
+            source_amount_cents=hold.amount_cents,
+            contractor_amount_cents=contractor_cents,
+            homeowner_amount_cents=homeowner_cents,
+            currency=hold.currency.upper(),
+            explanation=ser.validated_data["explanation"],
+            external_authority_document=external_document,
+            proposed_by=request.user,
+            status=DisputeEscrowAllocation.STATUS_AWAITING_AUTHORIZATION,
+        )
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_ESCROW_ALLOCATION_UPDATED,
+            "Escrow allocation proposed",
+            actor=request.user,
+            description=allocation.explanation,
+            related_object=allocation,
+            metadata={
+                "source_amount_cents": allocation.source_amount_cents,
+                "contractor_amount_cents": allocation.contractor_amount_cents,
+                "homeowner_amount_cents": allocation.homeowner_amount_cents,
+            },
+        )
+        return Response(DisputeEscrowAllocationSerializer(allocation).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path=r"escrow-allocations/(?P<allocation_id>[^/.]+)/authorize")
+    def escrow_allocation_authorize(self, request, pk=None, allocation_id=None):
+        dispute: Dispute = self.get_object()
+        allocation = dispute.escrow_allocations.filter(pk=allocation_id).first()
+        if not allocation:
+            return Response({"detail": "Allocation not found."}, status=404)
+        if allocation.status != DisputeEscrowAllocation.STATUS_AWAITING_AUTHORIZATION:
+            return Response({"detail": "This allocation is no longer awaiting party authorization."}, status=400)
+        ser = DisputeAllocationAuthorizeSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        if not ser.validated_data["attestation"]:
+            return Response({"detail": "Explicit authorization attestation is required."}, status=400)
+        if ser.validated_data["authorization"] == "reject":
+            allocation.status = DisputeEscrowAllocation.STATUS_CANCELED
+            allocation.updated_at = timezone.now()
+            allocation.save(update_fields=["status", "updated_at"])
+        else:
+            now = timezone.now()
+            if _is_contractor_actor_for_dispute(request.user, dispute):
+                allocation.contractor_authorized_by = request.user
+                allocation.contractor_authorized_at = now
+                update_fields = ["contractor_authorized_by", "contractor_authorized_at"]
+            else:
+                allocation.homeowner_authorized_by = request.user
+                allocation.homeowner_authorized_at = now
+                update_fields = ["homeowner_authorized_by", "homeowner_authorized_at"]
+            if allocation.homeowner_authorized_at and allocation.contractor_authorized_at:
+                allocation.status = DisputeEscrowAllocation.STATUS_AUTHORIZED
+            allocation.updated_at = now
+            allocation.save(update_fields=[*update_fields, "status", "updated_at"])
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_ESCROW_ALLOCATION_UPDATED,
+            f"Escrow allocation {allocation.status}",
+            actor=request.user,
+            related_object=allocation,
+        )
+        return Response(DisputeEscrowAllocationSerializer(allocation).data, status=200)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminUser], url_path=r"escrow-allocations/(?P<allocation_id>[^/.]+)/confirm")
+    def escrow_allocation_confirm(self, request, pk=None, allocation_id=None):
+        dispute: Dispute = self.get_object()
+        allocation = dispute.escrow_allocations.filter(pk=allocation_id).first()
+        if not allocation:
+            return Response({"detail": "Allocation not found."}, status=404)
+        has_mutual_authority = bool(allocation.homeowner_authorized_at and allocation.contractor_authorized_at)
+        has_external_authority = bool(allocation.external_authority_document_id)
+        if not allocation.is_balanced:
+            return Response({"detail": "Allocation no longer balances to the held source amount."}, status=400)
+        if not (has_mutual_authority or has_external_authority):
+            return Response({"detail": "Mutual authorization or a dispute-linked external authority document is required."}, status=400)
+        allocation.status = DisputeEscrowAllocation.STATUS_READY_FOR_EXECUTION
+        allocation.staff_confirmed_by = request.user
+        allocation.staff_confirmed_at = timezone.now()
+        allocation.updated_at = allocation.staff_confirmed_at
+        allocation.save(update_fields=["status", "staff_confirmed_by", "staff_confirmed_at", "updated_at"])
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_ESCROW_ALLOCATION_UPDATED,
+            "Escrow allocation validated for execution",
+            actor=request.user,
+            description="Dollar totals and authority were validated. No funds were moved by this confirmation.",
+            related_object=allocation,
+        )
+        return Response(DisputeEscrowAllocationSerializer(allocation).data, status=200)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminUser], url_path=r"escrow-allocations/(?P<allocation_id>[^/.]+)/execute")
+    def escrow_allocation_execute(self, request, pk=None, allocation_id=None):
+        dispute: Dispute = self.get_object()
+        allocation = dispute.escrow_allocations.filter(pk=allocation_id).first()
+        if not allocation:
+            return Response({"detail": "Allocation not found."}, status=404)
+        if allocation.status == DisputeEscrowAllocation.STATUS_EXECUTED:
+            return Response(DisputeEscrowAllocationSerializer(allocation).data, status=200)
+        try:
+            allocation = execute_dispute_escrow_allocation(allocation.id, actor=request.user)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_ESCROW_ALLOCATION_UPDATED,
+            "Authorized escrow allocation executed",
+            actor=request.user,
+            description="The exact-dollar allocation was executed through the separately authorized payment action.",
+            related_object=allocation,
+            metadata={
+                "homeowner_refund_id": allocation.homeowner_refund_id,
+                "contractor_transfer_id": allocation.contractor_transfer_id,
+                "source_amount_cents": allocation.source_amount_cents,
+            },
+        )
+        return Response(DisputeEscrowAllocationSerializer(allocation).data, status=200)
 
     @action(detail=True, methods=["patch"], url_path="respond")
     def respond(self, request, pk=None):
@@ -529,9 +880,6 @@ class DisputeViewSet(viewsets.ModelViewSet):
         blocked = _block_if_terminal(dispute)
         if blocked is not None:
             return blocked
-
-        if not dispute.fee_paid:
-            return Response({"detail": "Dispute fee must be paid before responses."}, status=400)
 
         ser = DisputeRespondSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -630,6 +978,8 @@ class DisputeViewSet(viewsets.ModelViewSet):
         dispute.resolved_at = now
         dispute.last_activity_at = now
         dispute.save(update_fields=["status", "escrow_frozen", "resolved_at", "last_activity_at", "updated_at"])
+        close_payment_hold(dispute, reason="The dispute was canceled by an authorized user.", now=now)
+        dispute.refresh_from_db()
         record_timeline_event(
             dispute,
             ResolutionCaseTimelineEvent.EVENT_CASE_CLOSED,
@@ -683,6 +1033,11 @@ class DisputeViewSet(viewsets.ModelViewSet):
 
         dispute.last_activity_at = timezone.now()
         dispute.save(update_fields=["last_activity_at", "updated_at"])
+        if dispute.qualification_status in {
+            Dispute.QUALIFICATION_PENDING,
+            Dispute.QUALIFICATION_INFORMATION_NEEDED,
+        }:
+            dispute = assess_dispute_qualification(dispute, actor=request.user)
         try:
             notify_dispute_event(
                 dispute=dispute,
@@ -693,6 +1048,55 @@ class DisputeViewSet(viewsets.ModelViewSet):
             pass
 
         return Response(DisputeAttachmentSerializer(att, context={"request": request}).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="external-documents")
+    def external_documents(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        blocked = _block_if_archived(dispute)
+        if blocked is not None:
+            return blocked
+        uploaded = request.FILES.get("file")
+        if not uploaded:
+            return Response({"detail": "Missing file."}, status=400)
+        document_type = str(request.data.get("document_type") or "external_decision").strip()
+        allowed = {
+            "external_decision",
+            "mutual_instructions",
+            "inspection_report",
+            "other",
+        }
+        if document_type not in allowed:
+            return Response({"detail": "Unsupported external document type."}, status=400)
+        digest = hashlib.sha256()
+        for chunk in uploaded.chunks():
+            digest.update(chunk)
+        uploaded.seek(0)
+        from ..models_dispute import ResolutionDocument
+        document = ResolutionDocument.objects.create(
+            dispute=dispute,
+            document_type=document_type,
+            title=str(request.data.get("title") or getattr(uploaded, "name", "External resolution document"))[:255],
+            file=uploaded,
+            generated_by=request.user,
+            sha256=digest.hexdigest(),
+            metadata={
+                "uploaded_as_external_authority": document_type in {"external_decision", "mutual_instructions"},
+                "legal_effect_not_interpreted_by_platform": True,
+            },
+        )
+        dispute.workflow_stage = Dispute.STAGE_EXTERNAL_RESOLUTION
+        dispute.last_activity_at = timezone.now()
+        dispute.save(update_fields=["workflow_stage", "last_activity_at", "updated_at"])
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_EVIDENCE_UPLOADED,
+            "External resolution document uploaded",
+            actor=request.user,
+            description=document.title,
+            related_object=document,
+            metadata={"document_type": document.document_type, "sha256": document.sha256},
+        )
+        return Response(ResolutionDocumentSerializer(document, context={"request": request}).data, status=201)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminUser], url_path="resolve")
     def resolve(self, request, pk=None):
@@ -719,6 +1123,33 @@ class DisputeViewSet(viewsets.ModelViewSet):
         )
         linked_rework_milestone_id = ser.validated_data.get("linked_rework_milestone_id")
 
+        partial_allocation_cents = None
+        if resolution_type == Dispute.RESOLUTION_PARTIAL:
+            try:
+                hold = dispute.payment_hold
+            except DisputePaymentHold.DoesNotExist:
+                if dispute.escrow_frozen and (dispute.milestone_id or dispute.payment_request_id):
+                    hold = DisputePaymentHold.objects.create(
+                        dispute=dispute,
+                        milestone=dispute.milestone,
+                        invoice=dispute.payment_request,
+                        amount_cents=infer_hold_amount_cents(dispute),
+                        status=DisputePaymentHold.STATUS_CONTINUED,
+                    )
+                else:
+                    return Response({"detail": "A partial allocation requires a platform-held payment source."}, status=400)
+            approved_cents = int(ser.validated_data["approved_amount"] * 100)
+            homeowner_cents = int(ser.validated_data["disputed_remainder"] * 100)
+            if approved_cents + homeowner_cents != hold.amount_cents:
+                return Response(
+                    {
+                        "detail": "The contractor award and customer return must exactly equal the held amount.",
+                        "held_amount_cents": hold.amount_cents,
+                    },
+                    status=400,
+                )
+            partial_allocation_cents = (approved_cents, homeowner_cents, hold)
+
         now = timezone.now()
         dispute.admin_notes = admin_notes
         dispute.resolution_type = resolution_type
@@ -730,7 +1161,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
         dispute.linked_rework_milestone_id = linked_rework_milestone_id
 
         dispute.status = _status_for_resolution_type(resolution_type, outcome)
-        dispute.escrow_frozen = resolution_type == Dispute.RESOLUTION_REWORK_REQUIRED
+        dispute.escrow_frozen = resolution_type in {Dispute.RESOLUTION_REWORK_REQUIRED, Dispute.RESOLUTION_PARTIAL}
         dispute.resolved_at = now
         dispute.last_activity_at = now
         if resolution_type == Dispute.RESOLUTION_REWORK_REQUIRED:
@@ -747,6 +1178,43 @@ class DisputeViewSet(viewsets.ModelViewSet):
             "linked_rework_milestone_id", "status", "escrow_frozen", "resolved_at",
             "last_activity_at", "updated_at"
         ])
+        if partial_allocation_cents:
+            approved_cents, homeowner_cents, hold = partial_allocation_cents
+            DisputeEscrowAllocation.objects.filter(
+                dispute=dispute,
+                status__in=[
+                    DisputeEscrowAllocation.STATUS_DRAFT,
+                    DisputeEscrowAllocation.STATUS_AWAITING_AUTHORIZATION,
+                    DisputeEscrowAllocation.STATUS_AUTHORIZED,
+                    DisputeEscrowAllocation.STATUS_READY_FOR_EXECUTION,
+                ],
+            ).update(status=DisputeEscrowAllocation.STATUS_CANCELED, updated_at=now)
+            allocation = DisputeEscrowAllocation.objects.create(
+                dispute=dispute,
+                payment_hold=hold,
+                source_amount_cents=hold.amount_cents,
+                contractor_amount_cents=approved_cents,
+                homeowner_amount_cents=homeowner_cents,
+                explanation=resolution_notes or "Partial allocation entered for party authorization.",
+                status=DisputeEscrowAllocation.STATUS_AWAITING_AUTHORIZATION,
+                proposed_by=request.user,
+            )
+            record_timeline_event(
+                dispute,
+                ResolutionCaseTimelineEvent.EVENT_ESCROW_ALLOCATION_UPDATED,
+                "Partial allocation entered for party authorization",
+                actor=request.user,
+                description=allocation.explanation,
+                related_object=allocation,
+                metadata={
+                    "contractor_amount_cents": approved_cents,
+                    "homeowner_amount_cents": homeowner_cents,
+                    "money_moved": False,
+                },
+            )
+        if not dispute.escrow_frozen:
+            close_payment_hold(dispute, reason=f"Human resolution recorded: {resolution_type}.", now=now)
+            dispute.refresh_from_db()
         event_type = (
             ResolutionCaseTimelineEvent.EVENT_PAYMENT_HOLD_RELEASED
             if not dispute.escrow_frozen
@@ -962,6 +1430,195 @@ def public_dispute_detail(request, dispute_id: int):
     return Response(DisputePublicSerializer(dispute, context={"request": request}).data, status=200)
 
 
+@api_view(["PATCH"])
+@permission_classes([AllowAny])
+def public_dispute_qualification(request, dispute_id: int):
+    token = (request.query_params.get("token") or "").strip()
+    dispute = _get_dispute_by_public_token(dispute_id, token) if token else None
+    if not dispute:
+        return Response({"detail": "Not found."}, status=404)
+    if is_terminal_dispute_status(dispute.status) or dispute.is_archived:
+        return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)
+    prior_qualification_status = dispute.qualification_status
+    ser = DisputeQualificationUpdateSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    for field_name, value in ser.validated_data.items():
+        setattr(dispute, field_name, value)
+    dispute.save(update_fields=[*ser.validated_data.keys(), "updated_at"])
+    dispute = assess_dispute_qualification(dispute)
+    record_timeline_event(
+        dispute,
+        ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+        "Customer updated qualification information",
+        metadata={"qualification_status": dispute.qualification_status, "missing_information": dispute.missing_information},
+    )
+    if notify_homeowner_qualification and dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED and prior_qualification_status != Dispute.QUALIFICATION_QUALIFIED:
+        notify_homeowner_qualification(dispute, "qualified")
+    if dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED and prior_qualification_status != Dispute.QUALIFICATION_QUALIFIED:
+        try:
+            notify_dispute_event(dispute=dispute, event_type=Notification.EVENT_DISPUTE_UPDATED, actor_user=None)
+        except Exception:
+            pass
+    return Response(DisputePublicSerializer(dispute, context={"request": request}).data, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def public_dispute_allocation_authorize(request, dispute_id: int, allocation_id: int):
+    token = (request.query_params.get("token") or "").strip()
+    dispute = _get_dispute_by_public_token(dispute_id, token) if token else None
+    if not dispute:
+        return Response({"detail": "Not found."}, status=404)
+    if is_terminal_dispute_status(dispute.status) or dispute.is_archived:
+        return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)
+    allocation = dispute.escrow_allocations.filter(pk=allocation_id).first()
+    if not allocation:
+        return Response({"detail": "Allocation not found."}, status=404)
+    if allocation.status != DisputeEscrowAllocation.STATUS_AWAITING_AUTHORIZATION:
+        return Response({"detail": "This allocation is no longer awaiting customer authorization."}, status=400)
+    ser = DisputeAllocationAuthorizeSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    if not ser.validated_data["attestation"]:
+        return Response({"detail": "Explicit authorization attestation is required."}, status=400)
+    allocation.updated_at = timezone.now()
+    if ser.validated_data["authorization"] == "reject":
+        allocation.status = DisputeEscrowAllocation.STATUS_CANCELED
+        allocation.save(update_fields=["status", "updated_at"])
+    else:
+        allocation.homeowner_authorized_at = allocation.updated_at
+        allocation.status = (
+            DisputeEscrowAllocation.STATUS_AUTHORIZED
+            if allocation.contractor_authorized_at
+            else DisputeEscrowAllocation.STATUS_AWAITING_AUTHORIZATION
+        )
+        allocation.save(update_fields=["homeowner_authorized_at", "status", "updated_at"])
+    record_timeline_event(
+        dispute,
+        ResolutionCaseTimelineEvent.EVENT_ESCROW_ALLOCATION_UPDATED,
+        f"Customer {ser.validated_data['authorization']}d escrow allocation",
+        related_object=allocation,
+    )
+    return Response(DisputePublicSerializer(dispute, context={"request": request}).data, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def public_dispute_work_pause_respond(request, dispute_id: int, pause_id: int):
+    token = (request.query_params.get("token") or "").strip()
+    dispute = _get_dispute_by_public_token(dispute_id, token) if token else None
+    if not dispute:
+        return Response({"detail": "Not found."}, status=404)
+    if is_terminal_dispute_status(dispute.status) or dispute.is_archived:
+        return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)
+    pause = dispute.work_pause_requests.filter(pk=pause_id).first()
+    if not pause:
+        return Response({"detail": "Work pause request not found."}, status=404)
+    ser = DisputeWorkPauseResponseSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    decision = ser.validated_data["decision"]
+    if (
+        decision != "end"
+        and pause.requested_by
+        and not _is_contractor_actor_for_dispute(pause.requested_by, dispute)
+    ):
+        return Response(
+            {"detail": "The requesting party cannot accept its own work-pause request."},
+            status=403,
+        )
+    if decision != "end" and pause.status != DisputeWorkPauseRequest.STATUS_REQUESTED:
+        return Response({"detail": "This work-pause request has already been answered."}, status=400)
+    if decision == "end" and pause.status != DisputeWorkPauseRequest.STATUS_ACCEPTED:
+        return Response({"detail": "Only an accepted work pause can be ended."}, status=400)
+    pause.status = {"accept": "accepted", "decline": "declined", "end": "ended"}[decision]
+    pause.response_reason = ser.validated_data.get("reason", "")
+    pause.responded_at = timezone.now()
+    pause.ended_at = pause.responded_at if decision == "end" else pause.ended_at
+    pause.save(update_fields=["status", "response_reason", "responded_at", "ended_at"])
+    record_timeline_event(
+        dispute,
+        ResolutionCaseTimelineEvent.EVENT_WORK_PAUSE_UPDATED,
+        f"Customer {decision}ed work pause",
+        description=pause.response_reason,
+        related_object=pause,
+        metadata={"payment_hold_unchanged": True},
+    )
+    return Response(DisputePublicSerializer(dispute, context={"request": request}).data, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def public_dispute_claim_access(request, dispute_id: int, claim_id: int):
+    token = (request.query_params.get("token") or "").strip()
+    dispute = _get_dispute_by_public_token(dispute_id, token) if token else None
+    if not dispute:
+        return Response({"detail": "Not found."}, status=404)
+    if is_terminal_dispute_status(dispute.status) or dispute.is_archived:
+        return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)
+    claim = dispute.claims.filter(pk=claim_id, access_required=True).first()
+    if not claim:
+        return Response({"detail": "Claim with an active access request not found."}, status=404)
+    ser = DisputeClaimAccessSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    claim.customer_access_response = ser.validated_data["access_permitted"]
+    claim.customer_access_notes = ser.validated_data.get("notes", "")
+    claim.save()
+    record_timeline_event(
+        dispute,
+        ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+        "Customer recorded site-access decision",
+        description=claim.customer_access_notes,
+        related_object=claim,
+        metadata={"access_permitted": claim.customer_access_response},
+    )
+    return Response(DisputePublicSerializer(dispute, context={"request": request}).data, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def public_dispute_external_document(request, dispute_id: int):
+    token = (request.query_params.get("token") or "").strip()
+    dispute = _get_dispute_by_public_token(dispute_id, token) if token else None
+    if not dispute:
+        return Response({"detail": "Not found."}, status=404)
+    if is_terminal_dispute_status(dispute.status) or dispute.is_archived:
+        return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)
+    uploaded = request.FILES.get("file")
+    if not uploaded:
+        return Response({"detail": "Missing file."}, status=400)
+    document_type = str(request.data.get("document_type") or "external_decision").strip()
+    if document_type not in {"external_decision", "mutual_instructions", "inspection_report", "other"}:
+        return Response({"detail": "Unsupported external document type."}, status=400)
+    digest = hashlib.sha256()
+    for chunk in uploaded.chunks():
+        digest.update(chunk)
+    uploaded.seek(0)
+    document = ResolutionDocument.objects.create(
+        dispute=dispute,
+        document_type=document_type,
+        title=str(request.data.get("title") or getattr(uploaded, "name", "External resolution document"))[:255],
+        file=uploaded,
+        generated_by=None,
+        sha256=digest.hexdigest(),
+        metadata={
+            "uploaded_as_external_authority": document_type in {"external_decision", "mutual_instructions"},
+            "uploaded_by_party": "customer",
+            "legal_effect_not_interpreted_by_platform": True,
+        },
+    )
+    dispute.workflow_stage = Dispute.STAGE_EXTERNAL_RESOLUTION
+    dispute.last_activity_at = timezone.now()
+    dispute.save(update_fields=["workflow_stage", "last_activity_at", "updated_at"])
+    record_timeline_event(
+        dispute,
+        ResolutionCaseTimelineEvent.EVENT_EVIDENCE_UPLOADED,
+        "Customer uploaded outside documentation",
+        description=document.title,
+        related_object=document,
+        metadata={"document_type": document.document_type, "sha256": document.sha256},
+    )
+    return Response(DisputePublicSerializer(dispute, context={"request": request}).data, status=201)
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @transaction.atomic
@@ -1029,6 +1686,9 @@ def public_dispute_message(request, dispute_id: int):
             related_party="customer",
         )
 
+    if files and dispute.qualification_status in {Dispute.QUALIFICATION_PENDING, Dispute.QUALIFICATION_INFORMATION_NEEDED}:
+        dispute = assess_dispute_qualification(dispute)
+
     if body:
         create_party_statement(
             dispute,
@@ -1086,6 +1746,8 @@ def public_dispute_accept(request, dispute_id: int):
         "homeowner_response", "status", "escrow_frozen", "resolved_at",
         "last_activity_at", "updated_at"
     ])
+    close_payment_hold(dispute, reason="The customer accepted the recorded resolution proposal.", now=now)
+    dispute.refresh_from_db()
     accepted_proposal = dispute.resolution_proposals.order_by("-created_at", "-id").first()
     if accepted_proposal is not None:
         accepted_proposal.status = ResolutionProposal.STATUS_ACCEPTED_CUSTOMER
@@ -1172,7 +1834,14 @@ def public_dispute_reject(request, dispute_id: int):
     )
 
     dispute.status = "under_review"
-    dispute.escrow_frozen = True
+    try:
+        dispute.escrow_frozen = dispute.payment_hold.status in {
+            DisputePaymentHold.STATUS_TEMPORARY,
+            DisputePaymentHold.STATUS_CONTINUED,
+            DisputePaymentHold.STATUS_EXPIRATION_PENDING,
+        }
+    except DisputePaymentHold.DoesNotExist:
+        dispute.escrow_frozen = False
     dispute.last_activity_at = now
     dispute.save(update_fields=["homeowner_response", "status", "escrow_frozen", "last_activity_at", "updated_at"])
     create_party_statement(

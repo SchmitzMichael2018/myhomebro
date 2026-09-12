@@ -66,6 +66,6 @@ class AgreementReadinessTests(SimpleTestCase):
     def test_legal_copy_matches_non_binding_resolution_workflow(self):
         clauses = dict(build_legal_notices(project_state="TX", payment_mode="escrow"))
         self.assertIn("non-binding resolution options", clauses["Dispute Resolution"])
-        self.assertIn("timely dispute blocks release", clauses["Payment & Escrow"])
+        self.assertIn("source-specific administrative hold", clauses["Payment & Escrow"])
         self.assertNotIn("binding arbitration", clauses["Dispute Resolution"])
         self.assertNotIn("Photo Authorization (Optional)", clauses)

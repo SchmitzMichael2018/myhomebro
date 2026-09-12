@@ -5,6 +5,10 @@ from ..models import Agreement, Milestone
 from ..models_dispute import (
     Dispute,
     DisputeAttachment,
+    DisputeClaim,
+    DisputeEscrowAllocation,
+    DisputePaymentHold,
+    DisputeWorkPauseRequest,
     DisputeWorkOrder,
     ResolutionAgreement,
     ResolutionAgreementSignature,
@@ -15,6 +19,94 @@ from ..models_dispute import (
     ResolutionPartyStatement,
     ResolutionProposal,
 )
+
+
+class DisputeWorkPauseRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DisputeWorkPauseRequest
+        fields = [
+            "id", "reason_type", "explanation", "scope", "status",
+            "requested_by", "responded_by", "response_reason", "requested_at",
+            "responded_at", "ended_at",
+        ]
+        read_only_fields = [
+            "id", "status", "requested_by", "responded_by", "response_reason",
+            "requested_at", "responded_at", "ended_at",
+        ]
+
+
+class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
+    allocation_total_cents = serializers.IntegerField(read_only=True)
+    is_balanced = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = DisputeEscrowAllocation
+        fields = [
+            "id", "payment_hold", "source_amount_cents", "contractor_amount_cents",
+            "homeowner_amount_cents", "allocation_total_cents", "is_balanced", "currency",
+            "explanation", "status", "proposed_by", "homeowner_authorized_by",
+            "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
+            "external_authority_document", "staff_confirmed_by", "staff_confirmed_at",
+            "executed_at", "execution_reference", "homeowner_refund_id",
+            "contractor_transfer_id", "execution_error", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "payment_hold", "source_amount_cents", "allocation_total_cents",
+            "is_balanced", "currency", "status", "proposed_by", "homeowner_authorized_by",
+            "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
+            "staff_confirmed_by", "staff_confirmed_at", "executed_at", "execution_reference",
+            "homeowner_refund_id", "contractor_transfer_id", "execution_error",
+            "created_at", "updated_at",
+        ]
+
+
+class DisputeClaimSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DisputeClaim
+        fields = [
+            "id",
+            "sequence",
+            "description",
+            "expected_result",
+            "requested_remedy",
+            "milestone_connection",
+            "evidence_status",
+            "missing_information",
+            "contractor_response",
+            "contractor_position",
+            "cure_proposal",
+            "access_required",
+            "customer_access_response",
+            "customer_access_notes",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class DisputePaymentHoldSerializer(serializers.ModelSerializer):
+    is_active = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = DisputePaymentHold
+        fields = [
+            "id",
+            "milestone",
+            "invoice",
+            "draw_request",
+            "expense",
+            "amount_cents",
+            "currency",
+            "status",
+            "started_at",
+            "expiration_pending_at",
+            "release_due_at",
+            "released_at",
+            "release_reason",
+            "is_active",
+        ]
+        read_only_fields = fields
 
 
 class DisputeAttachmentSerializer(serializers.ModelSerializer):
@@ -335,6 +427,10 @@ class DisputeSerializer(serializers.ModelSerializer):
     resolution_proposals = ResolutionProposalSerializer(many=True, read_only=True)
     resolution_agreements = ResolutionAgreementSerializer(many=True, read_only=True)
     resolution_documents = ResolutionDocumentSerializer(many=True, read_only=True)
+    claims = DisputeClaimSerializer(many=True, read_only=True)
+    payment_hold = DisputePaymentHoldSerializer(read_only=True)
+    work_pause_requests = DisputeWorkPauseRequestSerializer(many=True, read_only=True)
+    escrow_allocations = DisputeEscrowAllocationSerializer(many=True, read_only=True)
 
     # ✅ Work orders (now includes rework_milestone_id + original milestone info)
     work_orders = DisputeWorkOrderSerializer(many=True, read_only=True)
@@ -359,6 +455,11 @@ class DisputeSerializer(serializers.ModelSerializer):
             "initiator",
             "reason",
             "description",
+            "expected_result",
+            "requested_resolution",
+            "evidence_unavailable_reason",
+            "contractor_notified",
+            "prior_notice_explanation",
             "status",
             "is_archived",
             "fee_amount",
@@ -392,6 +493,17 @@ class DisputeSerializer(serializers.ModelSerializer):
             "deadline_tier",
             "last_activity_at",
             "deadline_missed_by",
+            "qualification_status",
+            "workflow_stage",
+            "qualification_started_at",
+            "qualification_due_at",
+            "qualification_decided_at",
+            "qualification_explanation",
+            "missing_information",
+            "urgent_review",
+            "urgent_reason",
+            "qualification_extension_count",
+            "qualification_extension_reason",
 
             "work_orders",
             "timeline_events",
@@ -401,6 +513,10 @@ class DisputeSerializer(serializers.ModelSerializer):
             "resolution_proposals",
             "resolution_agreements",
             "resolution_documents",
+            "claims",
+            "payment_hold",
+            "work_pause_requests",
+            "escrow_allocations",
         ]
         read_only_fields = [
             "id",
@@ -438,6 +554,17 @@ class DisputeSerializer(serializers.ModelSerializer):
             "deadline_tier",
             "last_activity_at",
             "deadline_missed_by",
+            "qualification_status",
+            "workflow_stage",
+            "qualification_started_at",
+            "qualification_due_at",
+            "qualification_decided_at",
+            "qualification_explanation",
+            "missing_information",
+            "urgent_review",
+            "urgent_reason",
+            "qualification_extension_count",
+            "qualification_extension_reason",
 
             "work_orders",
             "timeline_events",
@@ -447,6 +574,10 @@ class DisputeSerializer(serializers.ModelSerializer):
             "resolution_proposals",
             "resolution_agreements",
             "resolution_documents",
+            "claims",
+            "payment_hold",
+            "work_pause_requests",
+            "escrow_allocations",
         ]
 
     def get_agreement_number(self, obj):
@@ -479,6 +610,13 @@ class DisputeCreateSerializer(serializers.ModelSerializer):
             "initiator",
             "reason",
             "description",
+            "expected_result",
+            "requested_resolution",
+            "evidence_unavailable_reason",
+            "contractor_notified",
+            "prior_notice_explanation",
+            "urgent_review",
+            "urgent_reason",
             "fee_amount",
         ]
 
@@ -504,10 +642,12 @@ class DisputeCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         user = self.context["request"].user
+        validated_data.pop("fee_amount", None)
         return Dispute.objects.create(
             created_by=user,
             status="initiated",
-            fee_paid=False,
+            fee_amount=0,
+            fee_paid=True,
             escrow_frozen=False,
             **validated_data,
         )
@@ -515,6 +655,63 @@ class DisputeCreateSerializer(serializers.ModelSerializer):
 
 class DisputeRespondSerializer(serializers.Serializer):
     response = serializers.CharField(max_length=20000)
+
+
+class DisputeQualificationUpdateSerializer(serializers.Serializer):
+    description = serializers.CharField(required=False, max_length=20000)
+    expected_result = serializers.CharField(required=False, allow_blank=True, max_length=20000)
+    requested_resolution = serializers.CharField(required=False, allow_blank=True, max_length=20000)
+    evidence_unavailable_reason = serializers.CharField(required=False, allow_blank=True, max_length=20000)
+    contractor_notified = serializers.BooleanField(required=False, allow_null=True)
+    prior_notice_explanation = serializers.CharField(required=False, allow_blank=True, max_length=20000)
+
+
+class DisputeQualificationExtensionSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=2000)
+    business_days = serializers.IntegerField(min_value=1, max_value=10, default=1)
+
+
+class DisputeQualificationOverrideSerializer(serializers.Serializer):
+    qualification_status = serializers.ChoiceField(
+        choices=[
+            Dispute.QUALIFICATION_QUALIFIED,
+            Dispute.QUALIFICATION_NOT_QUALIFIED,
+            Dispute.QUALIFICATION_URGENT_REVIEW,
+        ]
+    )
+    reason = serializers.CharField(max_length=5000)
+    reactivate_source_hold = serializers.BooleanField(default=False)
+
+
+class DisputeClaimResponseSerializer(serializers.Serializer):
+    contractor_position = serializers.ChoiceField(choices=DisputeClaim.POSITION_CHOICES)
+    response = serializers.CharField(max_length=20000)
+    access_required = serializers.BooleanField(required=False, allow_null=True)
+    cure_proposal = serializers.JSONField(required=False)
+
+
+class DisputeClaimAccessSerializer(serializers.Serializer):
+    access_permitted = serializers.BooleanField()
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=5000)
+
+
+class DisputeWorkPauseResponseSerializer(serializers.Serializer):
+    decision = serializers.ChoiceField(choices=["accept", "decline", "end"])
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=5000)
+
+
+class DisputeAllocationCreateSerializer(serializers.Serializer):
+    contractor_amount_cents = serializers.IntegerField(min_value=0)
+    homeowner_amount_cents = serializers.IntegerField(min_value=0)
+    explanation = serializers.CharField(max_length=10000)
+    external_authority_document = serializers.PrimaryKeyRelatedField(
+        queryset=ResolutionDocument.objects.all(), required=False, allow_null=True
+    )
+
+
+class DisputeAllocationAuthorizeSerializer(serializers.Serializer):
+    authorization = serializers.ChoiceField(choices=["authorize", "reject"])
+    attestation = serializers.BooleanField()
 
 
 class DisputeResolveSerializer(serializers.Serializer):
@@ -562,6 +759,8 @@ class DisputeResolveSerializer(serializers.Serializer):
         resolution_type = attrs.get("resolution_type")
         if resolution_type == Dispute.RESOLUTION_PARTIAL and "approved_amount" not in attrs:
             raise serializers.ValidationError("Approved amount is required for partial resolution.")
+        if resolution_type == Dispute.RESOLUTION_PARTIAL and "disputed_remainder" not in attrs:
+            raise serializers.ValidationError("Customer return amount is required for partial resolution.")
         return attrs
 
 
@@ -570,6 +769,11 @@ class DisputePublicSerializer(serializers.ModelSerializer):
     milestone_title = serializers.SerializerMethodField()
     attachments = DisputeAttachmentSerializer(many=True, read_only=True)
     messages = serializers.SerializerMethodField()
+    claims = DisputeClaimSerializer(many=True, read_only=True)
+    payment_hold = DisputePaymentHoldSerializer(read_only=True)
+    work_pause_requests = DisputeWorkPauseRequestSerializer(many=True, read_only=True)
+    escrow_allocations = DisputeEscrowAllocationSerializer(many=True, read_only=True)
+    resolution_documents = ResolutionDocumentSerializer(many=True, read_only=True)
 
     # ✅ Work orders (public decision page can also show the rework milestone id if needed)
     work_orders = DisputeWorkOrderSerializer(many=True, read_only=True)
@@ -583,9 +787,19 @@ class DisputePublicSerializer(serializers.ModelSerializer):
             "initiator",
             "reason",
             "description",
+            "expected_result",
+            "requested_resolution",
+            "evidence_unavailable_reason",
+            "contractor_notified",
+            "prior_notice_explanation",
             "status",
-            "fee_paid",
             "escrow_frozen",
+            "qualification_status",
+            "qualification_due_at",
+            "qualification_explanation",
+            "missing_information",
+            "urgent_review",
+            "urgent_reason",
             "resolution_type",
             "financial_disposition",
             "approved_amount",
@@ -598,6 +812,11 @@ class DisputePublicSerializer(serializers.ModelSerializer):
             "messages",
             "created_at",
             "attachments",
+            "claims",
+            "payment_hold",
+            "work_pause_requests",
+            "escrow_allocations",
+            "resolution_documents",
 
             "work_orders",
         ]

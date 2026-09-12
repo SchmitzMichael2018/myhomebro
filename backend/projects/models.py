@@ -16,6 +16,10 @@ from .models_ai_scope import AgreementAIScope  # noqa: E402,F401
 from .models_dispute import (
     Dispute,
     DisputeAttachment,
+    DisputeClaim,
+    DisputeEscrowAllocation,
+    DisputePaymentHold,
+    DisputeWorkPauseRequest,
     ResolutionAgreement,
     ResolutionAgreementSignature,
     ResolutionCaseAuditEvent,
@@ -171,6 +175,7 @@ class InvoiceStatus(models.TextChoices):
     APPROVED = "approved", "Approved"
     DISPUTED = "disputed", "Disputed"
     PAID = "paid", "Paid"
+    SETTLED = "settled", "Resolved Allocation"
 
 
 class ExpenseStatus(models.TextChoices):

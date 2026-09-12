@@ -10,6 +10,7 @@ from projects.services.dispute_notifications import (
     email_homeowner_proposal_sent,  # already exists and used elsewhere
     email_admin_dispute_update,
     email_contractor_status_update,
+    notify_homeowner_qualification,
 )
 from projects.services.dispute_inapp import try_create_inapp_notification
 
@@ -27,6 +28,30 @@ class Command(BaseCommand):
         # Admin email (optional)
         from django.conf import settings
         admin_email = getattr(settings, "DISPUTE_ADMIN_EMAIL", "") or ""
+
+        # Qualification reminders are source-specific and fee-free. Send one
+        # reminder near 48 hours or the final reminder near 24 hours.
+        qualification_soon = Dispute.objects.filter(
+            qualification_status__in=[Dispute.QUALIFICATION_PENDING, Dispute.QUALIFICATION_INFORMATION_NEEDED],
+            qualification_due_at__isnull=False,
+            qualification_due_at__gt=now,
+            qualification_due_at__lte=now + timedelta(hours=48),
+            urgent_review=False,
+        )
+        for d in list(qualification_soon):
+            hours_left = (d.qualification_due_at - now).total_seconds() / 3600
+            event = "reminder_24h" if hours_left <= 24 else "reminder_48h"
+            kind = "qualification_24h" if hours_left <= 24 else "qualification_48h"
+            key = f"dispute:{d.id}:{kind}"
+            _log, created = DisputeReminderLog.objects.get_or_create(
+                dedupe_key=key,
+                defaults={"dispute": d, "kind": kind, "sent_to": "homeowner"},
+            )
+            if not created:
+                skipped += 1
+                continue
+            notify_homeowner_qualification(d, event)
+            sent += 1
 
         # 1) Response due soon (open disputes)
         qs_response_soon = Dispute.objects.filter(

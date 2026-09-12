@@ -188,7 +188,9 @@ export default function DisputeAIAdvisor({ disputeId, enabled }) {
               <div className="flex items-center gap-2">
                 {dispute?.status ? <Badge tone="warn">{String(dispute.status).replaceAll("_", " ")}</Badge> : null}
                 {dispute?.escrow_frozen ? <Badge tone="info">🧊 Escrow Frozen</Badge> : <Badge tone="default">Escrow Not Frozen</Badge>}
-                {dispute?.fee_paid ? <Badge tone="good">Fee Paid</Badge> : <Badge tone="warn">Fee Unpaid</Badge>}
+                <Badge tone={dispute?.qualification_status === "qualified" ? "good" : "warn"}>
+                  {dispute?.qualification_status === "qualified" ? "Qualified Dispute" : "Qualification Review"}
+                </Badge>
               </div>
             </div>
 

@@ -6,6 +6,9 @@ from typing import Optional
 
 from django.conf import settings
 from django.core.mail import send_mail
+from django.utils import timezone
+
+from projects.services.sms_service import normalize_phone_to_e164, send_compliant_sms
 
 
 @dataclass
@@ -164,9 +167,63 @@ def email_admin_dispute_update(dispute, admin_email: str, event_label: str) -> b
         f"Project: {project_title}\n"
         f"Initiator: {dispute.initiator}\n"
         f"Status: {dispute.status}\n"
-        f"Fee paid: {'Yes' if dispute.fee_paid else 'No'}\n"
+        f"Qualification: {getattr(dispute, 'qualification_status', 'not recorded')}\n"
         f"Escrow hold active: {'Yes' if dispute.escrow_frozen else 'No'}\n\n"
         f"— MyHomeBro"
     )
 
     return _send(subject, body, admin_email)
+
+
+def notify_homeowner_qualification(dispute, event: str) -> dict:
+    """Send the same source-scoped qualification message by available channels."""
+    agreement = dispute.agreement
+    homeowner = getattr(agreement, "homeowner", None)
+    email = _guess_homeowner_email(agreement)
+    phone = normalize_phone_to_e164(getattr(homeowner, "phone_number", ""))
+    base = (getattr(settings, "PUBLIC_APP_BASE_URL", "") or "https://www.myhomebro.com").rstrip("/")
+    link = f"{base}/disputes/{dispute.id}?token={dispute.public_token}"
+    due = getattr(dispute, "qualification_due_at", None)
+    due_label = timezone.localtime(due).strftime("%b %d, %Y at %I:%M %p %Z") if due else "the displayed deadline"
+    copy = {
+        "submitted": (
+            "Temporary dispute hold started",
+            f"Your concern was recorded. Only the identified payment source is on a temporary administrative hold. To continue the hold, provide the requested information by {due_label}. Safety, unauthorized payment, active property damage, and similar reports may require human review.",
+        ),
+        "reminder_48h": (
+            "Dispute information due in about 48 hours",
+            f"Information needed to qualify the payment hold is due by {due_label}.",
+        ),
+        "reminder_24h": (
+            "Final dispute qualification reminder",
+            f"Unless qualifying information is received by {due_label}, the temporary payment hold will enter its final expiration period.",
+        ),
+        "expiration_pending": (
+            "Dispute payment hold expiration pending",
+            "The qualification deadline passed. A final grace period is active before the payment hold closes.",
+        ),
+        "expired": (
+            "Dispute payment hold closed",
+            "The required information was not completed by the deadline, so the immediate payment hold closed. The payment may continue through its normal process. This does not decide separate warranty rights or the underlying merits.",
+        ),
+        "qualified": (
+            "Dispute qualified for continued hold",
+            "The submitted information is sufficient for the contractor-response stage. Only the identified payment source remains held.",
+        ),
+    }
+    subject, message = copy.get(event, copy["submitted"])
+    missing = [str(item).strip() for item in (getattr(dispute, "missing_information", None) or []) if str(item).strip()]
+    if missing and event in {"submitted", "reminder_48h", "reminder_24h", "expiration_pending"}:
+        message = f"{message}\n\nInformation requested:\n" + "\n".join(f"- {item}" for item in missing)
+    body = f"{message}\n\nReview the case: {link}\n\n— MyHomeBro"
+    email_sent = _send(f"MyHomeBro: {subject}", body, email)
+    sms_result = {"ok": False, "reason_code": "no_phone"}
+    if phone:
+        sms_result = send_compliant_sms(
+            phone,
+            f"MyHomeBro: {message} Review: {link}",
+            related_object=agreement,
+            category="customer_care",
+            dedupe_key=f"dispute-qualification:{dispute.id}:{event}",
+        )
+    return {"email_sent": email_sent, "sms": sms_result}

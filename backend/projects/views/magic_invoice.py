@@ -26,6 +26,8 @@ from projects.services.activity_feed import create_activity_event
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.notification_center import create_notification
 from projects.services.workflow_notifications import notify_dispute_event
+from projects.services.dispute_workflow import initialize_dispute_workflow, invoice_has_active_dispute_hold
+from projects.services.dispute_notifications import notify_homeowner_qualification
 
 logger = logging.getLogger(__name__)
 
@@ -55,15 +57,6 @@ def _agreement_status(agreement) -> str:
         return str(getattr(agreement, "status", "") or "").strip().lower()
     except Exception:
         return ""
-
-
-def _agreement_has_active_dispute(agreement) -> bool:
-    if not agreement:
-        return False
-    try:
-        return agreement.disputes.filter(status__in=("initiated", "open", "under_review")).exists()
-    except Exception:
-        return False
 
 
 def _contractor_stripe_release_blocker(contractor) -> str:
@@ -342,7 +335,7 @@ class MagicInvoiceView(APIView):
             data["agreement_id"] = getattr(agreement, "id", None)
             data["agreement_status"] = ag_status
             data["escrow_funded"] = escrow_funded
-            data["dispute_active"] = _agreement_has_active_dispute(agreement)
+            data["dispute_active"] = invoice_has_active_dispute_hold(invoice)
 
         return Response(data)
 
@@ -357,10 +350,10 @@ class MagicInvoiceApproveView(APIView):
         if not agreement:
             return Response({"detail": "Invoice is missing agreement."}, status=400)
 
-        if _agreement_has_active_dispute(agreement):
+        if invoice_has_active_dispute_hold(invoice):
             return Response(
                 {
-                    "detail": "This invoice cannot be approved while a dispute is active on the agreement.",
+                    "detail": "This invoice cannot be approved while its source-specific dispute payment hold is active.",
                     "code": "DISPUTE_ACTIVE",
                 },
                 status=400,
@@ -948,27 +941,19 @@ class MagicInvoiceDisputeView(APIView):
                 dispute = Dispute.objects.create(
                     agreement=invoice.agreement,
                     milestone=milestone,
+                    source_type=Dispute.SOURCE_PAYMENT_REQUEST,
+                    source_object_id=invoice.id,
+                    payment_request=invoice,
                     initiator="homeowner",
                     reason=dispute_reason,
                     description=dispute_description,
-                    status="open",
-                    fee_paid=True,
-                    fee_paid_at=timezone.now(),
-                    escrow_frozen=True,
+                    requested_resolution=(request.data.get("desired_resolution") or "").strip(),
+                    expected_result=(request.data.get("expected_result") or "").strip(),
+                    evidence_unavailable_reason=(request.data.get("evidence_unavailable_reason") or "").strip(),
+                    contractor_notified=request.data.get("contractor_notified"),
                 )
-                dispute.set_response_deadline_now()
-                dispute.save(update_fields=[
-                    "public_token",
-                    "fee_paid",
-                    "fee_paid_at",
-                    "response_due_at",
-                    "deadline_hours",
-                    "deadline_tier",
-                    "last_activity_at",
-                    "status",
-                    "escrow_frozen",
-                    "updated_at",
-                ])
+                dispute = initialize_dispute_workflow(dispute)
+                notify_homeowner_qualification(dispute, "qualified" if dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED else "submitted")
                 created = True
 
         try:

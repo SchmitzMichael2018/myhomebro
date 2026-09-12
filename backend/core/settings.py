@@ -651,6 +651,16 @@ CAPTURE_QR_MAX_PHOTOS = int(get_env_var("CAPTURE_QR_MAX_PHOTOS", "3") or 3)
 CAPTURE_QR_MAX_PHOTO_SIZE_MB = int(get_env_var("CAPTURE_QR_MAX_PHOTO_SIZE_MB", "8") or 8)
 CAPTURE_QR_MIN_COMPLETION_SECONDS = int(get_env_var("CAPTURE_QR_MIN_COMPLETION_SECONDS", "2") or 2)
 
+# Dispute qualification policy. These are operational controls rather than
+# embedded workflow constants so production can adjust them without a deploy.
+DISPUTE_QUALIFICATION_BUSINESS_DAYS = int(get_env_var("DISPUTE_QUALIFICATION_BUSINESS_DAYS", "3") or 3)
+DISPUTE_QUALIFICATION_GRACE_HOURS = int(get_env_var("DISPUTE_QUALIFICATION_GRACE_HOURS", "24") or 24)
+DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS = int(get_env_var("DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS", "3") or 3)
+# Keep actual Stripe movement off until production credentials and operating
+# procedures have been explicitly validated. The workflow through staff
+# confirmation remains available while this is false.
+DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED = get_bool("DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED", default=False)
+
 REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
     "capture_qr_public": get_env_var("CAPTURE_QR_PUBLIC_RATE", "30/hour"),
     "capture_qr_token": get_env_var("CAPTURE_QR_TOKEN_RATE", "15/hour"),

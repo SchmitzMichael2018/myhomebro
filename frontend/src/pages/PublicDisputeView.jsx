@@ -37,6 +37,11 @@ export default function PublicDisputeView() {
   const [reply, setReply] = useState("");
   const [files, setFiles] = useState([]);
   const [posting, setPosting] = useState(false);
+  const [actionBusy, setActionBusy] = useState("");
+  const [qualification, setQualification] = useState({});
+  const [externalFile, setExternalFile] = useState(null);
+  const [externalType, setExternalType] = useState("external_decision");
+  const [externalTitle, setExternalTitle] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -138,6 +143,32 @@ export default function PublicDisputeView() {
     return data;
   }, []);
 
+  const apiJson = useCallback(async (path, method, body) => {
+    const res = await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.error || `Request failed: ${res.status}`);
+    return data;
+  }, []);
+
+  const runAction = async (key, path, body, success, method = "POST") => {
+    setActionBusy(key);
+    try {
+      const data = await apiJson(path, method, body);
+      setDispute(data);
+      setMessages(Array.isArray(data?.messages) ? data.messages : []);
+      setAttachments(Array.isArray(data?.attachments) ? data.attachments : []);
+      toast.success(success);
+    } catch (err) {
+      toast.error(err.message || "The action could not be saved.");
+    } finally {
+      setActionBusy("");
+    }
+  };
+
   const fetchDispute = useCallback(async () => {
     if (!id) return;
 
@@ -214,6 +245,21 @@ export default function PublicDisputeView() {
     } finally {
       setPosting(false);
     }
+  };
+
+  const uploadExternalDocument = async () => {
+    if (!externalFile) return;
+    setActionBusy("external-document");
+    try {
+      const form = new FormData();
+      form.append("file", externalFile);
+      form.append("document_type", externalType);
+      form.append("title", externalTitle || externalFile.name);
+      const data = await apiPostForm(`/api/projects/disputes/public/${encodeURIComponent(id)}/external-documents/?token=${encodeURIComponent(token)}`, form);
+      setDispute(data); setExternalFile(null); setExternalTitle("");
+      toast.success("Outside documentation added to the case record.");
+    } catch (err) { toast.error(err.message || "Could not upload the document."); }
+    finally { setActionBusy(""); }
   };
 
   if (loading) {
@@ -477,6 +523,119 @@ export default function PublicDisputeView() {
           </form>
         </div>
 
+        {/* Qualification */}
+        <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-extrabold text-blue-950">Claim qualification</div>
+              <div className="mt-1 text-sm text-blue-900">
+                Status: <b>{String(dispute.qualification_status || "pending").replaceAll("_", " ")}</b>
+                {dispute.qualification_due_at ? <> · Information due {fmt(dispute.qualification_due_at)}</> : null}
+              </div>
+            </div>
+            <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-900">
+              {dispute.payment_hold?.is_active ? "Selected payment temporarily held" : "No active platform payment hold"}
+            </div>
+          </div>
+          {dispute.qualification_explanation ? <p className="mt-2 text-sm text-blue-900">{dispute.qualification_explanation}</p> : null}
+          {Array.isArray(dispute.missing_information) && dispute.missing_information.length ? (
+            <div className="mt-4 rounded-lg bg-white p-3">
+              <div className="text-sm font-extrabold text-slate-900">Information still needed</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                {dispute.missing_information.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+              </ul>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <textarea className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 md:col-span-2" rows={3} placeholder="Describe the specific problem so the contractor can understand and respond" value={qualification.description || ""} onChange={(e) => setQualification((v) => ({ ...v, description: e.target.value }))} />
+                <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" placeholder="What result did the agreement require?" value={qualification.expected_result || ""} onChange={(e) => setQualification((v) => ({ ...v, expected_result: e.target.value }))} />
+                <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" placeholder="What correction are you requesting?" value={qualification.requested_resolution || ""} onChange={(e) => setQualification((v) => ({ ...v, requested_resolution: e.target.value }))} />
+                <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" value={qualification.contractor_notified ?? ""} onChange={(e) => setQualification((v) => ({ ...v, contractor_notified: e.target.value === "" ? null : e.target.value === "yes" }))}>
+                  <option value="">Did you notify the contractor?</option><option value="yes">Yes</option><option value="no">No</option>
+                </select>
+                <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" placeholder="If evidence is unavailable, explain why" value={qualification.evidence_unavailable_reason || ""} onChange={(e) => setQualification((v) => ({ ...v, evidence_unavailable_reason: e.target.value }))} />
+              </div>
+              <button type="button" disabled={actionBusy === "qualification"} onClick={() => runAction("qualification", `/api/projects/disputes/public/${encodeURIComponent(id)}/qualification/?token=${encodeURIComponent(token)}`, qualification, "Information saved and claim reassessed.", "PATCH")} className="mt-3 rounded-lg bg-blue-700 px-4 py-2 text-sm font-extrabold text-white disabled:opacity-60">Save qualification details</button>
+            </div>
+          ) : null}
+        </div>
+
+        {Array.isArray(dispute.claims) && dispute.claims.length ? (
+          <div className="mt-6">
+            <div className="text-sm font-extrabold text-slate-800">Claims being reviewed</div>
+            <div className="mt-3 space-y-3">
+              {dispute.claims.map((claim) => (
+                <div key={claim.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap justify-between gap-2 text-sm">
+                    <b className="text-slate-900">Claim {claim.sequence}</b>
+                    <span className="font-bold text-slate-600">{String(claim.status || "pending").replaceAll("_", " ")} · {String(claim.evidence_status || "evidence pending").replaceAll("_", " ")}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-700">{claim.description}</p>
+                  {claim.contractor_response ? <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700"><b>Contractor response:</b> {claim.contractor_response}</div> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {Array.isArray(dispute.claims) && dispute.claims.some((claim) => claim.access_required && claim.customer_access_response == null) ? (
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="font-extrabold text-amber-950">Site access requested</div>
+            {dispute.claims.filter((claim) => claim.access_required && claim.customer_access_response == null).map((claim) => (
+              <div key={claim.id} className="mt-3 rounded-lg bg-white p-3 text-sm text-slate-800">
+                <p>{claim.description}</p>
+                <div className="mt-3 flex gap-2">
+                  <button type="button" onClick={() => runAction(`access-${claim.id}`, `/api/projects/disputes/public/${id}/claims/${claim.id}/access/?token=${encodeURIComponent(token)}`, { access_permitted: true, notes: "Access permitted for inspection or correction." }, "Access decision saved.")} className="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white">Permit access</button>
+                  <button type="button" onClick={() => runAction(`access-${claim.id}`, `/api/projects/disputes/public/${id}/claims/${claim.id}/access/?token=${encodeURIComponent(token)}`, { access_permitted: false, notes: "Access is not permitted at this time." }, "Access decision saved.")} className="rounded-lg bg-white px-3 py-2 font-bold text-rose-700 ring-1 ring-rose-300">Decline</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {Array.isArray(dispute.work_pause_requests) && dispute.work_pause_requests.some((pause) => pause.status === "requested") ? (
+          <div className="mt-6 rounded-xl border border-violet-200 bg-violet-50 p-4">
+            <div className="font-extrabold text-violet-950">Work-pause request</div>
+            <p className="mt-1 text-sm text-violet-900">A work pause is separate from the selected payment hold.</p>
+            {dispute.work_pause_requests.filter((pause) => pause.status === "requested").map((pause) => (
+              <div key={pause.id} className="mt-3 rounded-lg bg-white p-3 text-sm text-slate-800">
+                <b>{String(pause.reason_type).replaceAll("_", " ")}</b>: {pause.explanation} {pause.scope ? `Scope: ${pause.scope}` : ""}
+                <div className="mt-3 flex gap-2">
+                  <button type="button" onClick={() => runAction(`pause-${pause.id}`, `/api/projects/disputes/public/${id}/work-pauses/${pause.id}/respond/?token=${encodeURIComponent(token)}`, { decision: "accept", reason: "Customer accepted the documented pause." }, "Work pause accepted.")} className="rounded-lg bg-violet-700 px-3 py-2 font-bold text-white">Accept pause</button>
+                  <button type="button" onClick={() => runAction(`pause-${pause.id}`, `/api/projects/disputes/public/${id}/work-pauses/${pause.id}/respond/?token=${encodeURIComponent(token)}`, { decision: "decline", reason: "Customer declined the requested pause." }, "Work pause declined.")} className="rounded-lg bg-white px-3 py-2 font-bold text-slate-900 ring-1 ring-slate-300">Decline</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {Array.isArray(dispute.escrow_allocations) && dispute.escrow_allocations.some((allocation) => allocation.status === "awaiting_authorization" && !allocation.homeowner_authorized_at) ? (
+          <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="font-extrabold text-emerald-950">Proposed escrow allocation</div>
+            {dispute.escrow_allocations.filter((allocation) => allocation.status === "awaiting_authorization" && !allocation.homeowner_authorized_at).map((allocation) => (
+              <div key={allocation.id} className="mt-3 rounded-lg bg-white p-3 text-sm text-slate-800">
+                <div className="grid gap-2 sm:grid-cols-3"><span>Held: <b>${(allocation.source_amount_cents / 100).toFixed(2)}</b></span><span>Contractor: <b>${(allocation.contractor_amount_cents / 100).toFixed(2)}</b></span><span>Return to customer: <b>${(allocation.homeowner_amount_cents / 100).toFixed(2)}</b></span></div>
+                <p className="mt-2">{allocation.explanation}</p>
+                <p className="mt-2 text-xs text-slate-600">Authorization records your agreement to these exact amounts. It does not by itself move money.</p>
+                <div className="mt-3 flex gap-2">
+                  <button type="button" onClick={() => runAction(`allocation-${allocation.id}`, `/api/projects/disputes/public/${id}/escrow-allocations/${allocation.id}/authorize/?token=${encodeURIComponent(token)}`, { authorization: "authorize", attestation: true }, "Allocation authorized.")} className="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white">Authorize exact amounts</button>
+                  <button type="button" onClick={() => runAction(`allocation-${allocation.id}`, `/api/projects/disputes/public/${id}/escrow-allocations/${allocation.id}/authorize/?token=${encodeURIComponent(token)}`, { authorization: "reject", attestation: true }, "Allocation rejected.")} className="rounded-lg bg-white px-3 py-2 font-bold text-rose-700 ring-1 ring-rose-300">Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="font-extrabold text-slate-900">Outside documentation</div>
+          <p className="mt-1 text-sm text-slate-600">If you arranged an inspection or other outside process, upload its written report or directive. MyHomeBro records the document but does not interpret its legal effect.</p>
+          {Array.isArray(dispute.resolution_documents) && dispute.resolution_documents.length ? <div className="mt-3 space-y-2">{dispute.resolution_documents.map((doc) => <div key={doc.id} className="flex items-center justify-between rounded-lg bg-white p-3 text-sm"><span>{doc.title}</span>{doc.file_url ? <a className="font-bold text-blue-700" href={doc.file_url} target="_blank" rel="noreferrer">Open</a> : null}</div>)}</div> : null}
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <select value={externalType} onChange={(e) => setExternalType(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"><option value="external_decision">Outside decision or order</option><option value="mutual_instructions">Mutual written instructions</option><option value="inspection_report">Inspection report</option><option value="other">Other record</option></select>
+            <input value={externalTitle} onChange={(e) => setExternalTitle(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" placeholder="Document title" />
+            <input type="file" accept="application/pdf,image/*" onChange={(e) => setExternalFile(e.target.files?.[0] || null)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
+            <button type="button" disabled={!externalFile || actionBusy === "external-document"} onClick={uploadExternalDocument} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-extrabold text-white disabled:opacity-60">{actionBusy === "external-document" ? "Uploading…" : "Add to case record"}</button>
+          </div>
+        </div>
+
         {cameraOpen ? (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 p-3" role="dialog" aria-modal="true" aria-label="Take a dispute photo">
             <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-slate-900 shadow-2xl">
@@ -510,7 +669,7 @@ export default function PublicDisputeView() {
         ) : null}
 
         <div className="mt-6 text-xs text-slate-500">
-          This dispute thread is shared with your contractor and may be reviewed by a third-party mediator if escalated.
+          This record is shared with your contractor. MyHomeBro provides workflow and recordkeeping, not mediation or a legal decision. Any outside decision-maker is arranged by the parties and their written directive can be uploaded to the record.
         </div>
       </div>
     </div>

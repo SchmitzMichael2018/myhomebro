@@ -92,7 +92,9 @@ from projects.services.customer_notification_preferences import (
 )
 from projects.services.customer_accounts import ensure_customer_identity_for_user
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
-from projects.models_dispute import Dispute
+from projects.models_dispute import Dispute, DisputeAttachment
+from projects.services.dispute_workflow import active_dispute_for_source, assess_dispute_qualification, initialize_dispute_workflow
+from projects.services.resolution_workspace import index_evidence
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_maintenance import MaintenanceWorkOrder
@@ -162,6 +164,7 @@ from projects.services.rental_operations_billing import (
 )
 from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
+from projects.services.dispute_notifications import notify_homeowner_qualification
 from projects.services.warranty_management import active_warranty_queryset
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
 from projects.services.project_activity import create_project_activity_event, serialize_project_activity_events
@@ -3996,6 +3999,16 @@ def _active_dispute(agreement):
     )
 
 
+def _active_disputes(agreement):
+    if not agreement:
+        return []
+    return list(
+        Dispute.objects.filter(agreement=agreement, is_archived=False)
+        .exclude(status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "canceled", "cancelled", "closed"])
+        .order_by("-created_at", "-id")
+    )
+
+
 def _serialize_amendment_attachment(attachment: AmendmentRequestAttachment) -> dict:
     file_obj = getattr(attachment, "file", None)
     try:
@@ -4079,7 +4092,8 @@ def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: d
     agreement = Agreement.objects.filter(id=agreement_id).first()
     amendment = _active_amendment_request(agreement)
     refund = _active_refund_request(agreement)
-    dispute = _active_dispute(agreement)
+    disputes = _active_disputes(agreement)
+    dispute = disputes[0] if disputes else None
     amendment_allowed = status_key in {
         "signed",
         "escrow_needed",
@@ -4102,9 +4116,9 @@ def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: d
             "label": "View Refund Request" if refund else "Request Refund",
         },
         "dispute": {
-            "available": bool(dispute_allowed and not dispute),
+            "available": bool(dispute_allowed),
             "active": bool(dispute),
-            "label": "View Dispute" if dispute else "Open Dispute",
+            "label": "Open Another Dispute" if dispute else "Open Dispute",
         },
     }
     return {
@@ -4114,7 +4128,7 @@ def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: d
             for row in [
                 _serialize_case("amendment", amendment),
                 _serialize_case("refund", refund),
-                _serialize_case("dispute", dispute),
+                *[_serialize_case("dispute", row) for row in disputes],
             ]
             if row
         ],
@@ -9728,6 +9742,11 @@ class CustomerProjectDashboardView(APIView):
 class CustomerPortalDrawDisputeSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True)
+    expected_result = serializers.CharField(required=False, allow_blank=True)
+    desired_resolution = serializers.CharField(required=False, allow_blank=True)
+    evidence_unavailable_reason = serializers.CharField(required=False, allow_blank=True)
+    contractor_notified = serializers.BooleanField(required=False, allow_null=True)
+    prior_notice_explanation = serializers.CharField(required=False, allow_blank=True)
 
 
 def _portal_agreement_for_email(email: str, agreement_id: int):
@@ -9774,6 +9793,12 @@ class CustomerPortalAgreementDisputeSerializer(serializers.Serializer):
     desired_resolution = serializers.CharField(required=False, allow_blank=True)
     milestone_id = serializers.IntegerField(required=False)
     evidence_note = serializers.CharField(required=False, allow_blank=True)
+    expected_result = serializers.CharField(required=False, allow_blank=True)
+    evidence_unavailable_reason = serializers.CharField(required=False, allow_blank=True)
+    contractor_notified = serializers.BooleanField(required=False, allow_null=True)
+    prior_notice_explanation = serializers.CharField(required=False, allow_blank=True)
+    urgent_review = serializers.BooleanField(required=False, default=False)
+    urgent_reason = serializers.CharField(required=False, allow_blank=True)
 
 
 class CustomerPortalAgreementAmendmentImproveView(APIView):
@@ -10136,6 +10161,13 @@ class CustomerPortalAgreementDisputeView(APIView):
 
         serializer = CustomerPortalAgreementDisputeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        files = _tenant_maintenance_uploaded_files(request)
+        if len(files) > 5:
+            return Response({"attachments": "Upload up to 5 supporting files."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            _validate_tenant_maintenance_attachments(files)
+        except serializers.ValidationError as exc:
+            return Response({"attachments": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
         portal_payload = _build_customer_portal_payload(email, request=request)
         agreement_row = next((row for row in portal_payload["agreements"] if row["id"] == agreement.id), {})
         if agreement_row.get("customer_status_key") in {"closed"}:
@@ -10148,7 +10180,7 @@ class CustomerPortalAgreementDisputeView(APIView):
             if not milestone:
                 return Response({"detail": "Milestone not found for this agreement."}, status=status.HTTP_404_NOT_FOUND)
 
-        existing = _active_dispute(agreement)
+        existing = active_dispute_for_source(agreement=agreement, milestone=milestone) if milestone else None
         if existing:
             return Response(
                 {
@@ -10176,28 +10208,44 @@ class CustomerPortalAgreementDisputeView(APIView):
         dispute = Dispute.objects.create(
             agreement=agreement,
             milestone=milestone,
+            source_type=Dispute.SOURCE_MILESTONE if milestone else Dispute.SOURCE_GENERAL_PROJECT_ISSUE,
+            source_object_id=milestone.id if milestone else None,
             initiator="homeowner",
             reason=reason,
             description=description,
-            status="open",
-            escrow_frozen=True,
+            expected_result=serializer.validated_data.get("expected_result", "").strip(),
+            requested_resolution=desired_resolution,
+            evidence_unavailable_reason=serializer.validated_data.get("evidence_unavailable_reason", "").strip(),
+            contractor_notified=serializer.validated_data.get("contractor_notified"),
+            prior_notice_explanation=serializer.validated_data.get("prior_notice_explanation", "").strip(),
+            urgent_review=serializer.validated_data.get("urgent_review", False),
+            urgent_reason=serializer.validated_data.get("urgent_reason", "").strip(),
         )
-        dispute.set_response_deadline_now()
-        dispute.save(update_fields=[
-            "public_token",
-            "response_due_at",
-            "deadline_hours",
-            "deadline_tier",
-            "last_activity_at",
-            "status",
-            "escrow_frozen",
-            "updated_at",
-        ])
+        dispute = initialize_dispute_workflow(dispute)
+        user = User.objects.filter(email__iexact=email).first()
+        for uploaded in files:
+            content_type = _safe_text(getattr(uploaded, "content_type", "")).lower()
+            kind = "photo" if content_type.startswith("image/") else "other"
+            attachment = DisputeAttachment.objects.create(
+                dispute=dispute,
+                kind=kind,
+                file=uploaded,
+                uploaded_by=user,
+            )
+            index_evidence(
+                dispute,
+                attachment,
+                actor=user,
+                description=evidence_note,
+                category="photo" if kind == "photo" else "document",
+            )
+        if files:
+            dispute = assess_dispute_qualification(dispute, actor=user)
+        notify_homeowner_qualification(dispute, "qualified" if dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED else "submitted")
         try:
             notify_dispute_event(dispute=dispute, event_type=Notification.EVENT_DISPUTE_OPENED, actor_user=None)
         except Exception:
             pass
-        user = User.objects.filter(email__iexact=email).first()
         create_project_activity_event(
             agreement=agreement,
             milestone=milestone,
@@ -10289,23 +10337,20 @@ class CustomerPortalDrawDisputeView(APIView):
                 dispute = Dispute.objects.create(
                     agreement=agreement,
                     milestone=milestone,
+                    source_type=Dispute.SOURCE_PAYMENT_REQUEST,
+                    source_object_id=draw.id,
+                    draw_request=draw,
                     initiator="homeowner",
                     reason=reason,
                     description=full_description,
-                    status="open",
-                    escrow_frozen=True,
+                    expected_result=(serializer.validated_data.get("expected_result") or "Payment request should match completed and approved work.").strip(),
+                    requested_resolution=(serializer.validated_data.get("desired_resolution") or "Review and correct the payment request.").strip(),
+                    evidence_unavailable_reason=serializer.validated_data.get("evidence_unavailable_reason", "").strip(),
+                    contractor_notified=serializer.validated_data.get("contractor_notified"),
+                    prior_notice_explanation=serializer.validated_data.get("prior_notice_explanation", "").strip(),
                 )
-                dispute.set_response_deadline_now()
-                dispute.save(update_fields=[
-                    "public_token",
-                    "response_due_at",
-                    "deadline_hours",
-                    "deadline_tier",
-                    "last_activity_at",
-                    "status",
-                    "escrow_frozen",
-                    "updated_at",
-                ])
+                dispute = initialize_dispute_workflow(dispute)
+                notify_homeowner_qualification(dispute, "qualified" if dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED else "submitted")
                 try:
                     notify_dispute_event(
                         dispute=dispute,

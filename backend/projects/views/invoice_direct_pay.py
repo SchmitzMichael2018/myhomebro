@@ -15,15 +15,7 @@ from projects.services.contractor_onboarding import build_stripe_requirement_pay
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.pricing_observations import record_pricing_observation_for_invoice
-
-
-def _agreement_has_active_dispute(agreement) -> bool:
-    if not agreement:
-        return False
-    try:
-        return agreement.disputes.filter(status__in=("initiated", "open", "under_review")).exists()
-    except Exception:
-        return False
+from projects.services.dispute_workflow import invoice_has_active_dispute_hold
 
 
 def _safe_post_payment_tasks(invoice: Invoice) -> None:
@@ -109,9 +101,9 @@ def invoice_create_direct_pay_link(request, pk: int):
     agreement = getattr(invoice, "agreement", None)
 
     # Dispute guard
-    if _agreement_has_active_dispute(agreement):
+    if invoice_has_active_dispute_hold(invoice):
         return Response(
-            {"error": "This agreement has an active dispute. Direct Pay link creation is paused."},
+            {"error": "This invoice has an active source-specific dispute hold. Direct Pay link creation is paused."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

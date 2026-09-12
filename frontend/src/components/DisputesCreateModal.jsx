@@ -7,8 +7,7 @@ import { toast } from "react-hot-toast";
  * DisputesCreateModal
  * - Step 1: pick Agreement (+ optional Milestone)
  * - Step 2: reason/description
- * - Step 3: confirm fee & pay (freezes escrow)
- * - Step 4: upload evidence
+ * - Step 3: upload evidence and review qualification status
  */
 const money = (n) =>
   Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -21,6 +20,9 @@ export default function DisputesCreateModal({ open, onClose }) {
   const [milestoneId, setMilestoneId] = useState("");
   const [reason, setReason] = useState("");
   const [description, setDescription] = useState("");
+  const [expectedResult, setExpectedResult] = useState("");
+  const [requestedResolution, setRequestedResolution] = useState("");
+  const [evidenceUnavailableReason, setEvidenceUnavailableReason] = useState("");
   const [created, setCreated] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -32,6 +34,9 @@ export default function DisputesCreateModal({ open, onClose }) {
     setMilestoneId("");
     setReason("");
     setDescription("");
+    setExpectedResult("");
+    setRequestedResolution("");
+    setEvidenceUnavailableReason("");
     setCreated(null);
 
     (async () => {
@@ -72,6 +77,9 @@ export default function DisputesCreateModal({ open, onClose }) {
         initiator: "contractor",
         reason: reason.trim(),
         description: description.trim(),
+        expected_result: expectedResult.trim(),
+        requested_resolution: requestedResolution.trim(),
+        evidence_unavailable_reason: evidenceUnavailableReason.trim(),
       };
       const { data } = await api.post("/projects/disputes/", payload);
       setCreated(data);
@@ -79,21 +87,6 @@ export default function DisputesCreateModal({ open, onClose }) {
       setStep(3);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Could not create dispute.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const payFee = async () => {
-    if (!created?.id) return;
-    setBusy(true);
-    try {
-      // ✅ BACKEND ROUTE IS pay-fee (hyphen) per views/dispute.py
-      await api.post(`/projects/disputes/${created.id}/pay-fee/`);
-      toast.success("Fee paid - escrow hold active.");
-      setStep(4);
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Payment failed.");
     } finally {
       setBusy(false);
     }
@@ -107,6 +100,8 @@ export default function DisputesCreateModal({ open, onClose }) {
     try {
       // ✅ BACKEND ROUTE is /attachments (correct)
       await api.post(`/projects/disputes/${created.id}/attachments/`, form);
+      const refreshed = await api.get(`/projects/disputes/${created.id}/`);
+      setCreated(refreshed.data);
       toast.success("Uploaded.");
     } catch {
       toast.error("Upload failed.");
@@ -122,8 +117,7 @@ export default function DisputesCreateModal({ open, onClose }) {
           <h2 data-testid="dispute-create-title">
             {step === 1 && "Start a Resolution Case - Select Agreement"}
             {step === 2 && "Describe the Resolution Case"}
-            {step === 3 && "Resolution Case Fee"}
-            {step === 4 && "Upload Evidence"}
+            {step === 3 && "Evidence & Next Steps"}
           </h2>
           <button className="mhb-modal-close" onClick={onClose}>
             ✕
@@ -175,6 +169,18 @@ export default function DisputesCreateModal({ open, onClose }) {
                   Continue
                 </button>
               </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">What did the agreement or milestone require?</label>
+                <textarea className="w-full border rounded px-3 py-2" rows={3} value={expectedResult} onChange={(e) => setExpectedResult(e.target.value)} placeholder="Describe the expected result or requirement." />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">What correction or resolution is requested?</label>
+                <textarea className="w-full border rounded px-3 py-2" rows={3} value={requestedResolution} onChange={(e) => setRequestedResolution(e.target.value)} placeholder="Inspection, correction, revised deadline, payment allocation, etc." />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">If evidence is unavailable or not applicable, explain why</label>
+                <textarea className="w-full border rounded px-3 py-2" rows={2} value={evidenceUnavailableReason} onChange={(e) => setEvidenceUnavailableReason(e.target.value)} placeholder="Photos are not always required—for example, for delays or missed appointments." />
+              </div>
             </>
           )}
 
@@ -218,24 +224,13 @@ export default function DisputesCreateModal({ open, onClose }) {
 
           {step === 3 && created && (
             <>
-              <div data-testid="dispute-fee-step" className="text-slate-700">
-                Resolution case <strong>#{created.id}</strong> created. A fee of{" "}
-                <strong>{money(created.fee_amount || 0)}</strong> is required to continue the review process and place an escrow hold where applicable.
-              </div>
-              <div className="flex justify-end">
-                <button className="mhb-btn primary" onClick={payFee} disabled={busy}>
-                  {busy ? "Processing…" : "Pay Fee & Place Escrow Hold"}
-                </button>
-              </div>
-            </>
-          )}
-
-          {step === 4 && created && (
-            <>
               <div className="text-slate-700">
-                An escrow hold is now active where applicable. Upload supporting evidence (agreements, milestone docs, photos,
-                receipts).
+                Resolution case <strong>#{created.id}</strong> was recorded with no filing fee. {created?.payment_hold?.status === "no_hold"
+                  ? "This is a documentation-only case; MyHomeBro is not holding funds."
+                  : "Only the identified payment source is on a temporary administrative hold while qualification is reviewed."}
               </div>
+              {created?.missing_information?.length ? <div className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-950"><strong>Information still needed</strong><ul className="mt-2 list-disc pl-5">{created.missing_information.map((item) => <li key={item}>{item}</li>)}</ul></div> : <div className="rounded border border-emerald-300 bg-emerald-50 p-3 text-emerald-950"><strong>Qualification information is complete.</strong> The contractor can now respond to the claims.</div>}
+              <div className="text-sm text-slate-600">Upload information that helps explain the issue. Photos are helpful when relevant, but they are not universally required.</div>
               <div className="grid md:grid-cols-2 gap-8">
                 {["agreement", "milestone", "photo", "receipt"].map((k) => (
                   <div key={k} className="mhb-glass" style={{ padding: 12 }}>

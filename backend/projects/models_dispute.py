@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+import uuid
 
 from django.conf import settings
 from django.db import models, transaction
@@ -97,6 +98,36 @@ class Dispute(models.Model):
         ("resolved_homeowner", "Resolved - Homeowner"),
         ("resolved_partial", "Resolved - Partial"),
         ("canceled", "Canceled"),
+    )
+
+    QUALIFICATION_PENDING = "pending"
+    QUALIFICATION_INFORMATION_NEEDED = "information_needed"
+    QUALIFICATION_QUALIFIED = "qualified"
+    QUALIFICATION_NOT_QUALIFIED = "not_qualified"
+    QUALIFICATION_URGENT_REVIEW = "urgent_review"
+    QUALIFICATION_CHOICES = (
+        (QUALIFICATION_PENDING, "Pending qualification"),
+        (QUALIFICATION_INFORMATION_NEEDED, "Customer information needed"),
+        (QUALIFICATION_QUALIFIED, "Qualified"),
+        (QUALIFICATION_NOT_QUALIFIED, "Not qualified"),
+        (QUALIFICATION_URGENT_REVIEW, "Urgent review"),
+    )
+
+    STAGE_INTAKE = "intake"
+    STAGE_CUSTOMER_INFORMATION = "customer_information"
+    STAGE_CONTRACTOR_RESPONSE = "contractor_response"
+    STAGE_CURE = "cure"
+    STAGE_RESOLUTION = "resolution"
+    STAGE_EXTERNAL_RESOLUTION = "external_resolution"
+    STAGE_CLOSED = "closed"
+    WORKFLOW_STAGE_CHOICES = (
+        (STAGE_INTAKE, "Intake"),
+        (STAGE_CUSTOMER_INFORMATION, "Customer information"),
+        (STAGE_CONTRACTOR_RESPONSE, "Contractor response"),
+        (STAGE_CURE, "Cure in progress"),
+        (STAGE_RESOLUTION, "Resolution"),
+        (STAGE_EXTERNAL_RESOLUTION, "External resolution"),
+        (STAGE_CLOSED, "Closed"),
     )
 
     RESOLUTION_CONTRACTOR_PREVAILS = "contractor_prevails"
@@ -205,6 +236,11 @@ class Dispute(models.Model):
     initiator = models.CharField(max_length=20, choices=INITIATOR_CHOICES)
     reason = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    expected_result = models.TextField(blank=True, default="")
+    requested_resolution = models.TextField(blank=True, default="")
+    evidence_unavailable_reason = models.TextField(blank=True, default="")
+    contractor_notified = models.BooleanField(null=True, blank=True)
+    prior_notice_explanation = models.TextField(blank=True, default="")
 
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="initiated")
     is_archived = models.BooleanField(default=False, db_index=True)
@@ -269,6 +305,31 @@ class Dispute(models.Model):
     deadline_tier = models.CharField(max_length=32, blank=True, default="")
     last_activity_at = models.DateTimeField(null=True, blank=True)
     deadline_missed_by = models.CharField(max_length=20, blank=True, default="")  # homeowner/contractor
+
+    # Qualification is deliberately separate from the high-level case status.
+    # Existing cases migrate as qualified; new financial disputes explicitly
+    # enter pending qualification through the canonical workflow service.
+    qualification_status = models.CharField(
+        max_length=32,
+        choices=QUALIFICATION_CHOICES,
+        default=QUALIFICATION_QUALIFIED,
+        db_index=True,
+    )
+    workflow_stage = models.CharField(
+        max_length=32,
+        choices=WORKFLOW_STAGE_CHOICES,
+        default=STAGE_INTAKE,
+        db_index=True,
+    )
+    qualification_started_at = models.DateTimeField(null=True, blank=True)
+    qualification_due_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    qualification_decided_at = models.DateTimeField(null=True, blank=True)
+    qualification_explanation = models.TextField(blank=True, default="")
+    missing_information = models.JSONField(default=list, blank=True)
+    urgent_review = models.BooleanField(default=False, db_index=True)
+    urgent_reason = models.TextField(blank=True, default="")
+    qualification_extension_count = models.PositiveSmallIntegerField(default=0)
+    qualification_extension_reason = models.TextField(blank=True, default="")
 
     def ensure_public_token(self) -> str:
         if self.public_token:
@@ -767,6 +828,10 @@ class ResolutionCaseTimelineEvent(models.Model):
     EVENT_CASE_CLOSED = "case_closed"
     EVENT_CASE_REOPENED = "case_reopened"
     EVENT_AI_ANALYSIS_UPDATED = "ai_analysis_updated"
+    EVENT_QUALIFICATION_UPDATED = "qualification_updated"
+    EVENT_HOLD_EXPIRATION_PENDING = "hold_expiration_pending"
+    EVENT_WORK_PAUSE_UPDATED = "work_pause_updated"
+    EVENT_ESCROW_ALLOCATION_UPDATED = "escrow_allocation_updated"
     EVENT_MANUAL = "manual"
     EVENT_CHOICES = (
         (EVENT_CASE_CREATED, "Case Created"),
@@ -782,6 +847,10 @@ class ResolutionCaseTimelineEvent(models.Model):
         (EVENT_CASE_CLOSED, "Case Closed"),
         (EVENT_CASE_REOPENED, "Case Reopened"),
         (EVENT_AI_ANALYSIS_UPDATED, "AI Analysis Updated"),
+        (EVENT_QUALIFICATION_UPDATED, "Qualification Updated"),
+        (EVENT_HOLD_EXPIRATION_PENDING, "Hold Expiration Pending"),
+        (EVENT_WORK_PAUSE_UPDATED, "Work Pause Updated"),
+        (EVENT_ESCROW_ALLOCATION_UPDATED, "Escrow Allocation Updated"),
         (EVENT_MANUAL, "Manual Entry"),
     )
 
@@ -935,6 +1004,208 @@ class ResolutionEvidenceIndex(models.Model):
         return f"Evidence(dispute={self.dispute_id}, category={self.category})"
 
 
+class DisputeClaim(models.Model):
+    CONNECTION_DIRECT = "direct"
+    CONNECTION_PARTIAL = "partial"
+    CONNECTION_UNRELATED = "unrelated"
+    CONNECTION_CHOICES = (
+        (CONNECTION_DIRECT, "Direct"),
+        (CONNECTION_PARTIAL, "Partial"),
+        (CONNECTION_UNRELATED, "Unrelated"),
+    )
+
+    STATUS_PENDING = "pending"
+    STATUS_INFORMATION_NEEDED = "information_needed"
+    STATUS_QUALIFIED = "qualified"
+    STATUS_NOT_QUALIFIED = "not_qualified"
+    STATUS_RESOLVED = "resolved"
+    STATUS_CHOICES = (
+        (STATUS_PENDING, "Pending"),
+        (STATUS_INFORMATION_NEEDED, "Information needed"),
+        (STATUS_QUALIFIED, "Qualified"),
+        (STATUS_NOT_QUALIFIED, "Not qualified"),
+        (STATUS_RESOLVED, "Resolved"),
+    )
+
+    POSITION_ACCEPT = "accept_responsibility"
+    POSITION_DISPUTE = "dispute_allegation"
+    POSITION_INSPECTION = "request_inspection"
+    POSITION_CURE = "propose_cure"
+    POSITION_CHOICES = (
+        (POSITION_ACCEPT, "Accept responsibility"),
+        (POSITION_DISPUTE, "Dispute allegation"),
+        (POSITION_INSPECTION, "Request inspection"),
+        (POSITION_CURE, "Propose cure"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="claims")
+    sequence = models.PositiveSmallIntegerField(default=1)
+    description = models.TextField()
+    expected_result = models.TextField(blank=True, default="")
+    requested_remedy = models.TextField(blank=True, default="")
+    milestone_connection = models.CharField(
+        max_length=16,
+        choices=CONNECTION_CHOICES,
+        default=CONNECTION_DIRECT,
+    )
+    evidence_status = models.CharField(max_length=32, blank=True, default="")
+    missing_information = models.JSONField(default=list, blank=True)
+    contractor_response = models.TextField(blank=True, default="")
+    contractor_position = models.CharField(max_length=32, choices=POSITION_CHOICES, blank=True, default="")
+    cure_proposal = models.JSONField(default=dict, blank=True)
+    access_required = models.BooleanField(null=True, blank=True)
+    customer_access_response = models.BooleanField(null=True, blank=True)
+    customer_access_notes = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["sequence", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["dispute", "sequence"], name="uniq_dispute_claim_sequence"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.updated_at = timezone.now()
+        super().save(*args, **kwargs)
+
+
+class DisputePaymentHold(models.Model):
+    STATUS_TEMPORARY = "temporary"
+    STATUS_CONTINUED = "continued"
+    STATUS_EXPIRATION_PENDING = "expiration_pending"
+    STATUS_RELEASED = "released"
+    STATUS_NO_HOLD = "no_hold"
+    STATUS_CHOICES = (
+        (STATUS_TEMPORARY, "Temporary administrative hold"),
+        (STATUS_CONTINUED, "Qualified hold"),
+        (STATUS_EXPIRATION_PENDING, "Expiration pending"),
+        (STATUS_RELEASED, "Released"),
+        (STATUS_NO_HOLD, "No platform-held funds"),
+    )
+
+    dispute = models.OneToOneField(Dispute, on_delete=models.CASCADE, related_name="payment_hold")
+    milestone = models.ForeignKey("projects.Milestone", on_delete=models.SET_NULL, null=True, blank=True, related_name="dispute_payment_holds")
+    invoice = models.ForeignKey("projects.Invoice", on_delete=models.SET_NULL, null=True, blank=True, related_name="dispute_payment_holds")
+    draw_request = models.ForeignKey("projects.DrawRequest", on_delete=models.SET_NULL, null=True, blank=True, related_name="dispute_payment_holds")
+    expense = models.ForeignKey("projects.Expense", on_delete=models.SET_NULL, null=True, blank=True, related_name="dispute_payment_holds")
+    amount_cents = models.PositiveIntegerField(default=0)
+    currency = models.CharField(max_length=3, default="usd")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_TEMPORARY, db_index=True)
+    started_at = models.DateTimeField(default=timezone.now)
+    expiration_pending_at = models.DateTimeField(null=True, blank=True)
+    release_due_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    release_reason = models.TextField(blank=True, default="")
+    idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "release_due_at"]),
+            models.Index(fields=["milestone", "status"]),
+            models.Index(fields=["invoice", "status"]),
+        ]
+
+    @property
+    def is_active(self) -> bool:
+        return self.status in {self.STATUS_TEMPORARY, self.STATUS_CONTINUED, self.STATUS_EXPIRATION_PENDING}
+
+
+class DisputeWorkPauseRequest(models.Model):
+    REASON_VOLUNTARY = "voluntary"
+    REASON_SAFETY = "safety"
+    REASON_SITE_ACCESS = "site_access"
+    REASON_EXTERNAL = "external_process"
+    REASON_TERMINATION = "termination_review"
+    REASON_CHOICES = (
+        (REASON_VOLUNTARY, "Voluntary pause"),
+        (REASON_SAFETY, "Safety or hostile site conditions"),
+        (REASON_SITE_ACCESS, "Site access unavailable"),
+        (REASON_EXTERNAL, "External resolution process"),
+        (REASON_TERMINATION, "Termination under review"),
+    )
+
+    STATUS_REQUESTED = "requested"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_DECLINED = "declined"
+    STATUS_ENDED = "ended"
+    STATUS_CHOICES = (
+        (STATUS_REQUESTED, "Requested"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_DECLINED, "Declined"),
+        (STATUS_ENDED, "Ended"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="work_pause_requests")
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="requested_dispute_work_pauses")
+    reason_type = models.CharField(max_length=32, choices=REASON_CHOICES)
+    explanation = models.TextField()
+    scope = models.TextField(blank=True, default="", help_text="Work or areas proposed for pausing.")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_REQUESTED, db_index=True)
+    responded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="responded_dispute_work_pauses")
+    response_reason = models.TextField(blank=True, default="")
+    requested_at = models.DateTimeField(default=timezone.now)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at", "-id"]
+
+
+class DisputeEscrowAllocation(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_AWAITING_AUTHORIZATION = "awaiting_authorization"
+    STATUS_AUTHORIZED = "authorized"
+    STATUS_READY_FOR_EXECUTION = "ready_for_execution"
+    STATUS_EXECUTED = "executed"
+    STATUS_CANCELED = "canceled"
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_AWAITING_AUTHORIZATION, "Awaiting authorization"),
+        (STATUS_AUTHORIZED, "Authorized by both parties"),
+        (STATUS_READY_FOR_EXECUTION, "Validated for execution"),
+        (STATUS_EXECUTED, "Executed"),
+        (STATUS_CANCELED, "Canceled"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="escrow_allocations")
+    payment_hold = models.ForeignKey(DisputePaymentHold, on_delete=models.PROTECT, related_name="allocations")
+    source_amount_cents = models.PositiveBigIntegerField()
+    contractor_amount_cents = models.PositiveBigIntegerField(default=0)
+    homeowner_amount_cents = models.PositiveBigIntegerField(default=0)
+    currency = models.CharField(max_length=3, default="USD")
+    explanation = models.TextField()
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    proposed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="proposed_dispute_allocations")
+    homeowner_authorized_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="homeowner_authorized_dispute_allocations")
+    homeowner_authorized_at = models.DateTimeField(null=True, blank=True)
+    contractor_authorized_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="contractor_authorized_dispute_allocations")
+    contractor_authorized_at = models.DateTimeField(null=True, blank=True)
+    external_authority_document = models.ForeignKey("projects.ResolutionDocument", on_delete=models.PROTECT, null=True, blank=True, related_name="authorized_allocations")
+    staff_confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="confirmed_dispute_allocations")
+    staff_confirmed_at = models.DateTimeField(null=True, blank=True)
+    executed_at = models.DateTimeField(null=True, blank=True)
+    execution_reference = models.CharField(max_length=255, blank=True, default="")
+    homeowner_refund_id = models.CharField(max_length=255, blank=True, default="")
+    contractor_transfer_id = models.CharField(max_length=255, blank=True, default="")
+    execution_error = models.TextField(blank=True, default="")
+    idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    @property
+    def allocation_total_cents(self) -> int:
+        return int(self.contractor_amount_cents or 0) + int(self.homeowner_amount_cents or 0)
+
+    @property
+    def is_balanced(self) -> bool:
+        return self.allocation_total_cents == int(self.source_amount_cents or 0)
+
+
 class ResolutionProposal(models.Model):
     STATUS_DRAFT = "draft"
     STATUS_PROPOSED = "proposed"
@@ -1071,9 +1342,15 @@ class ResolutionAgreementSignature(models.Model):
 
 class ResolutionDocument(models.Model):
     TYPE_PDF_PACKAGE = "pdf_package"
+    TYPE_EXTERNAL_DECISION = "external_decision"
+    TYPE_MUTUAL_INSTRUCTIONS = "mutual_instructions"
+    TYPE_INSPECTION = "inspection_report"
     TYPE_OTHER = "other"
     TYPE_CHOICES = (
         (TYPE_PDF_PACKAGE, "PDF Package"),
+        (TYPE_EXTERNAL_DECISION, "External decision or directive"),
+        (TYPE_MUTUAL_INSTRUCTIONS, "Mutual financial instructions"),
+        (TYPE_INSPECTION, "Independent inspection report"),
         (TYPE_OTHER, "Other"),
     )
 
@@ -1125,6 +1402,7 @@ class DisputeReminderLog(models.Model):
         help_text="homeowner / contractor / admin",
     )
     sent_at = models.DateTimeField(default=timezone.now)
+    dedupe_key = models.CharField(max_length=160, unique=True, null=True, blank=True)
 
     def __str__(self) -> str:
         return f"Reminder {self.kind} → {self.sent_to} (dispute #{self.dispute_id})"

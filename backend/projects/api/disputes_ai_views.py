@@ -16,7 +16,7 @@ from rest_framework.status import (
 
 from projects.ai.disputes_recommendation import generate_dispute_recommendation
 from projects.models_ai_artifacts import DisputeAIArtifact
-from projects.models_dispute import ResolutionCaseTimelineEvent
+from projects.models_dispute import DisputeClaim, ResolutionCaseTimelineEvent
 from projects.services.ai.evidence_context import build_dispute_evidence_context
 from projects.services.resolution_workspace import record_timeline_event
 
@@ -61,6 +61,45 @@ def _serialize_artifact(a: DisputeAIArtifact, include_payload: bool = False) -> 
     if include_payload:
         data["payload"] = a.payload
     return data
+
+
+def _sync_advisory_claims(dispute, payload: dict) -> int:
+    """Persist AI-separated allegations for per-claim responses without changing the deterministic hold decision."""
+    assessment = payload.get("qualification_assessment") if isinstance(payload, dict) else {}
+    rows = assessment.get("claims") if isinstance(assessment, dict) else []
+    if not isinstance(rows, list):
+        return 0
+    status_map = {
+        "qualified": DisputeClaim.STATUS_QUALIFIED,
+        "insufficient_information": DisputeClaim.STATUS_INFORMATION_NEEDED,
+        "unqualified": DisputeClaim.STATUS_NOT_QUALIFIED,
+        "urgent_human_review": DisputeClaim.STATUS_PENDING,
+    }
+    synced = 0
+    for sequence, row in enumerate(rows[:25], start=1):
+        if not isinstance(row, dict):
+            continue
+        description = str(row.get("claim") or "").strip()
+        if not description:
+            continue
+        claim, _ = DisputeClaim.objects.get_or_create(
+            dispute=dispute,
+            sequence=sequence,
+            defaults={"description": description},
+        )
+        claim.description = description
+        connection = str(row.get("milestone_connection") or "direct")
+        if connection in dict(DisputeClaim.CONNECTION_CHOICES):
+            claim.milestone_connection = connection
+        claim.evidence_status = str(row.get("evidence_status") or "")[:32]
+        missing = row.get("missing_information")
+        claim.missing_information = missing if isinstance(missing, list) else []
+        proposed_status = status_map.get(str(row.get("qualification_result") or ""))
+        if proposed_status:
+            claim.status = proposed_status
+        claim.save()
+        synced += 1
+    return synced
 
 
 @api_view(["GET"])
@@ -192,6 +231,7 @@ def dispute_ai_recommendation(request, dispute_id: int):
                 price_cents=None,
                 stripe_payment_intent_id="",
             )
+            claim_count = _sync_advisory_claims(dispute, stored.payload)
             record_timeline_event(
                 dispute,
                 ResolutionCaseTimelineEvent.EVENT_AI_ANALYSIS_UPDATED,
@@ -204,6 +244,9 @@ def dispute_ai_recommendation(request, dispute_id: int):
                     "artifact_type": stored.artifact_type,
                     "version": stored.version,
                     "input_digest": stored.input_digest,
+                    "advisory_claims_structured": claim_count,
+                    "conduct_review_flag": bool((stored.payload.get("qualification_assessment") or {}).get("conduct_review_flag")),
+                    "deterministic_hold_decision_changed": False,
                 },
             )
 

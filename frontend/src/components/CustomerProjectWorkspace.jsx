@@ -498,6 +498,10 @@ function ProjectReviewCard({ payment, token, onPortalUpdate }) {
   const [note, setNote] = useState("");
   const [disputeReason, setDisputeReason] = useState("Work needs correction");
   const [disputeNote, setDisputeNote] = useState("");
+  const [disputeExpected, setDisputeExpected] = useState("");
+  const [disputeResolution, setDisputeResolution] = useState("");
+  const [disputeEvidenceNote, setDisputeEvidenceNote] = useState("");
+  const [contractorNotified, setContractorNotified] = useState(null);
   const drawToken = extractMagicDrawToken(payment?.action_target);
   const drawId = payment?.record_id || String(payment?.id || "").replace(/^draw-/, "");
   const canOpenPortalDispute = Boolean(token && drawId);
@@ -556,6 +560,10 @@ function ProjectReviewCard({ payment, token, onPortalUpdate }) {
         {
           reason: disputeReason,
           description: disputeNote,
+          expected_result: disputeExpected,
+          desired_resolution: disputeResolution,
+          evidence_unavailable_reason: disputeEvidenceNote,
+          contractor_notified: contractorNotified,
         }
       );
       if (data?.portal) {
@@ -677,6 +685,7 @@ function ProjectReviewCard({ payment, token, onPortalUpdate }) {
           <div className="text-sm font-semibold text-rose-100">Tell us what is wrong</div>
           <p className="mt-1 text-sm leading-6 text-rose-100/85">
             This opens an issue tied to this milestone review. Your contractor can respond through the existing dispute workflow.
+            Only this payment enters a temporary administrative hold. There is no filing fee.
           </p>
           <label className="mt-3 block text-sm font-semibold text-rose-100">
             Reason
@@ -692,6 +701,10 @@ function ProjectReviewCard({ payment, token, onPortalUpdate }) {
               <option>Other issue</option>
             </select>
           </label>
+          <label className="mt-3 block text-sm font-semibold text-rose-100">What should the milestone have delivered?<textarea value={disputeExpected} onChange={(event) => setDisputeExpected(event.target.value)} rows={2} className="mt-2 w-full rounded-xl border border-rose-200/25 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-rose-200" placeholder="Describe the agreed or expected result." /></label>
+          <label className="mt-3 block text-sm font-semibold text-rose-100">What correction do you want?<textarea value={disputeResolution} onChange={(event) => setDisputeResolution(event.target.value)} rows={2} className="mt-2 w-full rounded-xl border border-rose-200/25 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-rose-200" placeholder="Inspection, correction, revised deadline, or another result." /></label>
+          <label className="mt-3 block text-sm font-semibold text-rose-100">Have you notified the contractor?<select value={contractorNotified === null ? "" : String(contractorNotified)} onChange={(event) => setContractorNotified(event.target.value === "" ? null : event.target.value === "true")} className="mt-2 w-full rounded-xl border border-rose-200/25 bg-slate-950 px-3 py-2 text-sm text-white"><option value="">Select one</option><option value="true">Yes</option><option value="false">No</option></select></label>
+          <label className="mt-3 block text-sm font-semibold text-rose-100">Evidence note, if photos or documents are unavailable or not applicable<textarea value={disputeEvidenceNote} onChange={(event) => setDisputeEvidenceNote(event.target.value)} rows={2} className="mt-2 w-full rounded-xl border border-rose-200/25 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-rose-200" /></label>
           <label className="mt-3 block text-sm font-semibold text-rose-100">
             Homeowner note
             <textarea
@@ -775,6 +788,11 @@ export default function CustomerProjectWorkspace({
     requested_amount: "",
     desired_resolution: "",
     description: "",
+    expected_result: "",
+    evidence_unavailable_reason: "",
+    contractor_notified: null,
+    prior_notice_explanation: "",
+    milestone_id: "",
     attachment_note: "",
     attachments: [],
   });
@@ -1385,6 +1403,11 @@ export default function CustomerProjectWorkspace({
       requested_amount: "",
       desired_resolution: "",
       description: "",
+      expected_result: "",
+      evidence_unavailable_reason: "",
+      contractor_notified: null,
+      prior_notice_explanation: "",
+      milestone_id: "",
       attachment_note: "",
       attachments: [],
     });
@@ -1468,10 +1491,15 @@ export default function CustomerProjectWorkspace({
           description: actionForm.description,
           desired_resolution: actionForm.desired_resolution,
           evidence_note: actionForm.attachment_note,
+          expected_result: actionForm.expected_result,
+          evidence_unavailable_reason: actionForm.evidence_unavailable_reason,
+          contractor_notified: actionForm.contractor_notified,
+          prior_notice_explanation: actionForm.prior_notice_explanation,
+          ...(actionForm.milestone_id ? { milestone_id: Number(actionForm.milestone_id) } : {}),
         };
       }
       let requestBody = payload;
-      if (actionModal === "amendment" && actionForm.attachments?.length) {
+      if (["amendment", "dispute"].includes(actionModal) && actionForm.attachments?.length) {
         requestBody = new FormData();
         Object.entries(payload).forEach(([key, value]) => {
           if (Array.isArray(value)) value.forEach((item) => requestBody.append(key, item));
@@ -2621,6 +2649,8 @@ The price should be adjusted because we removed part of the work.`}
 
               {actionModal === "dispute" ? (
                 <>
+                  <div className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">Reporting a concern is free. Select the payment milestone when the concern affects payment; only that source receives a temporary administrative hold while the information is reviewed.</div>
+                  <label className="block text-sm font-semibold text-slate-200">Payment milestone<select value={actionForm.milestone_id} onChange={(event) => setActionForm((current) => ({ ...current, milestone_id: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white"><option value="">General concern — no payment hold</option>{(selected?.milestones || []).map((milestone) => <option key={milestone.id} value={milestone.id}>{milestone.title || `Milestone #${milestone.id}`} {milestone.amount ? `— ${money(milestone.amount)}` : ""}</option>)}</select></label>
                   <label className="block text-sm font-semibold text-slate-200">
                     Desired resolution
                     <input
@@ -2642,6 +2672,10 @@ The price should be adjusted because we removed part of the work.`}
                       placeholder="Describe what is wrong and what needs review."
                     />
                   </label>
+                  <label className="block text-sm font-semibold text-slate-200">What should the agreement or milestone have delivered?<textarea value={actionForm.expected_result} onChange={(event) => setActionForm((current) => ({ ...current, expected_result: event.target.value }))} rows={3} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none focus:border-amber-300" placeholder="Describe the expected result, scope, amount, or deadline." /></label>
+                  <label className="block text-sm font-semibold text-slate-200">Have you notified the contractor?<select value={actionForm.contractor_notified === null ? "" : String(actionForm.contractor_notified)} onChange={(event) => setActionForm((current) => ({ ...current, contractor_notified: event.target.value === "" ? null : event.target.value === "true" }))} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white"><option value="">Select one</option><option value="true">Yes</option><option value="false">No</option></select></label>
+                  {actionForm.contractor_notified === false ? <label className="block text-sm font-semibold text-slate-200">Why was prior notice impractical?<textarea value={actionForm.prior_notice_explanation} onChange={(event) => setActionForm((current) => ({ ...current, prior_notice_explanation: event.target.value }))} rows={2} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white" /></label> : null}
+                  <label className="block text-sm font-semibold text-slate-200">If photos or documents are unavailable or not applicable, explain why<textarea value={actionForm.evidence_unavailable_reason} onChange={(event) => setActionForm((current) => ({ ...current, evidence_unavailable_reason: event.target.value }))} rows={2} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white" /></label>
                 </>
               ) : null}
 
@@ -2666,7 +2700,7 @@ The price should be adjusted because we removed part of the work.`}
                   placeholder="Reference photos, documents, or notes already in your records."
                 />
               </label>
-              {actionModal === "amendment" ? (
+              {["amendment", "dispute"].includes(actionModal) ? (
                 <label className="block text-sm font-semibold text-slate-200">
                   Supporting photos or PDF
                   <input
@@ -2681,7 +2715,7 @@ The price should be adjusted because we removed part of the work.`}
                     className="mt-2 block w-full rounded-xl border border-dashed border-slate-600 bg-slate-900 px-3 py-3 text-sm text-slate-200 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-200 file:px-3 file:py-2 file:font-semibold file:text-slate-950"
                   />
                   <span className="mt-1 block text-xs font-normal text-slate-400">
-                    Upload up to 5 JPG, PNG, WEBP, or PDF files (10 MB each).
+                    Upload up to 5 JPG, PNG, WEBP, or PDF files (10 MB each). Photos are optional when another form of evidence is more appropriate.
                   </span>
                 </label>
               ) : null}

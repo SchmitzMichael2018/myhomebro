@@ -31618,6 +31618,16 @@ class DisputeMutationSafetyTests(TestCase):
 
     def test_partial_resolution_records_amounts_and_manual_financial_review(self):
         active_dispute = self._active_dispute("Partial")
+        held_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Held milestone",
+            amount=Decimal("200.00"),
+        )
+        active_dispute.milestone = held_milestone
+        active_dispute.source_type = Dispute.SOURCE_MILESTONE
+        active_dispute.source_object_id = held_milestone.id
+        active_dispute.save(update_fields=["milestone", "source_type", "source_object_id"])
 
         response = self.admin_client.post(
             f"/api/projects/disputes/{active_dispute.id}/resolve/",
@@ -31632,11 +31642,12 @@ class DisputeMutationSafetyTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         active_dispute.refresh_from_db()
-        self.assertEqual(active_dispute.status, "resolved_partial")
+        self.assertEqual(active_dispute.status, "under_review")
         self.assertEqual(active_dispute.financial_disposition, Dispute.FINANCIAL_PARTIAL_MANUAL)
         self.assertEqual(active_dispute.approved_amount, Decimal("125.00"))
         self.assertEqual(active_dispute.disputed_remainder, Decimal("75.00"))
-        self.assertFalse(active_dispute.escrow_frozen)
+        self.assertTrue(active_dispute.escrow_frozen)
+        self.assertEqual(active_dispute.escrow_allocations.count(), 1)
 
     def test_rework_required_keeps_escrow_held_and_creates_work_order(self):
         active_dispute = self._active_dispute("Rework")

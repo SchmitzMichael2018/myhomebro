@@ -408,7 +408,7 @@ export default function PublicDisputeDecision() {
         </div>
 
         <div className="mt-2 text-xs text-slate-600">
-          Accepting closes the dispute based on platform rules. Rejecting keeps it under review for admin or mediation.
+          Accepting records your agreement to the proposal. Rejecting keeps the matter open for direct negotiation or an outside process arranged by the parties; MyHomeBro does not serve as mediator.
         </div>
 
         {/* Evidence preview */}
