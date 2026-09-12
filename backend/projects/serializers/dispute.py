@@ -40,9 +40,23 @@ class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
     allocation_total_cents = serializers.IntegerField(read_only=True)
     is_balanced = serializers.BooleanField(read_only=True)
     execution_enabled = serializers.SerializerMethodField()
+    execution_supported = serializers.SerializerMethodField()
+    execution_blocker = serializers.SerializerMethodField()
 
     def get_execution_enabled(self, _obj):
         return bool(getattr(settings, "DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED", False))
+
+    def get_execution_supported(self, obj):
+        from ..services.dispute_allocation_execution import dispute_allocation_execution_readiness
+
+        supported, _reason = dispute_allocation_execution_readiness(obj)
+        return supported
+
+    def get_execution_blocker(self, obj):
+        from ..services.dispute_allocation_execution import dispute_allocation_execution_readiness
+
+        _supported, reason = dispute_allocation_execution_readiness(obj)
+        return reason
 
     class Meta:
         model = DisputeEscrowAllocation
@@ -53,7 +67,8 @@ class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
             "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
             "external_authority_document", "staff_confirmed_by", "staff_confirmed_at",
             "executed_at", "execution_reference", "homeowner_refund_id",
-            "contractor_transfer_id", "execution_error", "execution_enabled", "created_at", "updated_at",
+            "contractor_transfer_id", "execution_error", "execution_enabled", "execution_supported",
+            "execution_blocker", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "payment_hold", "source_amount_cents", "allocation_total_cents",
@@ -61,7 +76,7 @@ class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
             "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
             "staff_confirmed_by", "staff_confirmed_at", "executed_at", "execution_reference",
             "homeowner_refund_id", "contractor_transfer_id", "execution_error",
-            "execution_enabled", "created_at", "updated_at",
+            "execution_enabled", "execution_supported", "execution_blocker", "created_at", "updated_at",
         ]
 
 

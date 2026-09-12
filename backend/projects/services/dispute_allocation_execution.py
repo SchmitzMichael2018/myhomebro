@@ -27,6 +27,16 @@ def _source_invoice(hold: DisputePaymentHold):
     return None
 
 
+def dispute_allocation_execution_readiness(allocation: DisputeEscrowAllocation) -> tuple[bool, str]:
+    """Describe whether the allocation has a source the automated executor supports."""
+    if _source_invoice(allocation.payment_hold) is None:
+        return (
+            False,
+            "This held milestone is not backed by an invoice. The allocation is validated, but payment operations must process it manually.",
+        )
+    return True, ""
+
+
 def _source_payment(invoice, minimum_cents: int):
     # Use the same FIFO escrow-source accounting as ordinary invoice releases.
     # Merely selecting any agreement payment large enough can reuse an older,
