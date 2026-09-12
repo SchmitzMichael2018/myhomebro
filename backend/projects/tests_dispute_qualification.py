@@ -293,6 +293,7 @@ class DisputeQualificationWorkflowTests(TestCase):
             f"/api/projects/disputes/{dispute.id}/escrow-allocations/{allocation_id}/confirm/", {}, format="json"
         )
         self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        self.assertFalse(confirmed.data["execution_enabled"])
         allocation = DisputeEscrowAllocation.objects.get(pk=allocation_id)
         self.assertEqual(allocation.status, DisputeEscrowAllocation.STATUS_READY_FOR_EXECUTION)
         self.assertIsNone(allocation.executed_at)
@@ -350,6 +351,7 @@ class DisputeQualificationWorkflowTests(TestCase):
             f"/api/projects/disputes/{dispute.id}/escrow-allocations/{allocation.id}/execute/", {}, format="json"
         )
         self.assertEqual(executed.status_code, 200, executed.data)
+        self.assertTrue(executed.data["execution_enabled"])
         self.assertEqual(order, ["refund", "transfer"])
         self.assertEqual(executed.data["status"], DisputeEscrowAllocation.STATUS_EXECUTED)
         invoice.refresh_from_db()

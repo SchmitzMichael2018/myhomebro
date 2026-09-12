@@ -1,4 +1,5 @@
 # backend/projects/serializers/dispute.py
+from django.conf import settings
 from rest_framework import serializers
 
 from ..models import Agreement, Milestone
@@ -38,6 +39,10 @@ class DisputeWorkPauseRequestSerializer(serializers.ModelSerializer):
 class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
     allocation_total_cents = serializers.IntegerField(read_only=True)
     is_balanced = serializers.BooleanField(read_only=True)
+    execution_enabled = serializers.SerializerMethodField()
+
+    def get_execution_enabled(self, _obj):
+        return bool(getattr(settings, "DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED", False))
 
     class Meta:
         model = DisputeEscrowAllocation
@@ -48,7 +53,7 @@ class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
             "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
             "external_authority_document", "staff_confirmed_by", "staff_confirmed_at",
             "executed_at", "execution_reference", "homeowner_refund_id",
-            "contractor_transfer_id", "execution_error", "created_at", "updated_at",
+            "contractor_transfer_id", "execution_error", "execution_enabled", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "payment_hold", "source_amount_cents", "allocation_total_cents",
@@ -56,7 +61,7 @@ class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
             "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
             "staff_confirmed_by", "staff_confirmed_at", "executed_at", "execution_reference",
             "homeowner_refund_id", "contractor_transfer_id", "execution_error",
-            "created_at", "updated_at",
+            "execution_enabled", "created_at", "updated_at",
         ]
 
 
