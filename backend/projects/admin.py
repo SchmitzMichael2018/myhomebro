@@ -65,6 +65,9 @@ try:
     from .models_dispute import (  # type: ignore
         Dispute,
         DisputeAttachment,
+        DisputeEscrowAllocation,
+        DisputeEscrowAllocationAttempt,
+        DisputeEscrowAllocationSource,
         ResolutionAgreement,
         ResolutionAgreementSignature,
         ResolutionCaseAuditEvent,
@@ -76,7 +79,7 @@ try:
     )
 except Exception:  # pragma: no cover
     Dispute = None
-    DisputeAttachment = None
+    DisputeAttachment = DisputeEscrowAllocation = DisputeEscrowAllocationAttempt = DisputeEscrowAllocationSource = None
     ResolutionAgreement = ResolutionAgreementSignature = ResolutionCaseAuditEvent = ResolutionCaseTimelineEvent = None
     ResolutionDocument = ResolutionEvidenceIndex = ResolutionPartyStatement = ResolutionProposal = None
 
@@ -1765,6 +1768,33 @@ if DisputeAttachment is not None:
     class DisputeAttachmentAdmin(admin.ModelAdmin):
         list_display = ("id", "dispute", "file") if hasattr(DisputeAttachment, "file") else ("id", "dispute")
         search_fields = ("dispute__id",)
+
+
+if DisputeEscrowAllocation is not None:
+    @admin.register(DisputeEscrowAllocation)  # type: ignore[misc]
+    class DisputeEscrowAllocationAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "source_amount_cents", "contractor_amount_cents", "homeowner_amount_cents", "status", "executed_at")
+        list_filter = ("status", "created_at", "executed_at")
+        search_fields = ("dispute__id", "execution_reference")
+        readonly_fields = ("idempotency_key", "created_at", "updated_at", "executed_at")
+
+
+if DisputeEscrowAllocationSource is not None:
+    @admin.register(DisputeEscrowAllocationSource)  # type: ignore[misc]
+    class DisputeEscrowAllocationSourceAdmin(admin.ModelAdmin):
+        list_display = ("id", "allocation", "payment", "source_amount_cents", "homeowner_refund_cents", "contractor_payout_cents", "platform_fee_cents", "status")
+        list_filter = ("status", "created_at")
+        search_fields = ("allocation__dispute__id", "stripe_refund_id", "stripe_transfer_id")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if DisputeEscrowAllocationAttempt is not None:
+    @admin.register(DisputeEscrowAllocationAttempt)  # type: ignore[misc]
+    class DisputeEscrowAllocationAttemptAdmin(admin.ModelAdmin):
+        list_display = ("id", "allocation", "source", "action", "attempt_number", "amount_cents", "status", "created_at", "completed_at")
+        list_filter = ("action", "status", "created_at")
+        search_fields = ("allocation__dispute__id", "external_reference", "idempotency_key")
+        readonly_fields = tuple(field.name for field in DisputeEscrowAllocationAttempt._meta.fields)
 
 
 if ResolutionCaseTimelineEvent is not None:

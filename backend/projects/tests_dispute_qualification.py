@@ -10,7 +10,14 @@ from unittest.mock import patch
 
 from projects.models import Agreement, AgreementPaymentMode, Contractor, Homeowner, Milestone, Project
 from projects.models_ai_artifacts import DisputeAIArtifact
-from projects.models_dispute import Dispute, DisputeEscrowAllocation, DisputePaymentHold, DisputeWorkPauseRequest
+from projects.models_dispute import (
+    Dispute,
+    DisputeEscrowAllocation,
+    DisputeEscrowAllocationAttempt,
+    DisputeEscrowAllocationSource,
+    DisputePaymentHold,
+    DisputeWorkPauseRequest,
+)
 from projects.services.dispute_workflow import (
     assess_dispute_qualification,
     begin_hold_expiration,
@@ -295,7 +302,7 @@ class DisputeQualificationWorkflowTests(TestCase):
         self.assertEqual(confirmed.status_code, 200, confirmed.data)
         self.assertFalse(confirmed.data["execution_enabled"])
         self.assertFalse(confirmed.data["execution_supported"])
-        self.assertIn("not backed by an invoice", confirmed.data["execution_blocker"])
+        self.assertIn("funding charges", confirmed.data["execution_blocker"])
         allocation = DisputeEscrowAllocation.objects.get(pk=allocation_id)
         self.assertEqual(allocation.status, DisputeEscrowAllocation.STATUS_READY_FOR_EXECUTION)
         self.assertIsNone(allocation.executed_at)
@@ -369,6 +376,96 @@ class DisputeQualificationWorkflowTests(TestCase):
         self.assertEqual(repeated.status_code, 200, repeated.data)
         self.assertEqual(refund_create.call_count, 1)
         self.assertEqual(transfer_create.call_count, 1)
+
+    @override_settings(DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED=True, STRIPE_SECRET_KEY="sk_test_dispute")
+    @patch("payments.fees.calculate_platform_fee_cents_for_invoice", return_value=1000)
+    @patch("stripe.Transfer.create")
+    @patch("stripe.Refund.create", return_value={"id": "re_multi_1"})
+    def test_multi_charge_allocation_persists_partial_failure_and_retries_only_missing_transfer(
+        self, refund_create, transfer_create, _fee_mock
+    ):
+        from payments.models import Payment, Refund
+
+        self.contractor.stripe_account_id = "acct_test_contractor"
+        self.contractor.save(update_fields=["stripe_account_id"])
+        first_payment = Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_multi_1",
+            stripe_charge_id="ch_multi_1",
+            amount_cents=20000,
+            status="succeeded",
+        )
+        second_payment = Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_multi_2",
+            stripe_charge_id="ch_multi_2",
+            amount_cents=20000,
+            status="succeeded",
+        )
+        dispute = initialize_dispute_workflow(self._create_dispute())
+        allocation = DisputeEscrowAllocation.objects.create(
+            dispute=dispute,
+            payment_hold=dispute.payment_hold,
+            source_amount_cents=40000,
+            contractor_amount_cents=25000,
+            homeowner_amount_cents=15000,
+            explanation="Authorized multi-charge split.",
+            status=DisputeEscrowAllocation.STATUS_READY_FOR_EXECUTION,
+            homeowner_authorized_at=timezone.now(),
+            contractor_authorized_at=timezone.now(),
+            staff_confirmed_at=timezone.now(),
+            staff_confirmed_by=self.admin_user,
+        )
+        transfer_create.side_effect = [
+            {"id": "tr_multi_1"},
+            RuntimeError("temporary transfer failure"),
+            {"id": "tr_multi_2"},
+        ]
+
+        failed = self.admin_client.post(
+            f"/api/projects/disputes/{dispute.id}/escrow-allocations/{allocation.id}/execute/", {}, format="json"
+        )
+        self.assertEqual(failed.status_code, 409, failed.data)
+        allocation.refresh_from_db()
+        sources = list(allocation.funding_sources.order_by("payment_id"))
+        self.assertTrue(all(isinstance(row, DisputeEscrowAllocationSource) for row in sources))
+        self.assertEqual([row.payment_id for row in sources], [first_payment.id, second_payment.id])
+        self.assertEqual([row.source_amount_cents for row in sources], [20000, 20000])
+        self.assertEqual([row.homeowner_refund_cents for row in sources], [15000, 0])
+        self.assertEqual([row.contractor_gross_cents for row in sources], [5000, 20000])
+        self.assertEqual([row.platform_fee_cents for row in sources], [200, 800])
+        self.assertEqual([row.contractor_payout_cents for row in sources], [4800, 19200])
+        self.assertEqual(sources[0].stripe_refund_id, "re_multi_1")
+        self.assertEqual(sources[0].stripe_transfer_id, "tr_multi_1")
+        self.assertEqual(sources[1].stripe_transfer_id, "")
+        self.assertTrue(Refund.objects.filter(payment=first_payment, stripe_refund_id="re_multi_1", amount_cents=15000).exists())
+        self.assertTrue(allocation.execution_attempts.filter(
+            source=sources[1], action=DisputeEscrowAllocationAttempt.ACTION_TRANSFER,
+            status=DisputeEscrowAllocationAttempt.STATUS_FAILED,
+        ).exists())
+
+        completed = self.admin_client.post(
+            f"/api/projects/disputes/{dispute.id}/escrow-allocations/{allocation.id}/execute/", {}, format="json"
+        )
+        self.assertEqual(completed.status_code, 200, completed.data)
+        self.assertEqual(refund_create.call_count, 1)
+        self.assertEqual(transfer_create.call_count, 3)
+        allocation.refresh_from_db()
+        dispute.refresh_from_db()
+        self.milestone_one.refresh_from_db()
+        self.assertEqual(allocation.status, DisputeEscrowAllocation.STATUS_EXECUTED)
+        self.assertIsNotNone(allocation.settlement_invoice_id)
+        self.assertEqual(dispute.status, "resolved_partial")
+        self.assertTrue(self.milestone_one.completed)
+        self.assertEqual(self.milestone_one.invoice_id, allocation.settlement_invoice_id)
+        self.assertEqual(allocation.settlement_invoice.payout_cents, 24000)
+        self.assertEqual(allocation.settlement_invoice.platform_fee_cents, 1000)
+        self.assertEqual(
+            allocation.execution_attempts.filter(
+                source=sources[1], action=DisputeEscrowAllocationAttempt.ACTION_TRANSFER
+            ).count(),
+            2,
+        )
 
     def test_human_override_requires_reason_and_explicit_hold_reactivation(self):
         now = timezone.now()

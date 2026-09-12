@@ -8,6 +8,8 @@ from ..models_dispute import (
     DisputeAttachment,
     DisputeClaim,
     DisputeEscrowAllocation,
+    DisputeEscrowAllocationAttempt,
+    DisputeEscrowAllocationSource,
     DisputePaymentHold,
     DisputeWorkPauseRequest,
     DisputeWorkOrder,
@@ -36,12 +38,38 @@ class DisputeWorkPauseRequestSerializer(serializers.ModelSerializer):
         ]
 
 
+class DisputeEscrowAllocationSourceSerializer(serializers.ModelSerializer):
+    payment_created_at = serializers.DateTimeField(source="payment.created_at", read_only=True)
+
+    class Meta:
+        model = DisputeEscrowAllocationSource
+        fields = [
+            "id", "payment", "payment_created_at", "source_amount_cents",
+            "homeowner_refund_cents", "contractor_gross_cents", "platform_fee_cents",
+            "contractor_payout_cents", "stripe_refund_id", "stripe_transfer_id",
+            "status", "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class DisputeEscrowAllocationAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DisputeEscrowAllocationAttempt
+        fields = [
+            "id", "source", "action", "attempt_number", "amount_cents", "currency",
+            "status", "external_reference", "created_at", "completed_at",
+        ]
+        read_only_fields = fields
+
+
 class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
     allocation_total_cents = serializers.IntegerField(read_only=True)
     is_balanced = serializers.BooleanField(read_only=True)
     execution_enabled = serializers.SerializerMethodField()
     execution_supported = serializers.SerializerMethodField()
     execution_blocker = serializers.SerializerMethodField()
+    funding_sources = DisputeEscrowAllocationSourceSerializer(many=True, read_only=True)
+    execution_attempts = DisputeEscrowAllocationAttemptSerializer(many=True, read_only=True)
 
     def get_execution_enabled(self, _obj):
         return bool(getattr(settings, "DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED", False))
@@ -67,7 +95,8 @@ class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
             "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
             "external_authority_document", "staff_confirmed_by", "staff_confirmed_at",
             "executed_at", "execution_reference", "homeowner_refund_id",
-            "contractor_transfer_id", "execution_error", "execution_enabled", "execution_supported",
+            "contractor_transfer_id", "settlement_invoice", "execution_error", "funding_sources",
+            "execution_attempts", "execution_enabled", "execution_supported",
             "execution_blocker", "created_at", "updated_at",
         ]
         read_only_fields = [
@@ -75,7 +104,8 @@ class DisputeEscrowAllocationSerializer(serializers.ModelSerializer):
             "is_balanced", "currency", "status", "proposed_by", "homeowner_authorized_by",
             "homeowner_authorized_at", "contractor_authorized_by", "contractor_authorized_at",
             "staff_confirmed_by", "staff_confirmed_at", "executed_at", "execution_reference",
-            "homeowner_refund_id", "contractor_transfer_id", "execution_error",
+            "homeowner_refund_id", "contractor_transfer_id", "settlement_invoice", "execution_error",
+            "funding_sources", "execution_attempts",
             "execution_enabled", "execution_supported", "execution_blocker", "created_at", "updated_at",
         ]
 

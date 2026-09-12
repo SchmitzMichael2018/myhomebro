@@ -18,6 +18,8 @@ from .models_dispute import (
     DisputeAttachment,
     DisputeClaim,
     DisputeEscrowAllocation,
+    DisputeEscrowAllocationAttempt,
+    DisputeEscrowAllocationSource,
     DisputePaymentHold,
     DisputeWorkPauseRequest,
     ResolutionAgreement,

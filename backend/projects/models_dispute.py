@@ -1189,6 +1189,13 @@ class DisputeEscrowAllocation(models.Model):
     execution_reference = models.CharField(max_length=255, blank=True, default="")
     homeowner_refund_id = models.CharField(max_length=255, blank=True, default="")
     contractor_transfer_id = models.CharField(max_length=255, blank=True, default="")
+    settlement_invoice = models.ForeignKey(
+        "projects.Invoice",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="dispute_escrow_allocations",
+    )
     execution_error = models.TextField(blank=True, default="")
     idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     created_at = models.DateTimeField(default=timezone.now)
@@ -1204,6 +1211,121 @@ class DisputeEscrowAllocation(models.Model):
     @property
     def is_balanced(self) -> bool:
         return self.allocation_total_cents == int(self.source_amount_cents or 0)
+
+
+class DisputeEscrowAllocationSource(models.Model):
+    STATUS_RESERVED = "reserved"
+    STATUS_PARTIAL = "partial"
+    STATUS_EXECUTED = "executed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = (
+        (STATUS_RESERVED, "Reserved"),
+        (STATUS_PARTIAL, "Partially executed"),
+        (STATUS_EXECUTED, "Executed"),
+        (STATUS_FAILED, "Failed"),
+    )
+
+    allocation = models.ForeignKey(
+        DisputeEscrowAllocation,
+        on_delete=models.CASCADE,
+        related_name="funding_sources",
+    )
+    payment = models.ForeignKey(
+        "payments.Payment",
+        on_delete=models.PROTECT,
+        related_name="dispute_escrow_sources",
+    )
+    source_amount_cents = models.PositiveBigIntegerField()
+    homeowner_refund_cents = models.PositiveBigIntegerField(default=0)
+    contractor_gross_cents = models.PositiveBigIntegerField(default=0)
+    platform_fee_cents = models.PositiveBigIntegerField(default=0)
+    contractor_payout_cents = models.PositiveBigIntegerField(default=0)
+    stripe_refund_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    stripe_transfer_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_RESERVED, db_index=True)
+    execution_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["payment__created_at", "payment_id", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["allocation", "payment"],
+                name="uniq_dispute_allocation_payment_source",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(source_amount_cents=models.F("homeowner_refund_cents") + models.F("contractor_gross_cents")),
+                name="dispute_source_split_balances",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(contractor_gross_cents=models.F("platform_fee_cents") + models.F("contractor_payout_cents")),
+                name="dispute_source_contractor_balances",
+            ),
+        ]
+
+
+class DisputeEscrowAllocationAttempt(models.Model):
+    ACTION_SOURCE = "source"
+    ACTION_REFUND = "refund"
+    ACTION_TRANSFER = "transfer"
+    ACTION_FEE = "fee"
+    ACTION_CHOICES = (
+        (ACTION_SOURCE, "Funding source reservation"),
+        (ACTION_REFUND, "Customer refund"),
+        (ACTION_TRANSFER, "Contractor transfer"),
+        (ACTION_FEE, "Platform fee"),
+    )
+    STATUS_STARTED = "started"
+    STATUS_SUCCEEDED = "succeeded"
+    STATUS_FAILED = "failed"
+    STATUS_SKIPPED = "skipped"
+    STATUS_CHOICES = (
+        (STATUS_STARTED, "Started"),
+        (STATUS_SUCCEEDED, "Succeeded"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_SKIPPED, "Skipped"),
+    )
+
+    allocation = models.ForeignKey(
+        DisputeEscrowAllocation,
+        on_delete=models.CASCADE,
+        related_name="execution_attempts",
+    )
+    source = models.ForeignKey(
+        DisputeEscrowAllocationSource,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="attempts",
+    )
+    action = models.CharField(max_length=16, choices=ACTION_CHOICES, db_index=True)
+    attempt_number = models.PositiveIntegerField(default=1)
+    amount_cents = models.PositiveBigIntegerField(default=0)
+    currency = models.CharField(max_length=3, default="USD")
+    idempotency_key = models.CharField(max_length=255)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_STARTED, db_index=True)
+    external_reference = models.CharField(max_length=255, blank=True, default="")
+    error_message = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dispute_escrow_execution_attempts",
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["allocation", "source", "action", "attempt_number"],
+                name="uniq_dispute_source_action_attempt",
+            ),
+        ]
 
 
 class ResolutionProposal(models.Model):
