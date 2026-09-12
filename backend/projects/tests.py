@@ -1818,6 +1818,66 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
             result["milestones"][4]["description"],
         )
 
+    def test_service_keeps_low_value_towel_bar_repair_to_one_milestone(self):
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Repair and reinstall the loose towel bar in the bathroom.",
+            project_type="Handyman",
+            project_subtype="General Repair",
+            total_cost=Decimal("225.00"),
+            milestone_count=3,
+        )
+        AgreementAIScope.objects.create(agreement=agreement, answers={})
+        oversized_bathroom_plan = [
+            {
+                "order": idx,
+                "title": title,
+                "description": f"{title} work.",
+                "amount": amount,
+                "start_date": "",
+                "completion_date": "",
+            }
+            for idx, (title, amount) in enumerate(
+                (
+                    ("Demo and Protection", 40),
+                    ("Rough Plumbing and Electrical", 60),
+                    ("Tile, Fixtures, and Finishes", 90),
+                    ("Final Cleanup and Walkthrough", 35),
+                ),
+                start=1,
+            )
+        ]
+
+        with patch(
+            "projects.ai.agreement_milestone_writer._require_openai_client",
+            return_value=self._mock_openai_response(oversized_bathroom_plan),
+        ), patch(
+            "projects.ai.agreement_milestone_writer._model_name",
+            return_value="test-model",
+        ):
+            result = suggest_scope_and_milestones(agreement=agreement, notes="")
+
+        self.assertEqual(len(result["milestones"]), 1)
+        milestone = result["milestones"][0]
+        self.assertEqual(milestone["title"], "Towel Bar Repair and Installation")
+        self.assertEqual(milestone["amount"], 225.0)
+        self.assertIn("Test fit, alignment, security, and operation", milestone["description"])
+        self.assertNotIn("plumbing", milestone["description"].lower())
+
+    def test_service_does_not_collapse_low_value_scope_labeled_as_full_remodel(self):
+        rows = _shape_milestone_rows_for_clarifications(
+            project_type="Remodel",
+            project_subtype="Bathroom Remodel",
+            description="Full bathroom remodel with tile and fixture replacement.",
+            clarification_answers={},
+            total_budget=1200,
+        )
+
+        self.assertGreaterEqual(len(rows), 4)
+        self.assertIn("Protection & demolition", [row["title"] for row in rows])
+
     def test_service_shifts_past_ai_milestone_dates_forward_to_today(self):
         agreement = self._agreement()
         base_milestones = [

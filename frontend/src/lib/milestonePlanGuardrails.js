@@ -82,7 +82,7 @@ function parseAmount(value) {
 
 function hasCloseoutPhase(row) {
   const text = milestoneTitleText(`${row?.title || ""} ${row?.description || ""}`);
-  return /(cleanup|walkthrough|inspection|closeout|handoff)/.test(text);
+  return /(clean(?:up)?|walkthrough|inspection|closeout|handoff)/.test(text);
 }
 
 function isSimpleStructureContext(context = {}) {
@@ -92,6 +92,23 @@ function isSimpleStructureContext(context = {}) {
   const hay = [key, label, scope].join(" ");
 
   return SIMPLE_STRUCTURE_TERMS.some((term) => hay.includes(term));
+}
+
+function isSmallServiceContext(context = {}) {
+  const budget = parseAmount(context?.currentTargetTotal);
+  if (budget <= 0 || budget > 1500) return false;
+  const hay = [
+    context?.projectFamilyKey,
+    context?.projectFamilyLabel,
+    context?.projectTitle,
+    context?.scopeText,
+  ]
+    .map((value) => safeStr(value).toLowerCase())
+    .join(" ");
+  if (/(addition|entire home|full bathroom|full kitchen|new construction|renovation|remodel|whole home)/.test(hay)) {
+    return false;
+  }
+  return /(adjust|fix|handyman|install|minor|mount|patch|repair|replace|service)/.test(hay);
 }
 
 export function dedupeMilestoneRows(rows = [], { existingRows = [] } = {}) {
@@ -179,8 +196,15 @@ export function assessMilestonePlanGuardrails(
     description: projectScope,
     scopeText: projectScope,
   });
-  const recommendedMin = 4;
-  const recommendedMax = simpleContext ? 6 : 7;
+  const smallServiceContext = isSmallServiceContext({
+    projectFamilyKey,
+    projectFamilyLabel,
+    projectTitle,
+    scopeText: projectScope,
+    currentTargetTotal,
+  });
+  const recommendedMin = smallServiceContext ? 1 : 4;
+  const recommendedMax = smallServiceContext ? 2 : simpleContext ? 6 : 7;
   const duplicatedFps = new Map();
   const duplicateTitles = [];
 
@@ -223,6 +247,8 @@ export function assessMilestonePlanGuardrails(
       severity: "warn",
       message: simpleContext
         ? "Simple structures usually work best with 4-6 milestones."
+        : smallServiceContext
+        ? "Small repairs usually work best with 1-2 milestones."
         : "Residential projects usually work best with 4-7 milestones.",
     });
   }
@@ -255,6 +281,7 @@ export function assessMilestonePlanGuardrails(
     recommendedMin,
     recommendedMax,
     simpleContext,
+    smallServiceContext,
     planTotal,
     currentTotal,
     hasCloseout,
@@ -274,6 +301,8 @@ export function formatMilestoneGuardrailSummary(analysis = {}) {
     messages.push(
       analysis?.simpleContext
         ? "Simple structures usually work best with 4-6 milestones."
+        : analysis?.smallServiceContext
+        ? "Small repairs usually work best with 1-2 milestones."
         : "Residential projects usually work best with 4-7 milestones."
     );
   }

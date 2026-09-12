@@ -763,6 +763,62 @@ def _milestone_rule_matches(rule: Dict[str, Any], *, project_type: Any, project_
     return subtype_matches and type_matches
 
 
+def _is_small_service_scope(
+    *,
+    project_type: Any,
+    project_subtype: Any,
+    description: Any,
+    total_budget: Any,
+) -> bool:
+    policy = _milestone_shaping_rules().get("smallJobPolicy", {})
+    budget = _safe_float(total_budget, 0.0)
+    max_budget = _safe_float(policy.get("maxBudget"), 1500.0)
+    if budget <= 0 or budget > max_budget:
+        return False
+
+    hay = " ".join(
+        _normalize_baseline_key(value)
+        for value in (project_type, project_subtype, description)
+        if _safe_str(value)
+    )
+    complex_signals = policy.get("complexSignals") or []
+    if any(_normalize_baseline_key(signal) in hay for signal in complex_signals):
+        return False
+
+    service_signals = policy.get("serviceSignals") or []
+    return any(_normalize_baseline_key(signal) in hay for signal in service_signals)
+
+
+def _small_service_milestone_rows(*, project_subtype: Any, description: Any) -> List[Dict[str, Any]]:
+    scope = _normalize_baseline_key(description)
+    subtype = _normalize_baseline_key(project_subtype)
+    hay = f"{scope} {subtype}".strip()
+
+    title_patterns = (
+        (r"\btowel bar\b", "Towel Bar Repair and Installation"),
+        (r"\bdoor\b", "Door Adjustment and Repair"),
+        (r"\b(?:faucet|tap)\b", "Faucet Repair or Replacement"),
+        (r"\bdrywall\b", "Drywall Repair and Finish"),
+        (r"\bfixture\b", "Fixture Repair and Installation"),
+    )
+    title = next((label for pattern, label in title_patterns if re.search(pattern, hay)), "Complete Repair or Installation")
+    scope_label = _safe_str(description) or _safe_str(project_subtype) or "the agreed repair or installation"
+
+    return [
+        {
+            "title": title,
+            "description": "\n".join(
+                (
+                    f"- Inspect the affected area and confirm the agreed scope: {scope_label}.",
+                    "- Complete the repair, adjustment, or installation included in the agreement.",
+                    "- Test fit, alignment, security, and operation as applicable.",
+                    "- Clean the work area and review the completed work with the customer.",
+                )
+            ),
+        }
+    ]
+
+
 def _fallback_milestone_rows(project_type: Any, project_subtype: Any, description: Any) -> List[Dict[str, Any]]:
     def bullet_description(*lines: Any) -> str:
         return "\n".join(f"- {_safe_str(line)}" for line in lines if _safe_str(line))
@@ -1330,6 +1386,12 @@ def _shape_milestone_rows_for_clarifications(
 ) -> List[Dict[str, Any]]:
     answers = clarification_answers if isinstance(clarification_answers, dict) else {}
     subtype_rules = _milestone_shaping_rules().get("subtypeRules", [])
+    small_service_scope = _is_small_service_scope(
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=description,
+        total_budget=total_budget,
+    )
     subtype_rule = next(
         (
             rule
@@ -1339,12 +1401,16 @@ def _shape_milestone_rows_for_clarifications(
         None,
     )
     rows: List[Dict[str, Any]] = (
-        [_clone_milestone_row(row) for row in (subtype_rule.get("baseRows") or [])]
-        if isinstance(subtype_rule, dict)
-        else _fallback_milestone_rows(project_type, project_subtype, description)
+        _small_service_milestone_rows(project_subtype=project_subtype, description=description)
+        if small_service_scope
+        else (
+            [_clone_milestone_row(row) for row in (subtype_rule.get("baseRows") or [])]
+            if isinstance(subtype_rule, dict)
+            else _fallback_milestone_rows(project_type, project_subtype, description)
+        )
     )
 
-    for operation in (subtype_rule.get("operations") or []) if isinstance(subtype_rule, dict) else []:
+    for operation in (subtype_rule.get("operations") or []) if isinstance(subtype_rule, dict) and not small_service_scope else []:
         if not _milestone_condition_matches(operation.get("when"), answers):
             continue
         for action in operation.get("actions") or []:
@@ -1365,7 +1431,11 @@ def _shape_milestone_rows_for_clarifications(
         base_amount = 0.0
         if base_row:
             base_amount = _safe_float(base_row.get("amount"), 0.0)
-        amount = base_amount if amount_mode == "preserve_base" else default_amounts[idx]
+        amount = (
+            _safe_float(total_budget, 0.0)
+            if small_service_scope and _safe_float(total_budget, 0.0) > 0
+            else base_amount if amount_mode == "preserve_base" else default_amounts[idx]
+        )
         shaped.append(
             {
                 "order": idx + 1,
@@ -1750,6 +1820,12 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
 
     total_cost = float(getattr(agreement, "total_cost", 0) or 0)
     milestone_count = int(getattr(agreement, "milestone_count", 3) or 3)
+    small_service_scope = _is_small_service_scope(
+        project_type=getattr(agreement, "project_type", "") or "",
+        project_subtype=getattr(agreement, "project_subtype", "") or "",
+        description=getattr(agreement, "description", "") or "",
+        total_budget=total_cost,
+    )
 
     start_date = str(getattr(agreement, "start", "") or "")
     end_date = str(getattr(agreement, "end", "") or "")
@@ -1770,9 +1846,11 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         "- Avoid vague terms and hidden scope.\n"
         "- Use the current agreement scope of work, project type, subtype, and title as the primary context.\n"
         "- Use clarification answers, including measurements, to scale the number of phases and level of detail.\n"
-        "- Small jobs usually need 3 to 4 milestones, medium jobs 4 to 6, and larger jobs 5 to 8.\n"
+        "- A small repair or single-item installation under $1,500 usually needs 1 milestone, or 2 only when there are genuinely separate deliverables.\n"
+        "- Do not expand a small bathroom, kitchen, door, fixture, or handyman repair into remodel phases merely because a room name appears in the scope.\n"
+        "- Medium jobs usually need 3 to 5 milestones, and larger jobs 5 to 8.\n"
         "- Amounts should sum approximately to the total budget (within rounding).\n"
-        "- Provide 3 to 10 milestones depending on the target.\n"
+        "- Provide 1 to 8 milestones depending on scope, price, and the target.\n"
         "- Use YYYY-MM-DD for dates if provided, otherwise return empty string.\n"
         "\n"
         "Also produce a short list of contractor clarification questions that reduce ambiguity.\n"
@@ -1801,7 +1879,7 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         ),
         "notes": notes or "",
         "total_budget": total_cost,
-        "milestone_count_target": milestone_count,
+        "milestone_count_target": 1 if small_service_scope else milestone_count,
         "project_start_date": start_date,
         "start_date": start_date,
         "end_date": end_date,

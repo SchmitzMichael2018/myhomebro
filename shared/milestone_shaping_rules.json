@@ -5,6 +5,31 @@
     "6": [0.1, 0.15, 0.2, 0.2, 0.2, 0.15],
     "7": [0.08, 0.12, 0.16, 0.18, 0.18, 0.16, 0.12]
   },
+  "smallJobPolicy": {
+    "maxBudget": 1500,
+    "serviceSignals": [
+      "adjust",
+      "fix",
+      "handyman",
+      "install",
+      "minor",
+      "mount",
+      "patch",
+      "repair",
+      "replace",
+      "service"
+    ],
+    "complexSignals": [
+      "addition",
+      "entire home",
+      "full bathroom",
+      "full kitchen",
+      "new construction",
+      "renovation",
+      "remodel",
+      "whole home"
+    ]
+  },
   "clarificationNoteMappings": {
     "boolean": [
       ["layout_changes", "Layout changes required"],

@@ -160,6 +160,47 @@ function findSubtypeRule({ projectType, projectSubtype }) {
   );
 }
 
+function isSmallServiceScope({ projectType = "", projectSubtype = "", description = "", totalBudget = 0 }) {
+  const policy = rules?.smallJobPolicy || {};
+  const budget = Number(totalBudget);
+  const maxBudget = Number(policy.maxBudget || 1500);
+  const hay = normalizeMatchText(`${projectType} ${projectSubtype} ${description}`);
+  const budgetKnown = Number.isFinite(budget) && budget > 0;
+  if ((budgetKnown && budget > maxBudget) || (!budgetKnown && !hay.includes("handyman"))) return false;
+  if ((policy.complexSignals || []).some((signal) => hay.includes(normalizeMatchText(signal)))) {
+    return false;
+  }
+  return (policy.serviceSignals || []).some((signal) => hay.includes(normalizeMatchText(signal)));
+}
+
+function smallServiceRows({ projectSubtype = "", description = "" }) {
+  const hay = normalizeMatchText(`${description} ${projectSubtype}`);
+  const title = /\btowel bar\b/.test(hay)
+    ? "Towel Bar Repair and Installation"
+    : /\bdoor\b/.test(hay)
+    ? "Door Adjustment and Repair"
+    : /\b(faucet|tap)\b/.test(hay)
+    ? "Faucet Repair or Replacement"
+    : /\bdrywall\b/.test(hay)
+    ? "Drywall Repair and Finish"
+    : /\bfixture\b/.test(hay)
+    ? "Fixture Repair and Installation"
+    : "Complete Repair or Installation";
+  const scopeLabel = safeStr(description) || safeStr(projectSubtype) || "the agreed repair or installation";
+
+  return [
+    {
+      title,
+      description: bulletDescription(
+        `Inspect the affected area and confirm the agreed scope: ${scopeLabel}.`,
+        "Complete the repair, adjustment, or installation included in the agreement.",
+        "Test fit, alignment, security, and operation as applicable.",
+        "Clean the work area and review the completed work with the customer."
+      ),
+    },
+  ];
+}
+
 function fallbackRows({ description }) {
   const normalized = normalizeMatchText(description);
   const limitedScope =
@@ -975,16 +1016,18 @@ export function buildClarificationAwareMilestoneDraft({
   amountMode = "default",
   baseMilestones = [],
 }) {
+  const smallJob = isSmallServiceScope({ projectType, projectSubtype, description, totalBudget });
   const subtypeRule = findSubtypeRule({ projectType, projectSubtype });
   const projectRows = projectSpecificFallbackRows({ projectType, projectSubtype, description });
   const familyRows = familyFallbackRows(projectFamilyKey, projectFamilyLabel);
   let rows =
+    (smallJob ? smallServiceRows({ projectSubtype, description }) : null) ||
     subtypeRule?.baseRows?.map(cloneRow) ||
     (Array.isArray(projectRows) && projectRows.length ? projectRows : null) ||
     (Array.isArray(familyRows) && familyRows.length ? familyRows : null) ||
     fallbackRows({ description });
 
-  for (const operation of Array.isArray(subtypeRule?.operations) ? subtypeRule.operations : []) {
+  for (const operation of !smallJob && Array.isArray(subtypeRule?.operations) ? subtypeRule.operations : []) {
     if (!conditionMatches(operation?.when, clarificationAnswers)) continue;
     for (const action of Array.isArray(operation?.actions) ? operation.actions : []) {
       rows = applyAction(rows, action, clarificationAnswers);
@@ -996,7 +1039,11 @@ export function buildClarificationAwareMilestoneDraft({
   const defaultAmounts = buildDefaultMilestoneAmounts(rows.length, totalBudget);
   return rows.map((row, idx) => {
     const baseAmount = baseMilestones?.[idx]?.amount;
-    const amount = amountMode === "preserve_base" ? baseAmount ?? 0 : defaultAmounts[idx];
+    const amount = smallJob
+      ? Number(totalBudget)
+      : amountMode === "preserve_base"
+      ? baseAmount ?? 0
+      : defaultAmounts[idx];
     return {
       ...row,
       amount,
