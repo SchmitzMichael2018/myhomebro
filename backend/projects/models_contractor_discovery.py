@@ -764,7 +764,7 @@ class OpportunityEstimateAppointment(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    Q(source_type="public_lead", public_lead__isnull=False, project_intake__isnull=True, contractor_opportunity__isnull=True, direct_proposal__isnull=True)
+                    Q(source_type="lead", public_lead__isnull=False, project_intake__isnull=True, contractor_opportunity__isnull=True, direct_proposal__isnull=True)
                     | Q(source_type="intake", public_lead__isnull=True, project_intake__isnull=False, contractor_opportunity__isnull=True, direct_proposal__isnull=True)
                     | Q(source_type="opportunity", public_lead__isnull=True, project_intake__isnull=True, contractor_opportunity__isnull=False, direct_proposal__isnull=True)
                     | Q(source_type="proposal", public_lead__isnull=True, project_intake__isnull=True, contractor_opportunity__isnull=True, direct_proposal__isnull=False)

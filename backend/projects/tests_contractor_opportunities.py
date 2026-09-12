@@ -6,7 +6,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, AgreementAssignment, Contractor, Homeowner, Notification
+from projects.models import Agreement, AgreementAssignment, Contractor, Homeowner, Notification, PublicContractorLead
 from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
@@ -497,6 +497,39 @@ class ContractorOpportunityFlowTests(TestCase):
             list_response.data["results"][0]["latest_estimate_appointment"]["requested_by"],
             OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
         )
+
+    def test_contractor_can_schedule_estimate_for_public_website_lead(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            full_name="Website Homeowner",
+            email="website-homeowner@example.com",
+            phone="512-555-0101",
+            project_type="Fixture repair",
+            project_description="Secure a loose towel bar.",
+            city="Austin",
+            state="TX",
+        )
+        self.client.force_authenticate(self.contractor_user)
+
+        response = self.client.post(
+            "/api/projects/contractor-opportunities/estimate-appointments/",
+            {
+                "source_type": "lead",
+                "source_id": lead.id,
+                "scheduled_start": (timezone.now() + timedelta(days=2)).isoformat(),
+                "duration_minutes": 60,
+                "appointment_type": "in_person",
+                "service_location": "100 QA Test Lane, Austin, TX",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        appointment = OpportunityEstimateAppointment.objects.get()
+        self.assertEqual(appointment.source_type, OpportunityEstimateAppointment.SOURCE_PUBLIC_LEAD)
+        self.assertEqual(appointment.public_lead, lead)
+        self.assertIsNone(appointment.project_intake_id)
+        self.assertIsNone(appointment.contractor_opportunity_id)
 
     def test_estimate_availability_window_model_defaults(self):
         window = ContractorEstimateAvailabilityWindow.objects.create(
