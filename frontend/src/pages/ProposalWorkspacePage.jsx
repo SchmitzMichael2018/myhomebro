@@ -1771,7 +1771,18 @@ export default function ProposalWorkspacePage() {
       workspaceProposal.project_type || selectedTemplate?.project_type,
       workspaceProposal.project_subtype || selectedTemplate?.project_subtype
     );
-    const address = parseServiceLocationForAgreement(workspaceProposal.service_location);
+    const parsedAddress = parseServiceLocationForAgreement(workspaceProposal.service_location);
+    const sourceAddress = workspaceProposal.service_address || {};
+    const address = {
+      address_line1: compactText(
+        workspaceProposal.address_line1 || sourceAddress.address_line1 || parsedAddress.address_line1
+      ),
+      city: compactText(workspaceProposal.city || sourceAddress.city || parsedAddress.city),
+      state: compactText(workspaceProposal.state || sourceAddress.state || parsedAddress.state),
+      postal_code: compactText(
+        workspaceProposal.postal_code || sourceAddress.postal_code || parsedAddress.postal_code
+      ),
+    };
     const scheduling = {
       project_start_type: workspaceProposal.project_start_type || "flexible",
       project_start_date: workspaceProposal.project_start_date || "",

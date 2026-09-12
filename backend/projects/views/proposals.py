@@ -16,8 +16,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Homeowner
+from projects.models import Homeowner, PublicContractorLead
 from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
+from projects.models_project_intake import ProjectIntake
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalReviewVersion
 from projects.services.proposal_customer_review import (
     ACKNOWLEDGEMENT,
@@ -216,16 +217,91 @@ def _serialize_activity(event: ProposalActivity) -> dict:
     }
 
 
+def _proposal_customer_and_location(proposal: Proposal) -> tuple[int | None, dict[str, str]]:
+    """Resolve authoritative customer and structured address from the proposal source."""
+    opportunity = getattr(proposal, "contractor_opportunity", None)
+    customer_id = (
+        getattr(opportunity, "converted_customer_id", None)
+        or getattr(opportunity, "customer_id", None)
+    )
+    location = {
+        "address_line1": _safe_text(getattr(opportunity, "project_address", "")),
+        "city": _safe_text(getattr(opportunity, "project_city", "")),
+        "state": _safe_text(getattr(opportunity, "project_state", "")),
+        "postal_code": _safe_text(getattr(opportunity, "project_zip", "")),
+    }
+
+    if proposal.source_type == Proposal.SOURCE_LEAD:
+        lead = (
+            PublicContractorLead.objects.filter(contractor=proposal.contractor, pk=proposal.source_id)
+            .select_related("converted_homeowner", "source_intake", "source_intake__homeowner")
+            .first()
+        )
+        if lead is not None:
+            intake = getattr(lead, "source_intake", None)
+            customer_id = (
+                getattr(lead, "converted_homeowner_id", None)
+                or getattr(intake, "homeowner_id", None)
+                or customer_id
+            )
+            location = {
+                "address_line1": _safe_text(getattr(intake, "project_address_line1", "")) or _safe_text(lead.project_address),
+                "city": _safe_text(getattr(intake, "project_city", "")) or _safe_text(lead.city),
+                "state": _safe_text(getattr(intake, "project_state", "")) or _safe_text(lead.state),
+                "postal_code": _safe_text(getattr(intake, "project_postal_code", "")) or _safe_text(lead.zip_code),
+            }
+    elif proposal.source_type == Proposal.SOURCE_INTAKE:
+        intake = (
+            ProjectIntake.objects.filter(contractor=proposal.contractor, pk=proposal.source_id)
+            .select_related("homeowner", "public_lead", "public_lead__converted_homeowner")
+            .first()
+        )
+        if intake is not None:
+            public_lead = getattr(intake, "public_lead", None)
+            customer_id = (
+                getattr(intake, "homeowner_id", None)
+                or getattr(public_lead, "converted_homeowner_id", None)
+                or customer_id
+            )
+            location = {
+                "address_line1": _safe_text(intake.project_address_line1),
+                "city": _safe_text(intake.project_city),
+                "state": _safe_text(intake.project_state),
+                "postal_code": _safe_text(intake.project_postal_code),
+            }
+
+    if not customer_id and proposal.customer_email:
+        customer_id = (
+            Homeowner.objects.filter(
+                created_by=proposal.contractor,
+                email__iexact=proposal.customer_email,
+            )
+            .values_list("id", flat=True)
+            .first()
+        )
+
+    return customer_id, location
+
+
 def _serialize_proposal(proposal: Proposal, request=None, include_related=True) -> dict:
     from projects.services.proposal_lifecycle import synchronize_proposal_lifecycle
 
     synchronize_proposal_lifecycle(proposal)
     appointment = getattr(proposal, "estimate_appointment", None)
     opportunity = getattr(proposal, "contractor_opportunity", None)
-    customer_id = (
-        getattr(opportunity, "converted_customer_id", None)
-        or getattr(opportunity, "customer_id", None)
-    )
+    if include_related:
+        customer_id, structured_location = _proposal_customer_and_location(proposal)
+    else:
+        customer_id = (
+            getattr(opportunity, "converted_customer_id", None)
+            or getattr(opportunity, "customer_id", None)
+        )
+        structured_location = {
+            "address_line1": _safe_text(getattr(opportunity, "project_address", "")),
+            "city": _safe_text(getattr(opportunity, "project_city", "")),
+            "state": _safe_text(getattr(opportunity, "project_state", "")),
+            "postal_code": _safe_text(getattr(opportunity, "project_zip", "")),
+        }
     linked_agreement = proposal.converted_agreement or (getattr(opportunity, "converted_agreement", None) if opportunity else None)
     linked_opportunity_title = getattr(opportunity, "project_title", "") if opportunity else ""
     linked_agreement_title = ""
@@ -275,6 +351,11 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "customer_phone": proposal.customer_phone,
         "customer_preferred_contact": proposal.customer_preferred_contact,
         "service_location": proposal.service_location,
+        "service_address": structured_location,
+        "address_line1": structured_location["address_line1"],
+        "city": structured_location["city"],
+        "state": structured_location["state"],
+        "postal_code": structured_location["postal_code"],
         "project_start_type": proposal.project_start_type,
         "project_start_date": proposal.project_start_date.isoformat() if proposal.project_start_date else "",
         "project_completion_type": proposal.project_completion_type,

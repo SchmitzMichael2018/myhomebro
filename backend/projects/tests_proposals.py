@@ -14,7 +14,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework.throttling import ScopedRateThrottle
 
-from projects.models import Agreement, Contractor, Homeowner, Milestone, Notification, CustomerConversation, ConversationMessage, Project
+from projects.models import Agreement, Contractor, Homeowner, Milestone, Notification, CustomerConversation, ConversationMessage, Project, PublicContractorLead, ContractorPublicProfile
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorOpportunity,
@@ -441,6 +441,53 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertFalse(second.data["created"])
         self.assertEqual(Proposal.objects.count(), 1)
+
+    def test_website_lead_proposal_serializes_existing_customer_and_structured_address(self):
+        customer = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="QA Homeowner",
+            email="qa-homeowner@example.com",
+        )
+        profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            slug="proposal-builder-test",
+        )
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=profile,
+            source=PublicContractorLead.SOURCE_WEBSITE,
+            full_name="QA Homeowner",
+            email="qa-homeowner@example.com",
+            project_address="100 QA Test Lane",
+            city="San Antonio",
+            state="TX",
+            zip_code="78201",
+            converted_homeowner=customer,
+        )
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_LEAD,
+            source_id=lead.id,
+            project_title="Bathroom fixture repair",
+            customer_name=lead.full_name,
+            customer_email=lead.email,
+            service_location="100 QA Test LaneSan Antonio, TX",
+        )
+
+        response = self.client.get(f"/api/projects/proposals/{proposal.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["customer_id"], customer.id)
+        self.assertEqual(response.data["homeowner_id"], customer.id)
+        self.assertEqual(
+            response.data["service_address"],
+            {
+                "address_line1": "100 QA Test Lane",
+                "city": "San Antonio",
+                "state": "TX",
+                "postal_code": "78201",
+            },
+        )
 
     def test_routine_updates_ignore_client_supplied_lifecycle_status(self):
         proposal = Proposal.objects.create(
