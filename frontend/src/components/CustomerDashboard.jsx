@@ -1593,7 +1593,7 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, preferences 
                 <div className="text-xs font-bold uppercase tracking-wide text-slate-400">{groupName}</div>
                 <div className="mt-3 grid gap-2">
                   {(keys || []).map((key) => (
-                    <label key={key} className="inline-flex items-center gap-2 text-sm text-slate-200">
+                    <label key={key} className="inline-flex min-h-6 items-center gap-2 text-sm text-slate-200">
                       <input
                         type="checkbox"
                         data-testid={`notification-category-${key}`}
@@ -1620,7 +1620,7 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, preferences 
             <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Channels</div>
             <div className="mt-3 grid gap-2">
               {Object.entries(NOTIFICATION_CHANNEL_LABELS).map(([key, label]) => (
-                <label key={key} className="inline-flex items-center gap-2 text-sm text-slate-200">
+                <label key={key} className="inline-flex min-h-6 items-center gap-2 text-sm text-slate-200">
                   <input
                     type="checkbox"
                     data-testid={`notification-channel-${key}`}
