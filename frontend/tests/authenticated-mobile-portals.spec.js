@@ -82,7 +82,7 @@ async function auditSurface(page, testInfo, name) {
       .filter((element) => {
         const rect = element.getBoundingClientRect();
         if (rect.width >= 24 && rect.height >= 24) return false;
-        if (element.matches('input[type="checkbox"], input[type="radio"]')) {
+        if (element.matches('input[type="checkbox"], input[type="radio"], input[type="file"]')) {
           const labelRect = element.closest('label')?.getBoundingClientRect();
           if (labelRect && labelRect.width >= 24 && labelRect.height >= 24) return false;
         }
