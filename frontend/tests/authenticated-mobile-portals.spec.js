@@ -131,6 +131,9 @@ async function loginContractor(page) {
     .poll(() => page.evaluate(() => window.localStorage.getItem('access') || ''))
     .not.toBe('');
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
+  // Let the post-login route finish loading before the audit begins navigating.
+  // WebKit otherwise reports the intentionally cancelled lazy route import as a page error.
+  await settle(page);
 }
 
 async function loginHomeowner(page) {
