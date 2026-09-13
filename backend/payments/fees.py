@@ -25,7 +25,7 @@ from django.utils import timezone
 
 FeePayer = Literal["contractor", "homeowner", "split"]
 
-FEE_ENGINE_VERSION = "v2026-09-10-adoption-prior-month"
+FEE_ENGINE_VERSION = "v2026-09-13-owner-promotions"
 
 INTRO_DAYS = 60
 INTRO_RATE = Decimal("0.03")
@@ -79,6 +79,10 @@ class FeeSummary:
     homeowner_escrow: Decimal
     contractor_fee_share: Decimal
     homeowner_fee_share: Decimal
+    promotion_code: str = ""
+    waiver_percent: Decimal = Decimal("0.00")
+    platform_fee_before_promotion: Decimal = Decimal("0.00")
+    waived_fee: Decimal = Decimal("0.00")
 
 
 @dataclass
@@ -100,6 +104,12 @@ class UnifiedPlatformFeeResult:
     platform_fee_cents: int
     payout_cents: int
     cap_info: AgreementCapInfo
+    promotion_grant_id: Optional[int] = None
+    promotion_code: str = ""
+    waiver_percent: Decimal = Decimal("0.00")
+    platform_fee_before_promotion: Decimal = Decimal("0.00")
+    waived_fee: Decimal = Decimal("0.00")
+    waived_fee_cents: int = 0
 
 
 @dataclass
@@ -112,6 +122,11 @@ class InvoicePaymentFeeSummary:
     # For audit/debug
     monthly_volume_used: Decimal
     platform_fee_uncapped: Decimal
+    promotion_grant_id: Optional[int] = None
+    promotion_code: str = ""
+    waiver_percent: Decimal = Decimal("0.00")
+    platform_fee_before_promotion: Decimal = Decimal("0.00")
+    waived_fee: Decimal = Decimal("0.00")
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +167,39 @@ def _previous_month_bounds(now=None):
 def _is_paid_like_status(status: str) -> bool:
     normalized = str(status or "").strip().lower()
     return any(token in normalized for token in ("paid", "released", "completed"))
+
+
+def get_active_platform_fee_promotion(contractor, *, at=None):
+    """Return the strongest owner-issued waiver currently active for a contractor."""
+    if contractor is None or not getattr(contractor, "pk", None):
+        return None
+    try:
+        from projects.models import PlatformFeePromotionGrant
+
+        at = at or timezone.now()
+        return (
+            PlatformFeePromotionGrant.objects.filter(
+                contractor=contractor,
+                active=True,
+                starts_at__lte=at,
+                ends_at__gt=at,
+            )
+            .order_by("-waiver_percent", "-starts_at", "-id")
+            .first()
+        )
+    except Exception:
+        # Fee calculation must remain available during migrations and recovery.
+        return None
+
+
+def _apply_platform_fee_promotion(fee: Decimal, contractor, *, at=None):
+    fee = _round_money(fee)
+    grant = get_active_platform_fee_promotion(contractor, at=at)
+    if grant is None:
+        return fee, Decimal("0.00"), None
+    waiver_percent = min(max(Decimal(str(grant.waiver_percent)), Decimal("0.00")), Decimal("100.00"))
+    waived = _round_money(fee * waiver_percent / Decimal("100.00"))
+    return _round_money(max(fee - waived, Decimal("0.00"))), waived, grant
 
 
 def _invoice_processed_event_time(invoice):
@@ -660,6 +708,8 @@ def _calculate_unified_platform_fee(
         uncapped_fee=uncapped,
         cap_total=get_fee_cap_for_rate_info(rate_info),
     )
+    fee_before_promotion = applied_fee
+    applied_fee, waived_fee, promotion = _apply_platform_fee_promotion(applied_fee, contractor)
     applied_fee_cents = _cents_from_money(applied_fee)
     payout_cents = max(int(amount_cents) - applied_fee_cents, 0)
 
@@ -674,6 +724,12 @@ def _calculate_unified_platform_fee(
         platform_fee_cents=applied_fee_cents,
         payout_cents=payout_cents,
         cap_info=cap_info,
+        promotion_grant_id=getattr(promotion, "id", None),
+        promotion_code=str(getattr(promotion, "code", "") or ""),
+        waiver_percent=Decimal(str(getattr(promotion, "waiver_percent", 0) or 0)),
+        platform_fee_before_promotion=fee_before_promotion,
+        waived_fee=waived_fee,
+        waived_fee_cents=_cents_from_money(waived_fee),
     )
 
 
@@ -754,6 +810,8 @@ def compute_fee_summary(
     applicable_cap = get_fee_cap_for_rate_info(rate_info)
     if platform_fee > applicable_cap:
         platform_fee = applicable_cap
+    platform_fee_before_promotion = _round_money(platform_fee)
+    platform_fee, waived_fee, promotion = _apply_platform_fee_promotion(platform_fee, contractor)
 
     split = split_fee_between_parties(
         project_amount=platform.project_amount,
@@ -769,6 +827,10 @@ def compute_fee_summary(
         homeowner_escrow=split.homeowner_escrow,
         contractor_fee_share=split.contractor_fee_share,
         homeowner_fee_share=split.homeowner_fee_share,
+        promotion_code=str(getattr(promotion, "code", "") or ""),
+        waiver_percent=Decimal(str(getattr(promotion, "waiver_percent", 0) or 0)),
+        platform_fee_before_promotion=platform_fee_before_promotion,
+        waived_fee=waived_fee,
     )
 
 
@@ -805,6 +867,11 @@ def compute_fee_summary_for_invoice_payment(
         agreement_cap=unified.cap_info,
         monthly_volume_used=get_previous_month_processed_volume_for_contractor(contractor),
         platform_fee_uncapped=unified.platform_fee_uncapped,
+        promotion_grant_id=unified.promotion_grant_id,
+        promotion_code=unified.promotion_code,
+        waiver_percent=unified.waiver_percent,
+        platform_fee_before_promotion=unified.platform_fee_before_promotion,
+        waived_fee=unified.waived_fee,
     )
 
 
@@ -844,6 +911,7 @@ def calculate_total_allowed_fee_cents_for_agreement_total(
     amount = _money_from_cents(int(contract_amount_cents or 0))
     uncapped = calculate_platform_fee(project_amount=amount, rate_info=rate_info).total_fee
     capped = min(_round_money(uncapped), _round_money(get_fee_cap_for_rate_info(rate_info)))
+    capped, _, _ = _apply_platform_fee_promotion(capped, contractor)
     return _cents_from_money(capped)
 
 
@@ -855,6 +923,8 @@ def build_invoice_payment_fee_snapshot(summary: InvoicePaymentFeeSummary) -> dic
     cap = summary.agreement_cap
 
     fee_plan_code = ri.tier_name + ("+risk" if ri.high_risk_applied else "")
+    if summary.promotion_code:
+        fee_plan_code = f"promo:{summary.promotion_code}"[:32]
 
     return {
         "fee_engine_version": FEE_ENGINE_VERSION,
@@ -869,5 +939,10 @@ def build_invoice_payment_fee_snapshot(summary: InvoicePaymentFeeSummary) -> dic
         "is_intro": ri.is_intro,
         "high_risk_applied": ri.high_risk_applied,
         "tier_name": ri.tier_name,
+        "promotion_grant_id": summary.promotion_grant_id,
+        "promotion_code": summary.promotion_code,
+        "waiver_percent": summary.waiver_percent,
+        "platform_fee_before_promotion_cents": _cents_from_money(summary.platform_fee_before_promotion),
+        "waived_fee_cents": _cents_from_money(summary.waived_fee),
         # NOTE: platform_fee_cents itself is stored separately on Receipt as "platform_fee_cents"
     }

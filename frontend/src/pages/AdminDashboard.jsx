@@ -846,6 +846,7 @@ export default function AdminDashboard() {
           { key: "contractors", label: "Contractors", action: () => goTo("contractors") },
           { key: "homeowners", label: "Customers", action: () => goTo("homeowners") },
           { key: "fee_audit", label: "Financial Operations", action: () => goTo("fee_audit") },
+          { key: "fee_waivers", label: "Fee Waivers", action: () => navigate("/app/admin/fee-waivers") },
           { key: "disputes", label: "Resolution", action: () => goToDisputes("active") },
           { key: "warranty", label: "Warranty", action: () => navigate("/app/admin?view=overview#warranty-oversight") },
           { key: "platform_health", label: "Platform Health", action: () => navigate("/app/admin?view=overview#platform-health") },

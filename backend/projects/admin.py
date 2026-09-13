@@ -38,6 +38,8 @@ try:
         ProjectBenchmarkAggregate,
         RegionalBenchmarkAggregate,
         SupportTicket,
+        PlatformFeePromotionAuditEvent,
+        PlatformFeePromotionGrant,
     )
 except Exception:  # pragma: no cover
     Skill = Contractor = Homeowner = Project = Agreement = AgreementWarranty = None
@@ -49,6 +51,7 @@ except Exception:  # pragma: no cover
     Invoice = Expense = AgreementAmendment = None
     ContractorEditEvent = MilestonePerformanceSnapshot = SignedAgreementSnapshot = ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
     SupportTicket = None
+    PlatformFeePromotionAuditEvent = PlatformFeePromotionGrant = None
 
 try:
     from .models_warranty import (
@@ -1888,6 +1891,27 @@ if AgreementAttachment is not None:
         list_filter = ("category", "visible_to_homeowner", "ack_required", "uploaded_at")
         search_fields = ("title", "file", "agreement__project__title", "agreement__project__number")
         readonly_fields = ("uploaded_at",)
+
+
+if PlatformFeePromotionGrant is not None:
+    @admin.register(PlatformFeePromotionGrant)  # type: ignore[misc]
+    class PlatformFeePromotionGrantAdmin(admin.ModelAdmin):
+        list_display = ("code", "contractor", "waiver_percent", "starts_at", "ends_at", "active", "granted_by")
+        list_filter = ("active", "waiver_percent", "starts_at", "ends_at")
+        search_fields = ("code", "contractor__business_name", "contractor__user__email", "reason")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if PlatformFeePromotionAuditEvent is not None:
+    @admin.register(PlatformFeePromotionAuditEvent)  # type: ignore[misc]
+    class PlatformFeePromotionAuditEventAdmin(admin.ModelAdmin):
+        list_display = ("grant", "action", "actor", "project_id_snapshot", "waived_fee_cents", "created_at")
+        list_filter = ("action", "created_at")
+        search_fields = ("grant__code", "grant__contractor__business_name", "actor__email")
+        readonly_fields = (
+            "grant", "action", "actor", "project_id_snapshot", "context",
+            "original_fee_cents", "waived_fee_cents", "metadata", "created_at",
+        )
 
 
 # ─────────────────────────────────────────────────────────────

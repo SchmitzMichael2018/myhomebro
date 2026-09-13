@@ -3431,3 +3431,4 @@ from .models_diy_planner import (  # noqa: E402,F401
     DIYProjectTask,
 )
 from .models_conversations import CustomerConversation, ConversationMessage  # noqa: E402,F401
+from .models_promotions import PlatformFeePromotionAuditEvent, PlatformFeePromotionGrant  # noqa: E402,F401

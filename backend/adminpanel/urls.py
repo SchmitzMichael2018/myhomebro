@@ -40,6 +40,7 @@ from .views_reimbursements import (
     AdminReimbursementRetryRelease,
     AdminReimbursements,
 )
+from .views_promotions import AdminPlatformFeePromotionDetail, AdminPlatformFeePromotions
 
 urlpatterns = [
     path("overview/", AdminOverview.as_view(), name="admin-overview"),
@@ -64,6 +65,8 @@ urlpatterns = [
     path("agreements/<int:agreement_id>/pdf/", AdminDownloadAgreementPDF.as_view(), name="admin-agreement-pdf"),
     path("users/password-reset/", AdminTriggerPasswordReset.as_view(), name="admin-trigger-password-reset"),
     path("fees/ledger/", AdminFeeLedger.as_view(), name="admin-fee-ledger"),
+    path("fees/promotions/", AdminPlatformFeePromotions.as_view(), name="admin-platform-fee-promotions"),
+    path("fees/promotions/<int:grant_id>/", AdminPlatformFeePromotionDetail.as_view(), name="admin-platform-fee-promotion-detail"),
     path("reimbursements/", AdminReimbursements.as_view(), name="admin-reimbursements"),
     path("reimbursements/<int:reimbursement_id>/", AdminReimbursementDetail.as_view(), name="admin-reimbursement-detail"),
     path("reimbursements/<int:reimbursement_id>/record-release/", AdminReimbursementRecordRelease.as_view(), name="admin-reimbursement-record-release"),

@@ -70,6 +70,20 @@ class Receipt(models.Model):
     high_risk_applied = models.BooleanField(default=False)
     tier_name = models.CharField(max_length=16, blank=True, null=True)
 
+    # Owner-issued platform promotion snapshot. These fields preserve the
+    # exact financial decision even after the promotion expires or is ended.
+    promotion_grant = models.ForeignKey(
+        "projects.PlatformFeePromotionGrant",
+        on_delete=models.PROTECT,
+        related_name="receipts",
+        blank=True,
+        null=True,
+    )
+    promotion_code = models.CharField(max_length=64, blank=True, null=True)
+    waiver_percent = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    platform_fee_before_promotion_cents = models.PositiveIntegerField(blank=True, null=True)
+    waived_fee_cents = models.PositiveIntegerField(blank=True, null=True)
+
     def __str__(self):
         return self.receipt_number
 

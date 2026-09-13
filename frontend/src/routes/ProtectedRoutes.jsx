@@ -17,6 +17,7 @@ const AdminMaintenancePage = lazy(() => import("../pages/admin/AdminMaintenanceP
 const AdminReimbursementsPage = lazy(() => import("../pages/admin/AdminReimbursementsPage.jsx"));
 const AdminReviewsPage = lazy(() => import("../pages/admin/AdminReviewsPage.jsx"));
 const AdminEntityDetailPage = lazy(() => import("../pages/admin/AdminEntityDetailPage.jsx"));
+const AdminPlatformFeePromotionsPage = lazy(() => import("../pages/admin/AdminPlatformFeePromotionsPage.jsx"));
 
 /* Employee pages */
 const EmployeeDashboard = lazy(() => import("../pages/EmployeeDashboard.jsx"));
@@ -156,6 +157,7 @@ export function protectedRoutes() {
           <Route path="admin/maintenance" element={<AdminMaintenancePage />} />
           <Route path="admin/reimbursements" element={<AdminReimbursementsPage />} />
           <Route path="admin/reviews" element={<AdminReviewsPage />} />
+          <Route path="admin/fee-waivers" element={<AdminPlatformFeePromotionsPage />} />
           <Route path="admin/contractor-directory" element={<AdminContractorDirectory />} />
           <Route path="admin/contractors/:contractorId" element={<AdminEntityDetailPage kind="contractor" />} />
           <Route path="admin/customers/:customerId" element={<AdminEntityDetailPage kind="customer" />} />
