@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Optional
 
 from django.conf import settings
@@ -151,6 +152,18 @@ def email_contractor_status_update(dispute, contractor_email: str, event_label: 
     return _send(subject, body, contractor_email)
 
 
+def email_homeowner_response_deadline(dispute, event_label: str, extra: str = "") -> bool:
+    """Notify the homeowner when the next dispute response is theirs."""
+    to_email = _guess_homeowner_email(dispute.agreement)
+    if not to_email:
+        return False
+    base = (getattr(settings, "PUBLIC_APP_BASE_URL", "") or "https://www.myhomebro.com").rstrip("/")
+    link = f"{base}/disputes/{dispute.id}?token={dispute.public_token}"
+    subject = f"MyHomeBro: Dispute #{dispute.id} — {event_label}"
+    body = f"{extra}\n\nReview and respond: {link}\n\n— MyHomeBro"
+    return _send(subject, body, to_email)
+
+
 def email_admin_dispute_update(dispute, admin_email: str, event_label: str) -> bool:
     """
     Optional: send admin alerts if you set DISPUTE_ADMIN_EMAIL in settings.
@@ -185,6 +198,8 @@ def notify_homeowner_qualification(dispute, event: str) -> dict:
     link = f"{base}/disputes/{dispute.id}?token={dispute.public_token}"
     due = getattr(dispute, "qualification_due_at", None)
     due_label = timezone.localtime(due).strftime("%b %d, %Y at %I:%M %p %Z") if due else "the displayed deadline"
+    grace_due = getattr(dispute, "qualification_grace_due_at", None)
+    grace_label = timezone.localtime(grace_due).strftime("%b %d, %Y at %I:%M %p %Z") if grace_due else "the displayed grace deadline"
     copy = {
         "submitted": (
             "Temporary dispute hold started",
@@ -200,7 +215,7 @@ def notify_homeowner_qualification(dispute, event: str) -> dict:
         ),
         "expiration_pending": (
             "Dispute payment hold expiration pending",
-            "The qualification deadline passed. A final grace period is active before the payment hold closes.",
+            f"The four-business-day qualification deadline passed. A final one-business-day grace period is active until {grace_label} before the payment hold closes.",
         ),
         "expired": (
             "Dispute payment hold closed",
@@ -208,10 +223,19 @@ def notify_homeowner_qualification(dispute, event: str) -> dict:
         ),
         "qualified": (
             "Dispute qualified for continued hold",
-            "The submitted information is sufficient for the contractor-response stage. Only the identified payment source remains held.",
+            "The submitted information is sufficient for the contractor-response stage. The responder has four business days plus one final business-day grace period. Only the identified payment source remains held.",
         ),
     }
     subject, message = copy.get(event, copy["submitted"])
+    if event == "expired":
+        invoice = getattr(dispute, "payment_request", None)
+        marked_complete_at = getattr(invoice, "marked_complete_at", None) if invoice else None
+        if marked_complete_at:
+            release_at = marked_complete_at + timedelta(
+                hours=max(int(getattr(settings, "INVOICE_AUTO_RELEASE_HOURS", 72)), 1)
+            )
+            release_label = timezone.localtime(release_at).strftime("%b %d, %Y at %I:%M %p %Z")
+            message += f" The linked invoice review will resume and may auto-release after {release_label} if no other valid hold applies."
     missing = [str(item).strip() for item in (getattr(dispute, "missing_information", None) or []) if str(item).strip()]
     if missing and event in {"submitted", "reminder_48h", "reminder_24h", "expiration_pending"}:
         message = f"{message}\n\nInformation requested:\n" + "\n".join(f"- {item}" for item in missing)

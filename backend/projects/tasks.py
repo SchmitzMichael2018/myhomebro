@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from celery import shared_task  # type: ignore
 from celery.exceptions import MaxRetriesExceededError
+from django.conf import settings
 from django.utils import timezone
 from django.apps import apps
 
@@ -205,7 +206,8 @@ def pdf_readiness_probe(pdf_smoke: bool = False):
 @shared_task(name="auto_release_undisputed_invoices")
 def task_auto_release_undisputed_invoices():
     now = timezone.now()
-    cutoff = now - timedelta(days=5)
+    release_hours = max(int(getattr(settings, "INVOICE_AUTO_RELEASE_HOURS", 72)), 1)
+    cutoff = now - timedelta(hours=release_hours)
 
     invoices = Invoice.objects.filter(
         status=InvoiceStatus.PENDING,

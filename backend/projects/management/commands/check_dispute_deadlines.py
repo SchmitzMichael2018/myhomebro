@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from projects.models_dispute import Dispute, DisputePaymentHold, DisputeReminderLog, ResolutionCaseTimelineEvent
-from projects.services.dispute_notifications import notify_homeowner_qualification
+from projects.services.dispute_notifications import email_contractor_status_update, notify_homeowner_qualification
 from projects.services.dispute_workflow import begin_hold_expiration, release_expired_hold
 from projects.services.resolution_workspace import record_timeline_event
 
@@ -41,6 +41,14 @@ class Command(BaseCommand):
                 )
                 if created:
                     notify_homeowner_qualification(dispute, "expiration_pending")
+                    contractor = getattr(getattr(dispute.agreement, "contractor", None), "user", None)
+                    if contractor and contractor.email:
+                        email_contractor_status_update(
+                            dispute,
+                            contractor.email,
+                            "Customer information grace period started",
+                            "The customer missed the initial qualification deadline. The source-specific hold remains active for one final business-day grace period.",
+                        )
                 updated += 1
 
         release_qs = Dispute.objects.filter(
@@ -66,14 +74,22 @@ class Command(BaseCommand):
                 )
                 if created:
                     notify_homeowner_qualification(dispute, "expired")
+                    contractor = getattr(getattr(dispute.agreement, "contractor", None), "user", None)
+                    if contractor and contractor.email:
+                        email_contractor_status_update(
+                            dispute,
+                            contractor.email,
+                            "Temporary payment hold closed",
+                            "The required claim information was not completed after the final grace period. The linked invoice may resume its normal review process; this is not a finding on the merits.",
+                        )
                 updated += 1
 
         # Overdue response deadline
         qs1 = Dispute.objects.filter(
             fee_paid=True,
             status="open",
-            response_due_at__isnull=False,
-            response_due_at__lt=now,
+            response_grace_due_at__isnull=False,
+            response_grace_due_at__lt=now,
         )
 
         for d in qs1.iterator():
@@ -89,9 +105,9 @@ class Command(BaseCommand):
         # Overdue proposal decision deadline (homeowner decision)
         qs2 = Dispute.objects.filter(
             proposal_sent_at__isnull=False,
-            proposal_due_at__isnull=False,
-            proposal_due_at__lt=now,
-        ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "canceled"])
+            proposal_grace_due_at__isnull=False,
+            proposal_grace_due_at__lt=now,
+        ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "closed", "canceled", "cancelled"])
 
         for d in qs2.iterator():
             d.status = "under_review"

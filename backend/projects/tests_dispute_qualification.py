@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
-from projects.models import Agreement, AgreementPaymentMode, Contractor, Homeowner, Milestone, Project
+from projects.models import Agreement, AgreementPaymentMode, Contractor, Homeowner, Invoice, InvoiceStatus, Milestone, Project
 from projects.models_ai_artifacts import DisputeAIArtifact
 from projects.models_dispute import (
     Dispute,
@@ -23,13 +23,20 @@ from projects.services.dispute_workflow import (
     assess_dispute_qualification,
     begin_hold_expiration,
     extend_qualification_deadline,
+    existing_dispute_for_source,
     initialize_dispute_workflow,
     release_expired_hold,
 )
 from projects.services.dispute_allocation_execution import reconcile_agreement_escrow_payments_from_stripe
+from projects.tasks import task_auto_release_undisputed_invoices
 
 
-@override_settings(DISPUTE_QUALIFICATION_BUSINESS_DAYS=3, DISPUTE_QUALIFICATION_GRACE_HOURS=24)
+@override_settings(
+    DISPUTE_QUALIFICATION_BUSINESS_DAYS=4,
+    DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS=4,
+    DISPUTE_RESPONSE_GRACE_BUSINESS_DAYS=1,
+    INVOICE_AUTO_RELEASE_HOURS=72,
+)
 class DisputeQualificationWorkflowTests(TestCase):
     def setUp(self):
         self.contractor_user = get_user_model().objects.create_user(email="qualification-contractor@example.com", password="testpass123")
@@ -103,6 +110,75 @@ class DisputeQualificationWorkflowTests(TestCase):
         self.assertFalse(
             DisputePaymentHold.objects.filter(milestone=self.milestone_two).exclude(status=DisputePaymentHold.STATUS_RELEASED).exists()
         )
+        self.assertGreater(dispute.qualification_grace_due_at, dispute.qualification_due_at)
+        self.assertGreater(dispute.response_grace_due_at, dispute.response_due_at)
+
+    def test_historical_source_case_blocks_duplicate_but_other_milestone_is_allowed(self):
+        dispute = initialize_dispute_workflow(self._create_dispute())
+        dispute.status = "closed"
+        dispute.resolution_type = Dispute.RESOLUTION_ADMIN_CLOSURE
+        dispute.save(update_fields=["status", "resolution_type"])
+
+        self.assertEqual(
+            existing_dispute_for_source(agreement=self.agreement, milestone=self.milestone_one).id,
+            dispute.id,
+        )
+        self.assertIsNone(existing_dispute_for_source(agreement=self.agreement, milestone=self.milestone_two))
+
+    def test_magic_invoice_duplicate_returns_existing_case(self):
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("400.00"),
+            status=InvoiceStatus.PENDING,
+            milestone_id_snapshot=self.milestone_one.id,
+        )
+        dispute = initialize_dispute_workflow(
+            self._create_dispute(
+                source_type=Dispute.SOURCE_PAYMENT_REQUEST,
+                source_object_id=invoice.id,
+                payment_request=invoice,
+            )
+        )
+        dispute.status = "closed"
+        dispute.resolution_type = Dispute.RESOLUTION_ADMIN_CLOSURE
+        dispute.save(update_fields=["status", "resolution_type"])
+
+        response = APIClient().patch(
+            f"/api/projects/invoices/magic/{invoice.public_token}/dispute/",
+            {"reason": "Trying to file the same invoice dispute again."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data["dispute_id"], dispute.id)
+        self.assertEqual(Dispute.objects.filter(payment_request=invoice).count(), 1)
+
+    @patch("projects.tasks.send_project_email_report")
+    @patch("projects.tasks.notify_escrow_auto_released")
+    @patch("projects.tasks.recompute_and_apply_agreement_completion")
+    def test_invoice_auto_release_uses_72_hour_clock(self, _recompute, _notify, _report):
+        now = timezone.now()
+        before_cutoff = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("100.00"),
+            status=InvoiceStatus.PENDING,
+            marked_complete_at=now - timedelta(hours=71),
+        )
+        after_cutoff = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("100.00"),
+            status=InvoiceStatus.PENDING,
+            marked_complete_at=now - timedelta(hours=73),
+        )
+
+        task_auto_release_undisputed_invoices()
+
+        before_cutoff.refresh_from_db()
+        after_cutoff.refresh_from_db()
+        self.assertEqual(before_cutoff.status, InvoiceStatus.PENDING)
+        self.assertFalse(before_cutoff.escrow_released)
+        self.assertEqual(after_cutoff.status, InvoiceStatus.PAID)
+        self.assertTrue(after_cutoff.escrow_released)
 
     def test_incomplete_claim_receives_specific_questions_and_temporary_hold(self):
         dispute = initialize_dispute_workflow(
@@ -177,7 +253,8 @@ class DisputeQualificationWorkflowTests(TestCase):
             self._create_dispute(description="Door issue", expected_result="", requested_resolution="", contractor_notified=None, evidence_unavailable_reason="")
         )
         dispute.qualification_due_at = now - timedelta(minutes=1)
-        dispute.save(update_fields=["qualification_due_at"])
+        dispute.qualification_grace_due_at = now + timedelta(hours=24)
+        dispute.save(update_fields=["qualification_due_at", "qualification_grace_due_at"])
         self.assertTrue(begin_hold_expiration(dispute, now=now))
         self.assertFalse(begin_hold_expiration(dispute, now=now))
         dispute.payment_hold.refresh_from_db()
@@ -188,6 +265,44 @@ class DisputeQualificationWorkflowTests(TestCase):
         self.assertFalse(dispute.escrow_frozen)
         self.assertEqual(dispute.qualification_status, Dispute.QUALIFICATION_NOT_QUALIFIED)
         self.assertEqual(dispute.payment_hold.status, DisputePaymentHold.STATUS_RELEASED)
+        self.assertEqual(dispute.status, "closed")
+
+    def test_expired_incomplete_claim_resumes_remaining_invoice_review_time(self):
+        now = timezone.now()
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("400.00"),
+            status=InvoiceStatus.DISPUTED,
+            disputed=True,
+            disputed_at=now - timedelta(hours=1),
+            marked_complete_at=now - timedelta(hours=11),
+            milestone_id_snapshot=self.milestone_one.id,
+        )
+        dispute = initialize_dispute_workflow(
+            self._create_dispute(
+                source_type=Dispute.SOURCE_PAYMENT_REQUEST,
+                source_object_id=invoice.id,
+                payment_request=invoice,
+                description="Door issue",
+                expected_result="",
+                requested_resolution="",
+                contractor_notified=None,
+                evidence_unavailable_reason="",
+            ),
+            now=now - timedelta(days=6),
+        )
+        dispute.qualification_due_at = now - timedelta(days=2)
+        dispute.qualification_grace_due_at = now - timedelta(days=1)
+        dispute.save(update_fields=["qualification_due_at", "qualification_grace_due_at"])
+
+        self.assertTrue(begin_hold_expiration(dispute, now=now - timedelta(days=2)))
+        self.assertTrue(release_expired_hold(dispute, now=now))
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.PENDING)
+        self.assertFalse(invoice.disputed)
+        resumed_release_at = invoice.marked_complete_at + timedelta(hours=72)
+        self.assertGreaterEqual(resumed_release_at, now + timedelta(hours=24))
 
     def test_reasoned_extension_reopens_expiration_pending_hold(self):
         now = timezone.now()
@@ -209,7 +324,8 @@ class DisputeQualificationWorkflowTests(TestCase):
             self._create_dispute(description="Door issue", expected_result="", requested_resolution="", contractor_notified=None, evidence_unavailable_reason="")
         )
         dispute.qualification_due_at = now - timedelta(hours=26)
-        dispute.save(update_fields=["qualification_due_at"])
+        dispute.qualification_grace_due_at = now
+        dispute.save(update_fields=["qualification_due_at", "qualification_grace_due_at"])
         self.assertTrue(begin_hold_expiration(dispute, now=now - timedelta(hours=25)))
         self.assertTrue(release_expired_hold(dispute, now=now))
         dispute.expected_result = "A closing and latching door."
@@ -508,7 +624,8 @@ class DisputeQualificationWorkflowTests(TestCase):
             self._create_dispute(description="Door issue", expected_result="", requested_resolution="", contractor_notified=None, evidence_unavailable_reason="")
         )
         dispute.qualification_due_at = now - timedelta(hours=26)
-        dispute.save(update_fields=["qualification_due_at"])
+        dispute.qualification_grace_due_at = now
+        dispute.save(update_fields=["qualification_due_at", "qualification_grace_due_at"])
         self.assertTrue(begin_hold_expiration(dispute, now=now - timedelta(hours=25)))
         self.assertTrue(release_expired_hold(dispute, now=now))
         missing_reason = self.admin_client.post(

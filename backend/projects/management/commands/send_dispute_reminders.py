@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from projects.models_dispute import Dispute, DisputeReminderLog
@@ -10,9 +11,24 @@ from projects.services.dispute_notifications import (
     email_homeowner_proposal_sent,  # already exists and used elsewhere
     email_admin_dispute_update,
     email_contractor_status_update,
+    email_homeowner_response_deadline,
     notify_homeowner_qualification,
 )
 from projects.services.dispute_inapp import try_create_inapp_notification
+
+
+def _contractor_user(dispute):
+    contractor = getattr(getattr(dispute, "agreement", None), "contractor", None)
+    return getattr(contractor, "user", None)
+
+
+def _homeowner_user(dispute):
+    homeowner = getattr(getattr(dispute, "agreement", None), "homeowner", None)
+    direct_user = getattr(homeowner, "user", None)
+    if direct_user:
+        return direct_user
+    email = str(getattr(homeowner, "email", "") or "").strip()
+    return get_user_model().objects.filter(email__iexact=email).first() if email else None
 
 
 class Command(BaseCommand):
@@ -79,19 +95,59 @@ class Command(BaseCommand):
             # Notify admin (optional)
             email_admin_dispute_update(d, admin_email, "Response due within 24h")
 
-            # In-app (best-effort)
-            if d.created_by:
-                try_create_inapp_notification(d.created_by, title, msg, kind="dispute")
+            contractor_user = _contractor_user(d)
+            if missed_by == "contractor" and contractor_user:
+                email_contractor_status_update(d, contractor_user.email, "Response due within 24h", msg)
+            elif missed_by == "homeowner":
+                email_homeowner_response_deadline(d, "Response due within 24 hours", msg)
 
-            DisputeReminderLog.objects.create(dispute=d, kind=kind)
+            # In-app (best-effort)
+            recipient = contractor_user if missed_by == "contractor" else _homeowner_user(d)
+            if recipient:
+                try_create_inapp_notification(recipient, title, msg, kind="dispute")
+
+            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
             sent += 1
 
-        # 2) Response overdue
-        qs_response_overdue = Dispute.objects.filter(
+        # 2) Initial response deadline passed: the one-business-day grace period starts.
+        qs_response_grace = Dispute.objects.filter(
             fee_paid=True,
             status="open",
             response_due_at__isnull=False,
             response_due_at__lte=now,
+            response_grace_due_at__gt=now,
+        )
+
+        for d in list(qs_response_grace):
+            kind = "response_grace_started"
+            if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
+                skipped += 1
+                continue
+
+            missed_by = "contractor" if d.initiator == "homeowner" else "homeowner"
+            title = f"Dispute #{d.id}: final response grace period"
+            msg = f"The four-business-day response deadline passed. {missed_by.title()} has one final business-day grace period to respond."
+
+            email_admin_dispute_update(d, admin_email, "Response grace period started")
+            contractor_user = _contractor_user(d)
+            if missed_by == "contractor" and contractor_user:
+                email_contractor_status_update(d, contractor_user.email, "Final response grace period", msg)
+            elif missed_by == "homeowner":
+                email_homeowner_response_deadline(d, "Final response grace period", msg)
+
+            recipient = contractor_user if missed_by == "contractor" else _homeowner_user(d)
+            if recipient:
+                try_create_inapp_notification(recipient, title, msg, kind="dispute")
+
+            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
+            sent += 1
+
+        # 3) Final response deadline passed.
+        qs_response_overdue = Dispute.objects.filter(
+            fee_paid=True,
+            status="open",
+            response_grace_due_at__isnull=False,
+            response_grace_due_at__lte=now,
         )
 
         for d in list(qs_response_overdue):
@@ -99,26 +155,28 @@ class Command(BaseCommand):
             if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
                 skipped += 1
                 continue
-
             missed_by = "contractor" if d.initiator == "homeowner" else "homeowner"
-            title = f"Dispute #{d.id}: response overdue"
-            msg = f"Response deadline was missed for Dispute #{d.id}. Missed by: {missed_by}. Admin review recommended."
-
-            email_admin_dispute_update(d, admin_email, "Response overdue")
-
-            if d.created_by:
-                try_create_inapp_notification(d.created_by, title, msg, kind="dispute")
-
-            DisputeReminderLog.objects.create(dispute=d, kind=kind)
+            title = f"Dispute #{d.id}: final response deadline missed"
+            msg = f"The four-business-day response period and one-business-day grace period ended without a response from {missed_by}."
+            email_admin_dispute_update(d, admin_email, "Final response deadline missed")
+            contractor_user = _contractor_user(d)
+            if missed_by == "contractor" and contractor_user:
+                email_contractor_status_update(d, contractor_user.email, "Final response deadline missed", msg)
+            elif missed_by == "homeowner":
+                email_homeowner_response_deadline(d, "Final response deadline missed", msg)
+            recipient = contractor_user if missed_by == "contractor" else _homeowner_user(d)
+            if recipient:
+                try_create_inapp_notification(recipient, title, msg, kind="dispute")
+            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
             sent += 1
 
-        # 3) Proposal decision due soon (homeowner decision)
+        # 4) Proposal decision due soon (homeowner decision)
         qs_prop_soon = Dispute.objects.filter(
             proposal_sent_at__isnull=False,
             proposal_due_at__isnull=False,
             proposal_due_at__lte=soon,
             proposal_due_at__gt=now,
-        ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "canceled"])
+        ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "closed", "canceled", "cancelled"])
 
         for d in list(qs_prop_soon):
             kind = "proposal_24h"
@@ -143,30 +201,55 @@ class Command(BaseCommand):
             DisputeReminderLog.objects.create(dispute=d, kind=kind)
             sent += 1
 
-        # 4) Proposal overdue
-        qs_prop_overdue = Dispute.objects.filter(
+        # 5) Proposal grace period starts after four business days.
+        qs_prop_grace = Dispute.objects.filter(
             proposal_sent_at__isnull=False,
             proposal_due_at__isnull=False,
             proposal_due_at__lte=now,
-        ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "canceled"])
+            proposal_grace_due_at__gt=now,
+        ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "closed", "canceled", "cancelled"])
+
+        for d in list(qs_prop_grace):
+            kind = "proposal_grace_started"
+            if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
+                skipped += 1
+                continue
+
+            email_admin_dispute_update(d, admin_email, "Proposal decision grace period started")
+            email_homeowner_proposal_sent(d)
+
+            if d.created_by:
+                try_create_inapp_notification(
+                    d.created_by,
+                    f"Dispute #{d.id}: final decision grace period",
+                    "The four-business-day decision deadline passed. One final business-day grace period remains.",
+                    kind="dispute",
+                )
+
+            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to="homeowner")
+            sent += 1
+
+        # 6) Final proposal decision deadline missed.
+        qs_prop_overdue = Dispute.objects.filter(
+            proposal_sent_at__isnull=False,
+            proposal_grace_due_at__isnull=False,
+            proposal_grace_due_at__lte=now,
+        ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "closed", "canceled", "cancelled"])
 
         for d in list(qs_prop_overdue):
             kind = "proposal_overdue"
             if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
                 skipped += 1
                 continue
-
-            email_admin_dispute_update(d, admin_email, "Proposal decision overdue")
-
+            email_admin_dispute_update(d, admin_email, "Final proposal decision deadline missed")
             if d.created_by:
                 try_create_inapp_notification(
                     d.created_by,
-                    f"Dispute #{d.id}: homeowner decision overdue",
-                    "Homeowner missed the proposal decision deadline. Admin review recommended.",
+                    f"Dispute #{d.id}: final customer decision deadline missed",
+                    "The four-business-day decision period and one-business-day grace period ended without a decision.",
                     kind="dispute",
                 )
-
-            DisputeReminderLog.objects.create(dispute=d, kind=kind)
+            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to="homeowner")
             sent += 1
 
         self.stdout.write(self.style.SUCCESS(f"send_dispute_reminders: sent={sent} skipped={skipped}"))

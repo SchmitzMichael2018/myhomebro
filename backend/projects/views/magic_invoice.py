@@ -26,7 +26,7 @@ from projects.services.activity_feed import create_activity_event
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.notification_center import create_notification
 from projects.services.workflow_notifications import notify_dispute_event
-from projects.services.dispute_workflow import initialize_dispute_workflow, invoice_has_active_dispute_hold
+from projects.services.dispute_workflow import existing_dispute_for_source, initialize_dispute_workflow, invoice_has_active_dispute_hold
 from projects.services.dispute_notifications import notify_homeowner_qualification
 
 logger = logging.getLogger(__name__)
@@ -892,6 +892,18 @@ class MagicInvoiceDisputeView(APIView):
     def patch(self, request, token=None):
         invoice = get_object_or_404(Invoice, public_token=token)
 
+        existing = existing_dispute_for_source(agreement=invoice.agreement, invoice=invoice)
+        if existing:
+            return Response(
+                {
+                    "detail": "A dispute record already exists for this invoice. Use the existing case instead of filing the same dispute again.",
+                    "dispute_id": existing.id,
+                    "public_token": existing.public_token,
+                    "dispute_url": f"/disputes/{existing.id}?token={existing.public_token}",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         if invoice.status != InvoiceStatus.PENDING:
             return Response(
                 {"detail": f"Only invoices with status '{InvoiceStatus.PENDING.label}' can be disputed."},
@@ -904,6 +916,17 @@ class MagicInvoiceDisputeView(APIView):
 
         with transaction.atomic():
             invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+            existing = existing_dispute_for_source(agreement=invoice.agreement, invoice=invoice)
+            if existing:
+                return Response(
+                    {
+                        "detail": "A dispute record already exists for this invoice. Use the existing case instead of filing the same dispute again.",
+                        "dispute_id": existing.id,
+                        "public_token": existing.public_token,
+                        "dispute_url": f"/disputes/{existing.id}?token={existing.public_token}",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             invoice.status = InvoiceStatus.DISPUTED
             invoice.disputed = True
             invoice.disputed_at = timezone.now()
@@ -925,41 +948,27 @@ class MagicInvoiceDisputeView(APIView):
 
             source_line = f"[MagicInvoice Source] invoice_id={invoice.id} invoice_number={invoice.invoice_number}"
             dispute_description = "\n\n".join(part for part in [description, source_line] if str(part or "").strip())
-            dispute = (
-                Dispute.objects.select_for_update()
-                .filter(
-                    agreement=invoice.agreement,
-                    initiator="homeowner",
-                    status__in=["initiated", "open", "under_review"],
-                    description__icontains=f"invoice_id={invoice.id}",
-                )
-                .order_by("-created_at", "-id")
-                .first()
+            dispute = Dispute.objects.create(
+                agreement=invoice.agreement,
+                milestone=milestone,
+                source_type=Dispute.SOURCE_PAYMENT_REQUEST,
+                source_object_id=invoice.id,
+                payment_request=invoice,
+                initiator="homeowner",
+                reason=dispute_reason,
+                description=dispute_description,
+                requested_resolution=(request.data.get("desired_resolution") or "").strip(),
+                expected_result=(request.data.get("expected_result") or "").strip(),
+                evidence_unavailable_reason=(request.data.get("evidence_unavailable_reason") or "").strip(),
+                contractor_notified=request.data.get("contractor_notified"),
             )
-            created = False
-            if dispute is None:
-                dispute = Dispute.objects.create(
-                    agreement=invoice.agreement,
-                    milestone=milestone,
-                    source_type=Dispute.SOURCE_PAYMENT_REQUEST,
-                    source_object_id=invoice.id,
-                    payment_request=invoice,
-                    initiator="homeowner",
-                    reason=dispute_reason,
-                    description=dispute_description,
-                    requested_resolution=(request.data.get("desired_resolution") or "").strip(),
-                    expected_result=(request.data.get("expected_result") or "").strip(),
-                    evidence_unavailable_reason=(request.data.get("evidence_unavailable_reason") or "").strip(),
-                    contractor_notified=request.data.get("contractor_notified"),
-                )
-                dispute = initialize_dispute_workflow(dispute)
-                notify_homeowner_qualification(dispute, "qualified" if dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED else "submitted")
-                created = True
+            dispute = initialize_dispute_workflow(dispute)
+            notify_homeowner_qualification(dispute, "qualified" if dispute.qualification_status == Dispute.QUALIFICATION_QUALIFIED else "submitted")
 
         try:
             notify_dispute_event(
                 dispute=dispute,
-                event_type=Notification.EVENT_DISPUTE_OPENED if created else Notification.EVENT_DISPUTE_UPDATED,
+                event_type=Notification.EVENT_DISPUTE_OPENED,
                 actor_user=None,
             )
         except Exception:

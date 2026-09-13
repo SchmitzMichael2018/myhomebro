@@ -72,6 +72,16 @@ def compute_deadline_hours_from_agreement_total(agreement) -> tuple[int, str]:
     return 168, "major_168h"
 
 
+def _add_weekdays(value, days: int):
+    current = value
+    remaining = max(int(days or 0), 0)
+    while remaining:
+        current += timedelta(days=1)
+        if current.weekday() < 5:
+            remaining -= 1
+    return current
+
+
 class Dispute(models.Model):
     SOURCE_AGREEMENT = "agreement"
     SOURCE_MILESTONE = "milestone"
@@ -97,6 +107,7 @@ class Dispute(models.Model):
         ("resolved_contractor", "Resolved - Contractor"),
         ("resolved_homeowner", "Resolved - Homeowner"),
         ("resolved_partial", "Resolved - Partial"),
+        ("closed", "Administratively Closed"),
         ("canceled", "Canceled"),
     )
 
@@ -300,7 +311,9 @@ class Dispute(models.Model):
 
     # deadlines / escalation
     response_due_at = models.DateTimeField(null=True, blank=True)
+    response_grace_due_at = models.DateTimeField(null=True, blank=True)
     proposal_due_at = models.DateTimeField(null=True, blank=True)
+    proposal_grace_due_at = models.DateTimeField(null=True, blank=True)
     deadline_hours = models.IntegerField(null=True, blank=True)
     deadline_tier = models.CharField(max_length=32, blank=True, default="")
     last_activity_at = models.DateTimeField(null=True, blank=True)
@@ -323,6 +336,7 @@ class Dispute(models.Model):
     )
     qualification_started_at = models.DateTimeField(null=True, blank=True)
     qualification_due_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    qualification_grace_due_at = models.DateTimeField(null=True, blank=True, db_index=True)
     qualification_decided_at = models.DateTimeField(null=True, blank=True)
     qualification_explanation = models.TextField(blank=True, default="")
     missing_information = models.JSONField(default=list, blank=True)
@@ -341,19 +355,23 @@ class Dispute(models.Model):
         return compute_deadline_hours_from_agreement_total(self.agreement)
 
     def set_response_deadline_now(self):
-        hours, tier = self.compute_deadline()
         now = timezone.now()
-        self.deadline_hours = hours
-        self.deadline_tier = tier
-        self.response_due_at = now + timedelta(hours=hours)
+        business_days = max(int(getattr(settings, "DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS", 4)), 1)
+        grace_days = max(int(getattr(settings, "DISPUTE_RESPONSE_GRACE_BUSINESS_DAYS", 1)), 1)
+        self.deadline_hours = None
+        self.deadline_tier = "standard_4_business_days"
+        self.response_due_at = _add_weekdays(now, business_days)
+        self.response_grace_due_at = _add_weekdays(self.response_due_at, grace_days)
         self.last_activity_at = now
 
     def set_proposal_deadline_now(self):
-        hours, tier = self.compute_deadline()
         now = timezone.now()
-        self.deadline_hours = hours
-        self.deadline_tier = tier
-        self.proposal_due_at = now + timedelta(hours=hours)
+        business_days = max(int(getattr(settings, "DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS", 4)), 1)
+        grace_days = max(int(getattr(settings, "DISPUTE_RESPONSE_GRACE_BUSINESS_DAYS", 1)), 1)
+        self.deadline_hours = None
+        self.deadline_tier = "standard_4_business_days"
+        self.proposal_due_at = _add_weekdays(now, business_days)
+        self.proposal_grace_due_at = _add_weekdays(self.proposal_due_at, grace_days)
         self.last_activity_at = now
 
     def _get_rework_by_date(self) -> date | None:

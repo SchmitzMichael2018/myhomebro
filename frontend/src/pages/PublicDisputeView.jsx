@@ -531,6 +531,7 @@ export default function PublicDisputeView() {
               <div className="mt-1 text-sm text-blue-900">
                 Status: <b>{String(dispute.qualification_status || "pending").replaceAll("_", " ")}</b>
                 {dispute.qualification_due_at ? <> · Information due {fmt(dispute.qualification_due_at)}</> : null}
+                {dispute.qualification_grace_due_at ? <> · Final grace ends {fmt(dispute.qualification_grace_due_at)}</> : null}
               </div>
             </div>
             <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-900">
@@ -556,6 +557,10 @@ export default function PublicDisputeView() {
               <button type="button" disabled={actionBusy === "qualification"} onClick={() => runAction("qualification", `/api/projects/disputes/public/${encodeURIComponent(id)}/qualification/?token=${encodeURIComponent(token)}`, qualification, "Information saved and claim reassessed.", "PATCH")} className="mt-3 rounded-lg bg-blue-700 px-4 py-2 text-sm font-extrabold text-white disabled:opacity-60">Save qualification details</button>
             </div>
           ) : null}
+        </div>
+
+        <div className="mt-6 rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm leading-6 text-violet-950">
+          <strong>Some conflicts require independent professional help.</strong> MyHomeBro organizes the case record and supports party-approved outcomes, but does not determine legal fault or act as an attorney, inspector, insurer, mediator, arbitrator, or court. You may continue a true business or legal conflict off platform and upload the resulting written decision. Funds do not move until the authority and exact instructions are validated.
         </div>
 
         {Array.isArray(dispute.claims) && dispute.claims.length ? (

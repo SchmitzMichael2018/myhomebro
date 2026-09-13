@@ -384,20 +384,20 @@ function getActiveDeadline(dispute) {
   const hasProposal = Boolean(dispute?.proposal) || Boolean(dispute?.proposal_sent_at);
 
   if (["pending", "information_needed"].includes(String(dispute?.qualification_status || "").toLowerCase()) && dispute?.qualification_due_at) {
-    return { type: "qualification", due_at: dispute.qualification_due_at };
+    return { type: "qualification", due_at: dispute.qualification_due_at, grace_due_at: dispute.qualification_grace_due_at };
   }
 
   if (hasProposal && dispute?.proposal_due_at) {
-    return { type: "proposal", due_at: dispute.proposal_due_at };
+    return { type: "proposal", due_at: dispute.proposal_due_at, grace_due_at: dispute.proposal_grace_due_at };
   }
 
   if (status === "open" && dispute?.response_due_at) {
-    return { type: "response", due_at: dispute.response_due_at };
+    return { type: "response", due_at: dispute.response_due_at, grace_due_at: dispute.response_grace_due_at };
   }
 
   if (status === "under_review") {
-    if (hasProposal && dispute?.proposal_due_at) return { type: "proposal", due_at: dispute.proposal_due_at };
-    if (dispute?.response_due_at) return { type: "response", due_at: dispute.response_due_at };
+    if (hasProposal && dispute?.proposal_due_at) return { type: "proposal", due_at: dispute.proposal_due_at, grace_due_at: dispute.proposal_grace_due_at };
+    if (dispute?.response_due_at) return { type: "response", due_at: dispute.response_due_at, grace_due_at: dispute.response_grace_due_at };
   }
 
   return null;
@@ -406,14 +406,15 @@ function getActiveDeadline(dispute) {
 function isOverdueDispute(d, now) {
   const active = getActiveDeadline(d);
   if (!active) return false;
-  const t = timeRemainingLabel(active.due_at, now);
+  const t = timeRemainingLabel(active.grace_due_at || active.due_at, now);
   return Boolean(t?.isOverdue);
 }
 
 function isDueSoonDispute(d, now) {
   const active = getActiveDeadline(d);
   if (!active) return false;
-  const t = timeRemainingLabel(active.due_at, now);
+  const initial = timeRemainingLabel(active.due_at, now);
+  const t = initial?.isOverdue && active.grace_due_at ? timeRemainingLabel(active.grace_due_at, now) : initial;
   if (!t || t.isOverdue) return false;
   return t.seconds <= 24 * 3600;
 }
@@ -422,7 +423,9 @@ function DeadlineBadge({ dispute, now }) {
   const active = getActiveDeadline(dispute);
   if (!active) return null;
 
-  const t = timeRemainingLabel(active.due_at, now);
+  const initial = timeRemainingLabel(active.due_at, now);
+  const inGrace = Boolean(initial?.isOverdue && active.grace_due_at);
+  const t = inGrace ? timeRemainingLabel(active.grace_due_at, now) : initial;
   if (!t) return null;
 
   const label = active.type === "proposal" ? "Decision" : active.type === "qualification" ? "Qualification" : "Response";
@@ -438,7 +441,7 @@ function DeadlineBadge({ dispute, now }) {
   const warnSoon = t.seconds <= 12 * 3600;
   return (
     <Badge tone={warnSoon ? "warn" : "info"} title={`${label} ${t.labelLong}`}>
-      ⏳ {t.labelShort}
+      ⏳ {inGrace ? "Grace " : ""}{t.labelShort}
     </Badge>
   );
 }
@@ -447,10 +450,13 @@ function DeadlineLine({ dispute, now }) {
   const active = getActiveDeadline(dispute);
   if (!active) return null;
 
-  const t = timeRemainingLabel(active.due_at, now);
+  const initial = timeRemainingLabel(active.due_at, now);
+  const inGrace = Boolean(initial?.isOverdue && active.grace_due_at);
+  const t = inGrace ? timeRemainingLabel(active.grace_due_at, now) : initial;
   if (!t) return null;
 
-  const label = active.type === "proposal" ? "Proposal decision due" : active.type === "qualification" ? "Qualification information due" : "Response due";
+  const baseLabel = active.type === "proposal" ? "Proposal decision due" : active.type === "qualification" ? "Qualification information due" : "Response due";
+  const label = inGrace ? `${baseLabel} (final grace)` : baseLabel;
   return (
     <div className="text-sm text-slate-700">
       <span className="font-extrabold">{label}:</span>{" "}
@@ -1326,10 +1332,14 @@ function DetailsModal({
             <InfoTile label="Requested correction" value={dispute.requested_resolution || "Not supplied"} />
             <InfoTile label="Contractor notified" value={dispute.contractor_notified === true ? "Yes" : dispute.contractor_notified === false ? "No" : "Not answered"} />
             <InfoTile label="Qualification deadline" value={dispute.qualification_due_at ? new Date(dispute.qualification_due_at).toLocaleString() : "Not applicable"} />
+            <InfoTile label="Final grace deadline" value={dispute.qualification_grace_due_at ? new Date(dispute.qualification_grace_due_at).toLocaleString() : "Not applicable"} />
           </div>
           {Array.isArray(dispute.missing_information) && dispute.missing_information.length ? <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Information still needed</strong><ul className="mt-1 list-disc pl-5">{dispute.missing_information.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
           {dispute.urgent_reason ? <div className="mt-3 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm font-semibold text-rose-950">Urgent human review: {dispute.urgent_reason}</div> : null}
           <p className="mt-3 text-xs leading-5 text-blue-800">Qualification controls only whether the identified payment source remains held. It is not a finding of fault and does not decide separate warranty rights.</p>
+        </div>
+        <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm leading-6 text-violet-950">
+          <strong>When professional help may be needed:</strong> MyHomeBro organizes the record and supports party-approved outcomes, but it does not decide legal fault or act as an attorney, inspector, insurer, mediator, arbitrator, or court. A true business or legal conflict may continue off platform. Either party can upload the resulting written decision or agreement; no money moves until the authority and exact instructions are validated.
         </div>
           {Array.isArray(dispute.claims) && dispute.claims.length ? <div className="mt-4"><div className="text-sm font-extrabold text-slate-950">Structured claims</div><div className="mt-2 grid gap-2">{dispute.claims.map((claim) => <div key={claim.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap justify-between gap-2"><strong>Claim {claim.sequence}: {claim.description}</strong><Badge tone={claim.status === "qualified" ? "good" : "warn"}>{String(claim.status || "pending").replaceAll("_", " ")}</Badge></div><div className="mt-2 grid gap-2 text-sm md:grid-cols-2"><div><b>Expected:</b> {claim.expected_result || "Not supplied"}</div><div><b>Requested:</b> {claim.requested_remedy || "Not supplied"}</div></div><ClaimResponseInline dispute={dispute} claim={claim} enabled={isContractor && isQualified(dispute) && !isClosed(dispute)} onChanged={onRefresh} /></div>)}</div></div> : null}
           {isAdmin && !isClosed(dispute) ? <QualificationAdminControls dispute={dispute} onChanged={onRefresh} /> : null}

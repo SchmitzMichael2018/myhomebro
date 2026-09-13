@@ -653,9 +653,10 @@ CAPTURE_QR_MIN_COMPLETION_SECONDS = int(get_env_var("CAPTURE_QR_MIN_COMPLETION_S
 
 # Dispute qualification policy. These are operational controls rather than
 # embedded workflow constants so production can adjust them without a deploy.
-DISPUTE_QUALIFICATION_BUSINESS_DAYS = int(get_env_var("DISPUTE_QUALIFICATION_BUSINESS_DAYS", "3") or 3)
-DISPUTE_QUALIFICATION_GRACE_HOURS = int(get_env_var("DISPUTE_QUALIFICATION_GRACE_HOURS", "24") or 24)
-DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS = int(get_env_var("DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS", "3") or 3)
+DISPUTE_QUALIFICATION_BUSINESS_DAYS = int(get_env_var("DISPUTE_QUALIFICATION_BUSINESS_DAYS", "4") or 4)
+DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS = int(get_env_var("DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS", "4") or 4)
+DISPUTE_RESPONSE_GRACE_BUSINESS_DAYS = int(get_env_var("DISPUTE_RESPONSE_GRACE_BUSINESS_DAYS", "1") or 1)
+INVOICE_AUTO_RELEASE_HOURS = int(get_env_var("INVOICE_AUTO_RELEASE_HOURS", "72") or 72)
 # Keep actual Stripe movement off until production credentials and operating
 # procedures have been explicitly validated. The workflow through staff
 # confirmation remains available while this is false.

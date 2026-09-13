@@ -55,15 +55,15 @@ def add_business_days(value, days: int):
 
 
 def qualification_business_days() -> int:
-    return max(int(getattr(settings, "DISPUTE_QUALIFICATION_BUSINESS_DAYS", 3)), 1)
+    return max(int(getattr(settings, "DISPUTE_QUALIFICATION_BUSINESS_DAYS", 4)), 1)
 
 
-def qualification_grace_hours() -> int:
-    return max(int(getattr(settings, "DISPUTE_QUALIFICATION_GRACE_HOURS", 24)), 1)
+def response_grace_business_days() -> int:
+    return max(int(getattr(settings, "DISPUTE_RESPONSE_GRACE_BUSINESS_DAYS", 1)), 1)
 
 
 def contractor_response_business_days() -> int:
-    return max(int(getattr(settings, "DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS", 3)), 1)
+    return max(int(getattr(settings, "DISPUTE_CONTRACTOR_RESPONSE_BUSINESS_DAYS", 4)), 1)
 
 
 def dispute_has_financial_source(dispute: Dispute) -> bool:
@@ -211,6 +211,9 @@ def initialize_dispute_workflow(dispute: Dispute, *, now=None) -> Dispute:
     dispute.status = "open"
     dispute.qualification_started_at = now
     dispute.qualification_due_at = add_business_days(now, qualification_business_days())
+    dispute.qualification_grace_due_at = add_business_days(
+        dispute.qualification_due_at, response_grace_business_days()
+    )
     dispute.workflow_stage = Dispute.STAGE_CUSTOMER_INFORMATION
     dispute.urgent_review = urgent
     dispute.urgent_reason = urgent_reason
@@ -228,6 +231,7 @@ def initialize_dispute_workflow(dispute: Dispute, *, now=None) -> Dispute:
             "status",
             "qualification_started_at",
             "qualification_due_at",
+            "qualification_grace_due_at",
             "qualification_status",
             "workflow_stage",
             "urgent_review",
@@ -315,11 +319,14 @@ def assess_dispute_qualification(dispute: Dispute, *, actor=None, explanation: s
         dispute.workflow_stage = Dispute.STAGE_CONTRACTOR_RESPONSE
         if not dispute.response_due_at:
             dispute.response_due_at = add_business_days(now, contractor_response_business_days())
+            dispute.response_grace_due_at = add_business_days(
+                dispute.response_due_at, response_grace_business_days()
+            )
 
     dispute.save(update_fields=[
         "missing_information", "qualification_explanation", "qualification_decided_at",
         "qualification_status", "workflow_stage", "urgent_review", "urgent_reason",
-        "response_due_at", "last_activity_at", "updated_at",
+        "response_due_at", "response_grace_due_at", "last_activity_at", "updated_at",
     ])
 
     claim = _initial_claim(dispute)
@@ -361,11 +368,14 @@ def extend_qualification_deadline(dispute: Dispute, *, reason: str, actor=None, 
     dispute = Dispute.objects.select_for_update().get(pk=dispute.pk)
     base = max(filter(None, [dispute.qualification_due_at, now]))
     dispute.qualification_due_at = add_business_days(base, max(int(business_days or 1), 1))
+    dispute.qualification_grace_due_at = add_business_days(
+        dispute.qualification_due_at, response_grace_business_days()
+    )
     dispute.qualification_extension_count += 1
     dispute.qualification_extension_reason = reason
     dispute.qualification_decided_at = None
     dispute.save(update_fields=[
-        "qualification_due_at", "qualification_extension_count",
+        "qualification_due_at", "qualification_grace_due_at", "qualification_extension_count",
         "qualification_extension_reason", "qualification_decided_at", "updated_at",
     ])
     try:
@@ -403,8 +413,12 @@ def override_dispute_qualification(
         raise ValueError("A reason is required for a human override.")
     now = now or timezone.now()
     dispute = Dispute.objects.select_for_update().get(pk=dispute.pk)
-    if is_active_dispute_status(dispute.status) is False:
-        raise ValueError("A closed dispute cannot be requalified.")
+    administratively_closed = (
+        dispute.status == "closed"
+        and dispute.resolution_type == Dispute.RESOLUTION_ADMIN_CLOSURE
+    )
+    if is_active_dispute_status(dispute.status) is False and not administratively_closed:
+        raise ValueError("A resolved dispute cannot be requalified.")
 
     try:
         hold = DisputePaymentHold.objects.select_for_update().get(dispute=dispute)
@@ -434,6 +448,13 @@ def override_dispute_qualification(
         dispute.escrow_frozen = False
         dispute.workflow_stage = Dispute.STAGE_CLOSED
     else:
+        if administratively_closed:
+            # Reopen the same authoritative case instead of allowing a duplicate.
+            dispute.status = "open"
+            dispute.resolved_at = None
+            dispute.resolution_type = ""
+            dispute.financial_disposition = ""
+            dispute.resolution_notes = ""
         dispute.workflow_stage = (
             Dispute.STAGE_CUSTOMER_INFORMATION
             if qualification_status == Dispute.QUALIFICATION_URGENT_REVIEW
@@ -444,6 +465,9 @@ def override_dispute_qualification(
         dispute.escrow_frozen = bool(hold and hold.is_active)
         if qualification_status == Dispute.QUALIFICATION_QUALIFIED and not dispute.response_due_at:
             dispute.response_due_at = add_business_days(now, contractor_response_business_days())
+            dispute.response_grace_due_at = add_business_days(
+                dispute.response_due_at, response_grace_business_days()
+            )
 
     dispute.qualification_status = qualification_status
     dispute.qualification_explanation = reason
@@ -451,8 +475,9 @@ def override_dispute_qualification(
     dispute.last_activity_at = now
     dispute.save(update_fields=[
         "qualification_status", "qualification_explanation", "qualification_decided_at",
-        "workflow_stage", "urgent_review", "urgent_reason", "escrow_frozen",
-        "response_due_at", "last_activity_at", "updated_at",
+        "workflow_stage", "status", "resolved_at", "resolution_type", "financial_disposition",
+        "resolution_notes", "urgent_review", "urgent_reason", "escrow_frozen",
+        "response_due_at", "response_grace_due_at", "last_activity_at", "updated_at",
     ])
     return dispute
 
@@ -477,7 +502,9 @@ def begin_hold_expiration(dispute: Dispute, *, now=None) -> bool:
         return False
     hold.status = DisputePaymentHold.STATUS_EXPIRATION_PENDING
     hold.expiration_pending_at = now
-    hold.release_due_at = now + timedelta(hours=qualification_grace_hours())
+    hold.release_due_at = dispute.qualification_grace_due_at or add_business_days(
+        dispute.qualification_due_at, response_grace_business_days()
+    )
     hold.release_reason = "Qualification information was not completed by the deadline."
     hold.save(update_fields=["status", "expiration_pending_at", "release_due_at", "release_reason"])
     return True
@@ -503,15 +530,57 @@ def release_expired_hold(dispute: Dispute, *, now=None) -> bool:
     dispute.qualification_status = Dispute.QUALIFICATION_NOT_QUALIFIED
     dispute.qualification_decided_at = now
     dispute.workflow_stage = Dispute.STAGE_CLOSED
+    dispute.status = "closed"
+    dispute.resolution_type = Dispute.RESOLUTION_ADMIN_CLOSURE
+    dispute.financial_disposition = Dispute.FINANCIAL_NO_ACTION
+    dispute.resolved_at = now
     dispute.qualification_explanation = (
-        "The temporary payment hold closed after the qualification deadline and grace period. "
-        "This does not decide warranty rights or the underlying merits."
+        "The temporary payment hold closed after the four-business-day qualification deadline "
+        "and one-business-day grace period. This does not decide warranty rights or the underlying merits."
     )
+    dispute.resolution_notes = dispute.qualification_explanation
     dispute.save(update_fields=[
         "escrow_frozen", "qualification_status", "qualification_decided_at",
-        "workflow_stage", "qualification_explanation", "updated_at",
+        "workflow_stage", "status", "resolution_type", "financial_disposition",
+        "resolved_at", "resolution_notes", "qualification_explanation", "updated_at",
     ])
+    _restore_invoice_after_administrative_expiration(dispute, now=now)
     return True
+
+
+def _restore_invoice_after_administrative_expiration(dispute: Dispute, *, now=None):
+    """Resume the original 72-hour invoice review clock without moving money."""
+    from projects.models import InvoiceStatus
+
+    now = now or timezone.now()
+    invoice = getattr(dispute, "payment_request", None)
+    if invoice is None and getattr(dispute, "milestone_id", None):
+        try:
+            invoice = dispute.milestone.invoice
+        except Exception:
+            invoice = None
+    if invoice is None or getattr(invoice, "escrow_released", False):
+        return invoice
+
+    changed = []
+    disputed_at = getattr(invoice, "disputed_at", None) or getattr(dispute, "qualification_started_at", None) or now
+    marked_complete_at = getattr(invoice, "marked_complete_at", None) or getattr(invoice, "email_sent_at", None) or disputed_at
+    elapsed_before_dispute = max(disputed_at - marked_complete_at, timedelta(0))
+    review_window = timedelta(hours=max(int(getattr(settings, "INVOICE_AUTO_RELEASE_HOURS", 72)), 1))
+    # Preserve the unused portion of the original review period, but always
+    # provide a full 24-hour final notice after an administrative closure.
+    remaining = max(review_window - elapsed_before_dispute, timedelta(hours=24))
+    invoice.marked_complete_at = now - (review_window - remaining)
+    changed.append("marked_complete_at")
+    if invoice.status == InvoiceStatus.DISPUTED:
+        invoice.status = InvoiceStatus.PENDING
+        changed.append("status")
+    if getattr(invoice, "disputed", False):
+        invoice.disputed = False
+        changed.append("disputed")
+    if changed:
+        invoice.save(update_fields=list(dict.fromkeys(changed)))
+    return invoice
 
 
 @transaction.atomic
@@ -553,10 +622,7 @@ def _active_disputes():
     )
 
 
-def active_dispute_for_source(*, agreement, milestone=None, invoice=None, draw_request=None, expense=None):
-    if agreement is None:
-        return None
-    qs = _active_disputes().filter(agreement=agreement)
+def _dispute_for_source(qs, *, milestone=None, invoice=None, draw_request=None, expense=None):
     clauses = Q()
     has_clause = False
     if invoice is not None:
@@ -577,6 +643,28 @@ def active_dispute_for_source(*, agreement, milestone=None, invoice=None, draw_r
     if not has_clause:
         return None
     return qs.filter(clauses).order_by("-created_at", "-id").first()
+
+
+def active_dispute_for_source(*, agreement, milestone=None, invoice=None, draw_request=None, expense=None):
+    if agreement is None:
+        return None
+    qs = _active_disputes().filter(agreement=agreement)
+    return _dispute_for_source(
+        qs, milestone=milestone, invoice=invoice, draw_request=draw_request, expense=expense
+    )
+
+
+def existing_dispute_for_source(*, agreement, milestone=None, invoice=None, draw_request=None, expense=None):
+    """Return any historical case for a payment source so it cannot be filed twice."""
+    if agreement is None:
+        return None
+    return _dispute_for_source(
+        Dispute.objects.filter(agreement=agreement),
+        milestone=milestone,
+        invoice=invoice,
+        draw_request=draw_request,
+        expense=expense,
+    )
 
 
 def invoice_has_active_dispute_hold(invoice) -> bool:

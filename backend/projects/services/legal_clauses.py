@@ -62,8 +62,8 @@ def _payment_clause(payment_mode: Optional[str]) -> Clause:
         "Customer will have seventy-two (72) hours to approve or dispute through the platform. If no response is received "
         "within 72 hours, funds for that milestone may be automatically released. A submitted concern temporarily pauses "
         "release only for the identified milestone or payment while the customer supplies the required claim information. "
-        "The claim normally must qualify within three (3) business days, subject to a final notice and grace period or a "
-        "documented extension. A qualified claim continues that source-specific administrative hold until the parties "
+        "The claim normally must qualify within four (4) business days, followed by one (1) final business-day grace period, "
+        "unless a documented extension is granted. A qualified claim continues that source-specific administrative hold until the parties "
         "authorize a resolution or release is otherwise legally authorized."
     )
 
@@ -185,8 +185,10 @@ def build_legal_notices(
         "not release, refund, split, or transfer funds. The parties must expressly authorize any negotiated resolution or "
         "financial disposition. Exact-dollar split instructions require mutual authorization or a dispute-linked written "
         "directive from an outside authority, validation against the held amount, and a separate authorized execution step. "
-        "MyHomeBro does not arrange or serve as an inspector, mediator, arbitrator, or court. If the parties do not agree, "
-        "they may arrange their own outside process and upload its written directive."
+        "MyHomeBro does not arrange or serve as an inspector, mediator, arbitrator, attorney, insurer, or court. A true "
+        "business or legal conflict may need to continue off the platform with attorneys, inspectors, insurers, mediators, "
+        "arbitrators, courts, or other independent professionals selected by the parties. The parties may upload the resulting "
+        "written directive to the case record; it will not move money until its authority, source, and exact financial instructions are validated."
     ))
 
     # 11) Limitation of Liability

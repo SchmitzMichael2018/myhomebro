@@ -34,10 +34,10 @@ from ..models_dispute import (
 from ..services.dispute_status import is_terminal_dispute_status
 from ..services.dispute_allocation_execution import execute_dispute_escrow_allocation
 from ..services.dispute_workflow import (
-    active_dispute_for_source,
     assess_dispute_qualification,
     close_payment_hold,
     extend_qualification_deadline,
+    existing_dispute_for_source,
     initialize_dispute_workflow,
     infer_hold_amount_cents,
     override_dispute_qualification,
@@ -457,7 +457,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
         agreement = ser.validated_data.get("agreement")
         if not _user_can_create_dispute_for_agreement(request.user, agreement):
             return Response({"detail": "You cannot open a dispute for this agreement."}, status=403)
-        source = active_dispute_for_source(
+        source = existing_dispute_for_source(
             agreement=agreement,
             milestone=ser.validated_data.get("milestone"),
             invoice=ser.validated_data.get("payment_request"),
@@ -466,7 +466,11 @@ class DisputeViewSet(viewsets.ModelViewSet):
         )
         if source:
             return Response(
-                {"detail": "An active dispute already exists for this payment source.", "dispute_id": source.id},
+                {
+                    "detail": "A dispute record already exists for this milestone or payment. Add information to the existing case instead of filing the same dispute again.",
+                    "dispute_id": source.id,
+                    "dispute_status": source.status,
+                },
                 status=409,
             )
         dispute = initialize_dispute_workflow(ser.save())
@@ -921,7 +925,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
             "homeowner_response", "contractor_response",
             "responded_at", "last_activity_at",
             "proposal", "proposal_sent_at",
-            "proposal_due_at", "deadline_hours", "deadline_tier",
+            "proposal_due_at", "proposal_grace_due_at", "deadline_hours", "deadline_tier",
             "status", "updated_at"
         ])
         create_party_statement(

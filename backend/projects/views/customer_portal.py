@@ -93,7 +93,7 @@ from projects.services.customer_notification_preferences import (
 from projects.services.customer_accounts import ensure_customer_identity_for_user
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute, DisputeAttachment
-from projects.services.dispute_workflow import active_dispute_for_source, assess_dispute_qualification, initialize_dispute_workflow
+from projects.services.dispute_workflow import assess_dispute_qualification, existing_dispute_for_source, initialize_dispute_workflow
 from projects.services.resolution_workspace import index_evidence
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.models_customer_refund_request import CustomerRefundRequest
@@ -10180,11 +10180,11 @@ class CustomerPortalAgreementDisputeView(APIView):
             if not milestone:
                 return Response({"detail": "Milestone not found for this agreement."}, status=status.HTTP_404_NOT_FOUND)
 
-        existing = active_dispute_for_source(agreement=agreement, milestone=milestone) if milestone else None
+        existing = existing_dispute_for_source(agreement=agreement, milestone=milestone) if milestone else None
         if existing:
             return Response(
                 {
-                    "detail": "A dispute is already open.",
+                    "detail": "A dispute record already exists for this milestone. Use the existing case rather than filing the same dispute again.",
                     "dispute_id": existing.id,
                     "dispute_url": _portal_dispute_public_url(existing),
                     "portal": portal_payload,
@@ -10319,17 +10319,10 @@ class CustomerPortalDrawDisputeView(APIView):
         full_description = "\n\n".join(part for part in [description, source_line] if part)
 
         with transaction.atomic():
-            existing = (
-                Dispute.objects.select_for_update()
-                .filter(
-                    agreement=agreement,
-                    milestone=milestone,
-                    initiator="homeowner",
-                    status__in=["initiated", "open", "under_review"],
-                    description__icontains=f"draw_id={draw.id}",
-                )
-                .order_by("-created_at", "-id")
-                .first()
+            existing = existing_dispute_for_source(
+                agreement=agreement,
+                milestone=milestone,
+                draw_request=draw,
             )
             if existing:
                 dispute = existing
