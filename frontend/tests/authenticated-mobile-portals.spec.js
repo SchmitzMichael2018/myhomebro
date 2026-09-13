@@ -151,8 +151,23 @@ async function auditSurface(page, testInfo, name) {
   return metrics;
 }
 
+async function openLoginSurface(page, route, testId) {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await page.goto(route, { waitUntil: 'commit', timeout: 45_000 });
+      await page.getByTestId(testId).waitFor({ state: 'visible', timeout: 60_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await page.waitForTimeout(1_000);
+    }
+  }
+  throw lastError;
+}
+
 async function loginContractor(page) {
-  await page.goto('/login');
+  await openLoginSurface(page, '/login', 'login-email-input');
   await page.getByTestId('login-email-input').fill(contractorEmail);
   await page.getByTestId('login-password-input').fill(contractorPassword);
   await page.getByTestId('login-submit-button').click();
@@ -166,7 +181,7 @@ async function loginContractor(page) {
 }
 
 async function loginHomeowner(page) {
-  await page.goto('/portal');
+  await openLoginSurface(page, '/portal', 'customer-portal-login-email-input');
   await page.getByTestId('customer-portal-login-email-input').fill(homeownerEmail);
   await page.getByTestId('customer-portal-login-password-input').fill(homeownerPassword);
   await page.getByTestId('customer-portal-login-button').click();
