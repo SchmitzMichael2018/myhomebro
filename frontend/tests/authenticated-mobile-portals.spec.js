@@ -196,6 +196,13 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
   for (const [route, name] of routes) {
     await page.goto(route, { waitUntil: 'commit', timeout: 45_000 });
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
+    await page.locator('h1').first().waitFor({ state: 'visible', timeout: 60_000 });
+    if (name === 'contractor-agreements') {
+      await page.getByTestId('agreement-list-mobile-cards').waitFor({ state: 'visible', timeout: 60_000 });
+    }
+    if (name === 'contractor-resolution') {
+      await page.getByTestId('resolution-mobile-cards').waitFor({ state: 'visible', timeout: 60_000 });
+    }
     metrics[name] = await auditSurface(page, testInfo, name);
     if (name === 'contractor-agreements') {
       await expect(page.getByTestId('agreement-list-mobile-cards')).toBeVisible();

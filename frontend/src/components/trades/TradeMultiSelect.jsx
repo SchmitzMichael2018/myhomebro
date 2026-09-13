@@ -269,7 +269,7 @@ export default function TradeMultiSelect({
                     type="button"
                     aria-label={`Remove ${trade}`}
                     onClick={() => removeTrade(trade)}
-                    className="mhb-trade-chip-remove rounded-full border border-current bg-transparent px-2 py-0.5 text-xs font-bold text-[var(--mhb-text-inverse)] opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]"
+                    className="mhb-trade-chip-remove inline-flex min-h-6 min-w-6 items-center justify-center rounded-full border border-current bg-transparent px-2 text-xs font-bold text-[var(--mhb-text-inverse)] opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]"
                   >
                     ×
                   </button>
@@ -281,7 +281,7 @@ export default function TradeMultiSelect({
             {customServices.map((service) => (
               <span key={service} className="inline-flex items-center gap-2 rounded-full border border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-control)] px-3 py-2 text-sm font-semibold text-[var(--mhb-text-primary)]" data-testid={`${testIdPrefix}-custom-chip-${toTestId(service)}`}>
                 {service}<span className="text-xs font-medium">Custom</span>
-                <button type="button" aria-label={`Remove ${service}`} onClick={() => onCustomServicesChange?.(customServices.filter((item) => item !== service))} className="rounded-full border border-current px-2 py-0.5">×</button>
+                <button type="button" aria-label={`Remove ${service}`} onClick={() => onCustomServicesChange?.(customServices.filter((item) => item !== service))} className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full border border-current px-2">×</button>
               </span>
             ))}
           </div>
