@@ -166,11 +166,12 @@ export default function Calendar() {
 
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [employeeFilter, setEmployeeFilter] = useState("");
-  const [activeViewType, setActiveViewType] = useState("dayGridMonth");
   const activeRangeRef = useRef(null);
   const calendarQuery = useMemo(() => new URLSearchParams(window.location.search), []);
   const initialDate = calendarQuery.get("date") || undefined;
-  const initialView = { day: "timeGridDay", week: "timeGridWeek", month: "dayGridMonth" }[calendarQuery.get("view")] || "dayGridMonth";
+  const requestedView = { day: "timeGridDay", week: "timeGridWeek", month: "dayGridMonth" }[calendarQuery.get("view")];
+  const initialView = requestedView || (window.matchMedia("(max-width: 639px)").matches ? "timeGridDay" : "dayGridMonth");
+  const [activeViewType, setActiveViewType] = useState(initialView);
   const selectedEventId = calendarQuery.get("event") || "";
 
   const loadEmployees = useCallback(async () => {

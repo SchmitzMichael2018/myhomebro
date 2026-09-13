@@ -15,10 +15,10 @@ export default function ContractorPageSurface({
   const operational = variant === "operational";
   const lightConsole = variant === "light-console";
   const shellClass = operational
-    ? "mhb-operational-surface min-w-0 w-full max-w-[1440px] px-4 pb-10 pt-3 md:px-6 lg:px-8 xl:px-10"
+    ? "mhb-operational-surface min-w-0 w-full max-w-[1440px] px-4 pb-10 pt-20 md:px-6 md:pt-3 lg:px-8 xl:px-10"
     : lightConsole
-    ? "min-w-0 w-full max-w-[1440px] px-4 pb-10 pt-3 md:px-6 lg:px-8 xl:px-10"
-    : "min-w-0 w-full max-w-[1440px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8";
+    ? "min-w-0 w-full max-w-[1440px] px-4 pb-10 pt-20 md:px-6 md:pt-3 lg:px-8 xl:px-10"
+    : "min-w-0 w-full max-w-[1440px] px-3 pb-7 pt-20 md:px-5 md:pt-3 lg:px-7 xl:px-8";
   const surfaceBase = operational || lightConsole
     ? "rounded-none border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
     : "rounded-[30px] border border-slate-200/85 bg-white/90 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-6 lg:p-7";

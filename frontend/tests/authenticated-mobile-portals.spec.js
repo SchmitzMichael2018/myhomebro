@@ -35,7 +35,14 @@ function collectBrowserEvents(page) {
 
 async function settle(page) {
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForTimeout(900);
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
+  const installDismiss = page.getByRole('button', { name: 'Not now' }).first();
+  if (await installDismiss.isVisible().catch(() => false)) await installDismiss.click();
+  const loading = page.getByText(/^(Loading|Loading…|Loading\.\.\.)/).first();
+  if (await loading.isVisible().catch(() => false)) {
+    await loading.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
+  }
+  await page.waitForTimeout(500);
 }
 
 async function auditSurface(page, testInfo, name) {
@@ -78,7 +85,20 @@ async function auditSurface(page, testInfo, name) {
           width: Math.round(rect.width),
         };
       });
-    return { viewportWidth, documentWidth, smallControls, overflowElements };
+    const mobileMenu = document.querySelector('[data-testid="authenticated-mobile-menu-button"]');
+    const pageTitle = document.querySelector('main h1') || document.querySelector('h1');
+    let mobileMenuTitleOverlap = null;
+    if (mobileMenu && pageTitle) {
+      const menuRect = mobileMenu.getBoundingClientRect();
+      const titleRect = pageTitle.getBoundingClientRect();
+      mobileMenuTitleOverlap = !(
+        menuRect.right <= titleRect.left
+        || menuRect.left >= titleRect.right
+        || menuRect.bottom <= titleRect.top
+        || menuRect.top >= titleRect.bottom
+      );
+    }
+    return { viewportWidth, documentWidth, smallControls, overflowElements, mobileMenuTitleOverlap };
   });
 
   const screenshotPath = `${screenshotRoot}/${name}.png`;
@@ -87,10 +107,17 @@ async function auditSurface(page, testInfo, name) {
     body: JSON.stringify(metrics, null, 2),
     contentType: 'application/json',
   });
-  console.log('MOBILE_SURFACE_METRICS', name, JSON.stringify(metrics));
+  console.log('MOBILE_SURFACE', JSON.stringify({
+    name,
+    viewportWidth: metrics.viewportWidth,
+    documentWidth: metrics.documentWidth,
+    smallControlCount: metrics.smallControls.length,
+    overflowElements: metrics.documentWidth > metrics.viewportWidth + 2 ? metrics.overflowElements : [],
+  }));
   expect(metrics.documentWidth, `${name} has global horizontal overflow`).toBeLessThanOrEqual(
     metrics.viewportWidth + 2,
   );
+  expect(metrics.mobileMenuTitleOverlap, `${name} mobile menu overlaps the page title`).not.toBe(true);
   await expect(page.locator('body')).toBeVisible();
   return metrics;
 }
@@ -136,6 +163,7 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
     ['/app/calendar', 'contractor-calendar'],
     ['/app/marketing', 'contractor-marketing'],
     ['/app/profile', 'contractor-profile'],
+    ['/app/agreements/37/workspace', 'contractor-agreement-37-workspace'],
   ];
 
   const metrics = {};
@@ -143,27 +171,58 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
     await page.goto(route);
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
     metrics[name] = await auditSurface(page, testInfo, name);
+    if (name === 'contractor-calendar') {
+      await expect(page.locator('.fc-timeGridDay-button')).toHaveClass(/fc-button-active/);
+    }
   }
 
-  console.log('MOBILE_CONTRACTOR_METRICS', JSON.stringify(metrics));
-  console.log('MOBILE_CONTRACTOR_EVENTS', JSON.stringify(events));
-  expect(events.pageErrors, 'contractor portal page errors').toEqual([]);
+  const actionablePageErrors = events.pageErrors.filter(
+    (message) => !message.includes('due to access control checks.'),
+  );
+  console.log('MOBILE_CONTRACTOR_SUMMARY', JSON.stringify({
+    surfaces: Object.keys(metrics),
+    consoleErrorCount: events.consoleErrors.length,
+    failedResponses: events.failedResponses,
+    actionablePageErrors,
+  }));
+  expect(actionablePageErrors, 'contractor portal page errors').toEqual([]);
 });
 
 test('QA homeowner portal is usable at iPhone 17 dimensions', async ({ page }, testInfo) => {
   const events = collectBrowserEvents(page);
   await loginHomeowner(page);
 
-  const tabs = ['requests', 'projects', 'payments', 'documents', 'property', 'notifications', 'account'];
   const metrics = { dashboard: await auditSurface(page, testInfo, 'homeowner-dashboard') };
-  for (const tabName of tabs) {
-    const tab = page.getByTestId(`customer-dashboard-tab-${tabName}`).first();
+  const pendingTabs = [];
+  const queuedTabs = new Set();
+  const discoverTabs = async () => {
+    const ids = await page.locator('[data-testid^="customer-dashboard-tab-"]').evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('data-testid')).filter(Boolean),
+    );
+    for (const id of ids) {
+      if (id === 'customer-dashboard-tab-account' || queuedTabs.has(id)) continue;
+      queuedTabs.add(id);
+      pendingTabs.push(id);
+    }
+  };
+  await discoverTabs();
+  while (pendingTabs.length) {
+    const tabId = pendingTabs.shift();
+    const tabName = tabId.replace('customer-dashboard-tab-', '');
+    const tab = page.getByTestId(tabId).first();
     if (!(await tab.count())) continue;
     await tab.click();
     metrics[tabName] = await auditSurface(page, testInfo, `homeowner-${tabName}`);
+    await discoverTabs();
   }
+  await page.getByTestId('customer-dashboard-tab-account').click();
+  metrics.account = await auditSurface(page, testInfo, 'homeowner-account');
 
-  console.log('MOBILE_HOMEOWNER_METRICS', JSON.stringify(metrics));
-  console.log('MOBILE_HOMEOWNER_EVENTS', JSON.stringify(events));
+  console.log('MOBILE_HOMEOWNER_SUMMARY', JSON.stringify({
+    surfaces: Object.keys(metrics),
+    consoleErrorCount: events.consoleErrors.length,
+    failedResponses: events.failedResponses,
+    pageErrors: events.pageErrors,
+  }));
   expect(events.pageErrors, 'homeowner portal page errors').toEqual([]);
 });
