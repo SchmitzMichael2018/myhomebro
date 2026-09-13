@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ExternalLink, FileText, FolderKanban, Home, Mail, ShieldCheck, WalletCards } from "lucide-react";
 import toast from "react-hot-toast";
 
-import api, { setTokens } from "../api";
+import api, { getAccessToken, setTokens } from "../api";
 import CustomerDashboard from "../components/CustomerDashboard.jsx";
 import Modal from "../components/Modal.jsx";
 import logo from "../assets/myhomebro_logo.png";
@@ -214,6 +214,11 @@ export default function CustomerPortalPage() {
       if (!token) {
         setLoading(true);
         setLoadError("");
+        if (!getAccessToken()) {
+          setPortal(null);
+          setLoading(false);
+          return;
+        }
         try {
           const { data } = await api.get("/projects/customer-portal/account/", {
             skipAuthRedirect: true,

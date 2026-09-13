@@ -1884,10 +1884,85 @@ export default function AgreementList() {
 
       <PaginationControls placement="top" />
 
+      <div data-testid="agreement-list-mobile-cards" className="space-y-3 md:hidden">
+        {loading ? (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-8 text-center text-sm text-sky-100/75">Loading…</div>
+        ) : loadError ? (
+          <div className="rounded-2xl border border-rose-300/30 bg-rose-500/10 px-4 py-8 text-sm font-medium text-rose-100">{loadError}</div>
+        ) : page.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.055] px-4 py-8 text-center text-sm text-sky-100/75">No agreements found.</div>
+        ) : page.map((r) => {
+          const stat = msStats[r.id] || { total: 0, complete: 0, percent: 0 };
+          const statusLower = safeLower(r.status);
+          const isArchived = Boolean(r.is_archived);
+          const isDraft = statusLower === "draft";
+          const fullySigned = isFullySignedAgreement(r);
+          const signatures = signatureSummary(r);
+          const isDirectPay = getPaymentMode(r) === "direct";
+          const needsFundingAttention = !isArchived && !isDirectPay && fullySigned && !r.escrow_funded;
+          const isCompleted = statusLower === "completed";
+          const canArchive = !isArchived && (isCompleted || statusLower === "cancelled");
+          const progressTone = stat.percent >= 100 ? "bg-emerald-500" : needsFundingAttention ? "bg-amber-400" : "bg-blue-500";
+          return (
+            <article
+              key={r.id}
+              data-testid={`agreement-mobile-card-${r.id}`}
+              className={`rounded-2xl border p-4 shadow-sm ${needsFundingAttention ? "border-amber-300/35 bg-amber-400/[0.09]" : "border-white/10 bg-white/[0.055]"}`}
+            >
+              <div className="flex items-start gap-3">
+                <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-xl border border-white/15 bg-white/5" aria-label={`Select Agreement ${r.id}`}>
+                  <input type="checkbox" className="h-5 w-5" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+                </label>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="min-w-0 flex-1 text-base font-bold text-white">{renderProject(r)}</h2>
+                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-100">#{r.id}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <ProjectModeBadge mode={r.project_mode} dataTestId={`agreement-project-mode-mobile-${r.id}`} />
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${needsFundingAttention ? "border border-amber-200 bg-amber-50 text-amber-800" : statusPillClass(r.status)}`}>
+                      {prettyStatus(r.status)}{isArchived ? " (archived)" : ""}
+                    </span>
+                    <EscrowBadge r={r} />
+                  </div>
+                </div>
+              </div>
+
+              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sky-100/55">Customer</dt><dd className="mt-1 text-sky-50">{homeownerDisplay(r)}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sky-100/55">Total</dt><dd className="mt-1 font-bold text-white">{fmtMoney(r.display_total ?? r.total_cost)}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sky-100/55">Signatures</dt><dd className={`mt-1 font-semibold ${signatures.tone}`}>{signatures.label}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sky-100/55">Invoices</dt><dd className="mt-1 text-sky-50">{Number(r.invoices_count || 0)}</dd></div>
+              </dl>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs text-sky-100/70"><span>Milestone progress</span><strong className="text-white">{stat.percent}%</strong></div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className={`h-full rounded-full ${progressTone}`} style={{ width: `${Math.max(0, Math.min(100, stat.percent))}%` }} /></div>
+                <p className="mt-2 text-xs text-sky-100/65">{stat.total ? `${stat.complete} of ${stat.total} milestones complete` : "No milestones yet"}</p>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/25 p-3 text-sm text-sky-100/80">
+                <span className="mr-2 text-xs font-bold uppercase tracking-wide text-sky-100/55">Next</span>
+                {isArchived ? "Restore if work should stay visible" : needsFundingAttention ? "Request funding before work starts" : isDraft ? "Finish editing and send" : "Open the workspace to continue"}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => (isDraft ? goEdit(r.id) : goView(r.id))} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm">
+                  {isDraft ? <Pencil size={16} /> : <Layers size={16} />}{isDraft ? "Continue Draft" : "Open Workspace"}
+                </button>
+                {fullySigned && !isArchived ? <button type="button" onClick={() => createAmendment(r)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-bold text-white">Amend</button> : null}
+                <button type="button" onClick={() => choosePrimary(r.id)} disabled={!selected.has(r.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40"><Star size={16} />Primary</button>
+                {isArchived ? <button type="button" onClick={() => unarchiveAgreement(r)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 px-4 py-2.5 text-sm font-bold text-white">Restore</button> : canArchive ? <button type="button" onClick={() => archiveAgreement(r)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 px-4 py-2.5 text-sm font-bold text-white">Archive</button> : null}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
       {/* Table */}
       <div
         data-testid="agreement-list-table-shell"
-        className="min-h-[420px] overflow-x-auto rounded-[24px] border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] text-[var(--mhb-text-primary)] shadow-[var(--mhb-shadow-card)]"
+        className="hidden min-h-[420px] overflow-x-auto rounded-[24px] border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] text-[var(--mhb-text-primary)] shadow-[var(--mhb-shadow-card)] md:block"
       >
         <table className="w-full min-w-[1360px] table-fixed text-[14px] leading-5">
           <colgroup>

@@ -67,6 +67,28 @@ async function auditSurface(page, testInfo, name) {
         width: Math.round(element.getBoundingClientRect().width),
         height: Math.round(element.getBoundingClientRect().height),
       }));
+    const undersizedControls = [...document.querySelectorAll('button, a, input, select, textarea')]
+      .filter((element) => {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      })
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        if (rect.width >= 24 && rect.height >= 24) return false;
+        if (element.matches('input[type="checkbox"], input[type="radio"]')) {
+          const labelRect = element.closest('label')?.getBoundingClientRect();
+          if (labelRect && labelRect.width >= 24 && labelRect.height >= 24) return false;
+        }
+        return true;
+      })
+      .slice(0, 20)
+      .map((element) => ({
+        tag: element.tagName.toLowerCase(),
+        label: (element.getAttribute('aria-label') || element.textContent || '').trim().slice(0, 80),
+        width: Math.round(element.getBoundingClientRect().width),
+        height: Math.round(element.getBoundingClientRect().height),
+      }));
     const overflowElements = [...document.querySelectorAll('body *')]
       .filter((element) => {
         const rect = element.getBoundingClientRect();
@@ -98,7 +120,7 @@ async function auditSurface(page, testInfo, name) {
         || menuRect.top >= titleRect.bottom
       );
     }
-    return { viewportWidth, documentWidth, smallControls, overflowElements, mobileMenuTitleOverlap };
+    return { viewportWidth, documentWidth, smallControls, undersizedControls, overflowElements, mobileMenuTitleOverlap };
   });
 
   const screenshotPath = `${screenshotRoot}/${name}.png`;
@@ -118,6 +140,7 @@ async function auditSurface(page, testInfo, name) {
     metrics.viewportWidth + 2,
   );
   expect(metrics.mobileMenuTitleOverlap, `${name} mobile menu overlaps the page title`).not.toBe(true);
+  expect(metrics.undersizedControls, `${name} has controls below the 24px minimum target`).toEqual([]);
   await expect(page.locator('body')).toBeVisible();
   return metrics;
 }
@@ -174,6 +197,13 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
     await page.goto(route);
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
     metrics[name] = await auditSurface(page, testInfo, name);
+    if (name === 'contractor-agreements') {
+      await expect(page.getByTestId('agreement-list-mobile-cards')).toBeVisible();
+      await expect(page.getByTestId('agreement-list-table-shell')).toBeHidden();
+    }
+    if (name === 'contractor-resolution') {
+      await expect(page.getByTestId('resolution-mobile-cards')).toBeVisible();
+    }
     if (name === 'contractor-calendar') {
       await expect(page.locator('.fc-timeGridDay-button')).toHaveClass(/fc-button-active/);
     }
@@ -189,6 +219,8 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
     actionablePageErrors,
   }));
   expect(actionablePageErrors, 'contractor portal page errors').toEqual([]);
+  expect(events.consoleErrors.filter((message) => message.includes('Content Security Policy')), 'contractor CSP errors').toEqual([]);
+  expect(events.failedResponses.filter((entry) => entry.includes('myhomebro.com')), 'contractor same-origin failed responses').toEqual([]);
 });
 
 test('QA homeowner portal is usable at iPhone 17 dimensions', async ({ page }, testInfo) => {
@@ -228,4 +260,6 @@ test('QA homeowner portal is usable at iPhone 17 dimensions', async ({ page }, t
     pageErrors: events.pageErrors,
   }));
   expect(events.pageErrors, 'homeowner portal page errors').toEqual([]);
+  expect(events.consoleErrors.filter((message) => message.includes('Content Security Policy')), 'homeowner CSP errors').toEqual([]);
+  expect(events.failedResponses.filter((entry) => entry.includes('myhomebro.com')), 'homeowner same-origin failed responses').toEqual([]);
 });

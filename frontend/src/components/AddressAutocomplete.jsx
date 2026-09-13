@@ -50,6 +50,11 @@ function loadMapsOnce(apiKey) {
       "&loading=async&libraries=places&v=weekly";
     script.async = true;
     script.defer = true;
+    const cspNonce = document
+      .querySelector('meta[name="csp-nonce"]')
+      ?.getAttribute("content")
+      ?.trim();
+    if (cspNonce) script.nonce = cspNonce;
 
     function waitForImportLibrary(timeoutMs = 6000) {
       return new Promise((res, rej) => {

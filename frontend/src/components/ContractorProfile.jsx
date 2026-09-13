@@ -295,7 +295,7 @@ function BusinessLaunchChecklist({ meData }) {
     Promise.allSettled([
       api.get("/projects/proposals/", { params: { page_size: 1 } }),
       api.get("/projects/templates/", { params: { page_size: 1 } }),
-      api.get("/projects/customers/", { params: { page_size: 1 } }),
+      api.get("/customers/", { params: { page_size: 1 } }),
       api.get("/projects/subaccounts/", { params: { page_size: 1 } }),
     ]).then((results) => {
       if (!active) return;

@@ -2082,7 +2082,39 @@ export default function DisputesPages() {
           </div>
         </div>
       ) : (
-        <div className={operationalDisputes ? "overflow-x-auto rounded-2xl border border-white/10" : "overflow-x-auto"}>
+        <>
+        <div data-testid="resolution-mobile-cards" className="space-y-3 md:hidden">
+          {items.map((d) => (
+            <article
+              key={d.id}
+              data-testid={`resolution-mobile-card-${d.id}`}
+              className={`rounded-2xl border p-4 ${operationalDisputes ? "border-white/10 bg-slate-950/35 text-sky-100/80" : "border-slate-200 bg-white text-slate-700"} ${isClosed(d) ? "opacity-85" : ""}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className={`text-base font-extrabold ${operationalDisputes ? "text-white" : "text-slate-900"}`}>Resolution Case #{d.id}</div>
+                  <div className="mt-1 text-sm">Agreement #{d.agreement_number || d.agreement || "—"}</div>
+                  <div className="mt-1 font-semibold">{d.milestone_title || "Agreement-level issue"}</div>
+                </div>
+                <Badge tone={isClosed(d) ? "danger" : toneFor(d.status)}>{isClosed(d) ? "Resolved" : (d.status || "").replaceAll("_", " ")}</Badge>
+              </div>
+
+              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div><dt className="text-xs font-bold uppercase tracking-wide opacity-60">Hold</dt><dd className="mt-1"><Badge tone={d.escrow_frozen ? "info" : "default"} className={d.escrow_frozen ? "bg-slate-900 text-white" : ""}>{holdLabel(d)}</Badge></dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide opacity-60">Attachments</dt><dd className="mt-1 font-bold">{(d.attachments || []).length}</dd></div>
+                <div className="col-span-2"><dt className="text-xs font-bold uppercase tracking-wide opacity-60">Disposition</dt><dd className="mt-1">{d.financial_disposition ? <Badge tone={financialTone(d.financial_disposition)}>{labelFor(d.financial_disposition, FINANCIAL_LABELS)}</Badge> : "Pending review"}</dd></div>
+                <div className="col-span-2"><dt className="text-xs font-bold uppercase tracking-wide opacity-60">Next action</dt><dd className="mt-1"><Badge tone={pillToneForNext(nextStepLabel(d, isAdmin))}>{nextStepLabel(d, isAdmin)}</Badge><DeadlineLine dispute={d} now={now} /></dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide opacity-60">Created</dt><dd className="mt-1">{d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}</dd></div>
+                {!isClosed(d) ? <div><dt className="text-xs font-bold uppercase tracking-wide opacity-60">Qualification</dt><dd className="mt-1 font-bold">{qualificationLabel(d)}</dd></div> : null}
+              </dl>
+
+              <div className="mt-4 border-t border-white/10 pt-4 [&_.mhb-btn]:min-h-11 [&_.mhb-btn]:px-4">
+                <RowActions d={d} />
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className={operationalDisputes ? "hidden overflow-x-auto rounded-2xl border border-white/10 md:block" : "hidden overflow-x-auto md:block"}>
         <table className="w-full text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
           <thead className={operationalDisputes ? "bg-white/8 text-sky-100/75" : "text-slate-500"}>
             <tr>
@@ -2142,6 +2174,7 @@ export default function DisputesPages() {
           </tbody>
         </table>
         </div>
+        </>
       )}
     </section>
   );
