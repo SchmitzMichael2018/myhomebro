@@ -20,7 +20,7 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         self.assertIn("frame-src 'self' blob: https://connect-js.stripe.com https://js.stripe.com", html)
         self.assertIn("img-src 'self' data: https://*.stripe.com", html)
         self.assertIn("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", html)
-        self.assertIn("style-src-elem 'self' 'nonce-{{ csp_nonce }}' https://fonts.googleapis.com", html)
+        self.assertIn("style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com", html)
         self.assertIn("style-src-attr 'unsafe-inline'", html)
         self.assertIn('meta name="csp-nonce" content="{{ csp_nonce }}"', html)
         self.assertIn('style id="_goober" nonce="{{ csp_nonce }}"', html)

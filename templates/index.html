@@ -15,14 +15,14 @@
     <link rel="icon" type="image/png" href="{% static 'favicon-192x192.png' %}" />
     <link rel="apple-touch-icon" href="{% static 'apple-touch-icon.png' %}" sizes="180x180" />
 
-    <!-- CSP: style-src is the legacy WebKit attribute fallback; modern style
-         elements remain restricted by style-src-elem and the response nonce. -->
+    <!-- CSP: WebKit requires inline-style compatibility for runtime-generated
+         component styles. Script execution remains restricted separately. -->
     <meta name="csp-nonce" content="{{ csp_nonce }}" />
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
       script-src 'self' https://js.stripe.com https://connect-js.stripe.com https://maps.googleapis.com https://maps.gstatic.com;
       style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-      style-src-elem 'self' 'nonce-{{ csp_nonce }}' https://fonts.googleapis.com;
+      style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com;
       style-src-attr 'unsafe-inline';
       font-src 'self' https://fonts.gstatic.com data:;
       img-src 'self' data: https://*.stripe.com https://maps.googleapis.com https://maps.gstatic.com;
