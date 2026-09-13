@@ -19,9 +19,15 @@ function requireCredentials() {
 }
 
 function collectBrowserEvents(page) {
-  const events = { consoleErrors: [], pageErrors: [], failedResponses: [], requestFailures: [] };
+  const events = { consoleErrors: [], cspDiagnostics: [], pageErrors: [], failedResponses: [], requestFailures: [] };
   page.on('console', (message) => {
-    if (message.type() === 'error') events.consoleErrors.push(message.text());
+    if (message.type() === 'error') {
+      const text = message.text();
+      events.consoleErrors.push(text);
+      if (text.includes('Content Security Policy') && events.cspDiagnostics.length < 10) {
+        events.cspDiagnostics.push({ text, location: message.location() });
+      }
+    }
   });
   page.on('pageerror', (error) => events.pageErrors.push(error.message));
   page.on('response', (response) => {
@@ -236,6 +242,7 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
   console.log('MOBILE_CONTRACTOR_SUMMARY', JSON.stringify({
     surfaces: Object.keys(metrics),
     consoleErrorCount: events.consoleErrors.length,
+    cspDiagnostics: events.cspDiagnostics,
     failedResponses: events.failedResponses,
     actionablePageErrors,
   }));

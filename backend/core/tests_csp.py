@@ -22,6 +22,7 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         self.assertIn("style-src-elem 'self' 'nonce-{{ csp_nonce }}' https://fonts.googleapis.com", html)
         self.assertIn("style-src-attr 'unsafe-inline'", html)
         self.assertIn('meta name="csp-nonce" content="{{ csp_nonce }}"', html)
+        self.assertIn('style id="_goober" nonce="{{ csp_nonce }}"', html)
         self.assertNotIn("script-src 'self' https://*.stripe.com", html)
         self.assertNotIn("'unsafe-eval'", html)
         self.assertNotIn("style-src 'self' 'unsafe-inline'", html)
