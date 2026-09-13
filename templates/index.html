@@ -39,6 +39,9 @@
     {% if vite_css_href %}
     <link rel="stylesheet" href="{{ vite_css_href }}">
     {% endif %}
+    <!-- react-hot-toast/goober reuses this nonce-authorized sheet instead of
+         creating an untrusted inline style element at runtime. -->
+    <style id="_goober" nonce="{{ csp_nonce }}"> </style>
   </head>
   <body style="margin:0;background:#0b53ff0d;">
     <div id="root" aria-live="polite"></div>

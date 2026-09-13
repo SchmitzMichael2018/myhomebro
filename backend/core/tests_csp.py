@@ -12,7 +12,8 @@ from django.conf import settings
 class FrontendContentSecurityPolicyTests(SimpleTestCase):
     def test_spa_meta_policy_allows_only_documented_connect_resources(self):
         template = get_template("index.html")
-        self.assertTrue(template.origin.name.endswith("myhomebro\\templates\\index.html"))
+        expected_template = Path(settings.BASE_DIR).parent / "templates" / "index.html"
+        self.assertEqual(Path(template.origin.name).resolve(), expected_template.resolve())
         with open(template.origin.name, encoding="utf-8") as template_file:
             html = template_file.read()
         self.assertIn("script-src 'self' https://js.stripe.com https://connect-js.stripe.com", html)
@@ -37,6 +38,7 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         policies = []
         for path in copies:
             html = path.read_text(encoding="utf-8")
+            self.assertIn('style id="_goober" nonce="{{ csp_nonce }}"', html)
             match = re.search(r'<meta http-equiv="Content-Security-Policy" content="(.*?)"\s*/>', html, re.S)
             self.assertIsNotNone(match, path)
             self.assertEqual(html.count('http-equiv="Content-Security-Policy"'), 1)
