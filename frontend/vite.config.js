@@ -91,6 +91,10 @@ export default defineConfig(({ mode }) => {
     // target: "es2018",
 
     rollupOptions: {
+      // PythonAnywhere caps a process at 1,024 open files. Keep Rollup below
+      // that ceiling so production builds do not fail intermittently with
+      // EMFILE while loading the icon-heavy application graph.
+      maxParallelFileOps: 256,
       output: {
         // Keep a small number of stable, domain-shaped vendor chunks. Route
         // modules remain the primary split boundary.
