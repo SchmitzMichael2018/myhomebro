@@ -1655,8 +1655,8 @@ export default function CustomerProjectWorkspace({
         </div>
       </section>
 
-      <div data-testid="customer-projects-layout" className="grid gap-4 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.7fr)]">
-        <section data-testid="customer-agreement-list" className="space-y-3">
+      <div data-testid="customer-projects-layout" className="grid min-w-0 gap-4 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.7fr)]">
+        <section data-testid="customer-agreement-list" className="min-w-0 space-y-3">
           <div data-testid="customer-project-result-count" className="rounded-2xl border border-slate-700 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
             Showing {rangeStart}-{rangeEnd} of {filteredRows.length} projects
           </div>
@@ -1742,7 +1742,7 @@ export default function CustomerProjectWorkspace({
           ) : null}
         </section>
 
-      <div id="customer-project-detail" data-testid="customer-rich-project-workspace" className="scroll-mt-4 space-y-4">
+      <div id="customer-project-detail" data-testid="customer-rich-project-workspace" className="min-w-0 scroll-mt-4 space-y-4">
         {selected ? (
           <>
             <section data-testid="customer-selected-agreement-summary" className="overflow-hidden rounded-3xl border border-slate-700 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_30%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.42))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">

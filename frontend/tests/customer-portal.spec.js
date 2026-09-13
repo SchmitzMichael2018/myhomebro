@@ -5347,6 +5347,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-filter-all")).toBeVisible();
   await page.getByTestId("customer-project-card-1").click();
   await expect(page.getByTestId("customer-projects-layout")).toHaveClass(/xl:grid-cols-\[minmax\(280px,0\.72fr\)_minmax\(0,1\.7fr\)\]/);
+  await expect(page.getByTestId("customer-projects-layout")).toHaveClass(/min-w-0/);
+  await expect(page.getByTestId("customer-agreement-list")).toHaveClass(/min-w-0/);
+  await expect(page.getByTestId("customer-rich-project-workspace")).toHaveClass(/min-w-0/);
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Selected agreement");
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-project-detail-layout")).toHaveClass(/space-y-4/);
