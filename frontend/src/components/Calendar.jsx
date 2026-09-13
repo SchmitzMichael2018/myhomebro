@@ -437,6 +437,8 @@ export default function Calendar() {
         }}
         eventDisplay="block"
         dayMaxEventRows={3}
+        scrollTime="07:00:00"
+        scrollTimeReset={false}
         height="auto"
       />
 

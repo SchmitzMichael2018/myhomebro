@@ -33,6 +33,41 @@
 .fc .fc-button:disabled { opacity: .5; cursor: default; }
 .fc .fc-button-group .fc-button { border-radius: .5rem; }
 
+.mhb-operational-surface .fc .fc-toolbar-title {
+  color: #e8f2ff;
+}
+
+.mhb-operational-surface .fc .fc-button:disabled {
+  color: #e8f2ff;
+}
+
+@media (max-width: 639px) {
+  .fc .fc-toolbar {
+    flex-wrap: wrap;
+    gap: .625rem;
+  }
+
+  .fc .fc-toolbar-chunk:nth-child(1) { order: 2; }
+  .fc .fc-toolbar-chunk:nth-child(2) {
+    order: 1;
+    width: 100%;
+  }
+  .fc .fc-toolbar-chunk:nth-child(3) {
+    order: 3;
+    margin-left: auto;
+  }
+
+  .fc .fc-toolbar-title {
+    font-size: 1rem;
+  }
+
+  .fc .fc-button {
+    min-height: 2.5rem;
+    padding: .4rem .55rem;
+    font-size: .75rem;
+  }
+}
+
 /* Headers / cells */
 .fc .fc-col-header-cell,
 .fc .fc-daygrid-day,
