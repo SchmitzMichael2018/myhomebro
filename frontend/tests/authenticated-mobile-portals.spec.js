@@ -167,6 +167,22 @@ async function loginHomeowner(page) {
   await expect(page.getByTestId('customer-dashboard-header-logout')).toBeVisible();
 }
 
+async function openContractorRoute(page, route) {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await page.goto(route, { waitUntil: 'commit', timeout: 45_000 });
+      await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
+      await page.locator('h1').first().waitFor({ state: 'visible', timeout: 60_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await page.waitForTimeout(1_000);
+    }
+  }
+  throw lastError;
+}
+
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(() => requireCredentials());
@@ -194,9 +210,7 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
 
   const metrics = {};
   for (const [route, name] of routes) {
-    await page.goto(route, { waitUntil: 'commit', timeout: 45_000 });
-    await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
-    await page.locator('h1').first().waitFor({ state: 'visible', timeout: 60_000 });
+    await openContractorRoute(page, route);
     if (name === 'contractor-agreements') {
       await page.getByTestId('agreement-list-mobile-cards').waitFor({ state: 'visible', timeout: 60_000 });
     }
