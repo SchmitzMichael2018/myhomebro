@@ -68,28 +68,42 @@ const howItWorks = [
     icon: Wrench,
     title: "Share Your Project",
     text: "Tell us what you want to get done in your own words.",
+    detail: "Add the location, timing, budget range, and photos you already have. You can start with a rough idea and refine it before anything is sent.",
   },
   {
     icon: ClipboardList,
     title: "We Organize It",
     text: "We shape your details into a clearer contractor-ready project plan.",
+    detail: "Project Assistant can identify missing details and prepare a clearer description. You review and control the information that becomes part of your request.",
   },
   {
     icon: UsersRound,
     title: "We Find Local Pros",
     text: "We help surface trusted local contractors that fit the work.",
+    detail: "Your project details help participating contractors understand the work. Availability and matching depend on the project, location, and contractor participation.",
   },
   {
     icon: MessageSquareText,
     title: "Compare & Connect",
     text: "Review options, ask questions, and choose the right fit.",
+    detail: "Keep estimates, questions, contractor responses, and decisions connected so you can compare the scope—not just the bottom-line price.",
   },
   {
     icon: Home,
     title: "Get It Done",
     text: "Manage documents, updates, payments, and next steps in one place.",
+    detail: "Follow milestones, review work, communicate, and retain agreements, receipts, photos, warranties, and project history in your workspace.",
   },
 ];
+
+const landingFaqItems = [
+  "what-is-myhomebro",
+  "who-is-it-for",
+  "payment-handling",
+  "contractor-guarantees",
+  "project-assistant",
+  "dispute-process",
+].map((id) => PUBLIC_FAQ_CURATED_ITEMS.find((item) => item.id === id)).filter(Boolean);
 
 const previewBullets = [
   "AI-powered project planning",
@@ -167,6 +181,13 @@ export default function LandingPage() {
               className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               For Contractors
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollTo("frequently-asked-questions")}
+              className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
+            >
+              FAQs
             </button>
             <a
               href="/maintenance-request"
@@ -439,6 +460,8 @@ function InfoCard({ icon: Icon, title, text, wide = false }) {
 }
 
 function HowItWorks() {
+  const [activeStep, setActiveStep] = useState(0);
+
   return (
     <section id="how-it-works" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
       <div className="flex items-center justify-center gap-6">
@@ -446,13 +469,33 @@ function HowItWorks() {
         <h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">How It Works</h2>
         <div className="hidden h-px w-24 bg-gradient-to-l from-transparent to-amber-300/70 sm:block" />
       </div>
+      <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-6 text-sky-50/68 sm:text-base">
+        Select any stage to see what happens and what you control.
+      </p>
       <div className="mt-10 grid gap-7 md:grid-cols-5">
-        {howItWorks.map(({ icon: Icon, title, text }, index) => (
-          <div key={title} className="relative text-center">
+        {howItWorks.map(({ icon: Icon, title, text, detail }, index) => {
+          const active = activeStep === index;
+          const detailId = `how-it-works-detail-${index + 1}`;
+          return (
+          <button
+            key={title}
+            type="button"
+            data-testid={`how-it-works-step-${index + 1}`}
+            aria-expanded={active}
+            aria-controls={detailId}
+            onClick={() => setActiveStep(index)}
+            onMouseEnter={() => setActiveStep(index)}
+            onFocus={() => setActiveStep(index)}
+            className={`relative min-h-11 rounded-2xl px-3 py-4 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+              active ? "bg-slate-950/48 shadow-lg shadow-slate-950/15" : "hover:bg-white/[0.04]"
+            }`}
+          >
             {index < howItWorks.length - 1 ? (
               <div className="absolute left-[calc(50%+2.5rem)] top-8 hidden w-[calc(100%-5rem)] border-t border-dashed border-sky-200/28 md:block" />
             ) : null}
-            <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-blue-300/24 bg-blue-500/8 text-blue-250 shadow-[0_0_26px_rgba(37,99,235,0.12)]">
+            <div className={`relative mx-auto flex h-16 w-16 items-center justify-center rounded-full border text-blue-250 shadow-[0_0_26px_rgba(37,99,235,0.12)] transition-colors ${
+              active ? "border-amber-300/60 bg-amber-300/10" : "border-blue-300/24 bg-blue-500/8"
+            }`}>
               <div className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-amber-300 text-xs font-bold text-slate-950">
                 {index + 1}
               </div>
@@ -460,8 +503,77 @@ function HowItWorks() {
             </div>
             <div className="mt-5 font-semibold text-white">{title}</div>
             <p className="mx-auto mt-3 max-w-48 text-sm leading-6 text-sky-50/68">{text}</p>
+            <div
+              id={detailId}
+              data-testid={`how-it-works-detail-${index + 1}`}
+              hidden={!active}
+              className="mt-4 border-t border-white/10 pt-4 text-left text-sm leading-6 text-sky-50/82"
+            >
+              <span className="font-semibold text-amber-200">What happens: </span>
+              {detail}
+            </div>
+            <span className={`mx-auto mt-3 flex w-fit items-center gap-1 text-xs font-semibold ${active ? "text-amber-200" : "text-sky-300"}`}>
+              {active ? "Details shown" : "Learn more"}
+              <ChevronDown className={`h-4 w-4 transition-transform ${active ? "rotate-180" : ""}`} aria-hidden="true" />
+            </span>
+          </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function LandingFaq({ onViewAll, viewAllRef }) {
+  const [openItemId, setOpenItemId] = useState(landingFaqItems[0]?.id || "");
+
+  return (
+    <section id="frequently-asked-questions" className="mx-auto max-w-6xl scroll-mt-28 px-4 pb-16 sm:px-6 lg:px-8">
+      <div className="rounded-[2rem] border border-white/12 bg-slate-950/30 p-5 shadow-2xl shadow-slate-950/18 backdrop-blur sm:p-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Helpful answers</div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Frequently Asked Questions</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-sky-50/70 sm:text-base">
+              Start with the essentials about projects, contractors, payments, AI assistance, and disputes.
+            </p>
           </div>
-        ))}
+          <button
+            ref={viewAllRef}
+            type="button"
+            data-testid="landing-view-all-faqs"
+            onClick={onViewAll}
+            className="min-h-11 self-start rounded-xl border border-amber-300/55 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:self-auto"
+          >
+            View All FAQs
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-2" data-testid="landing-faq-preview">
+          {landingFaqItems.map((item) => {
+            const open = openItemId === item.id;
+            const panelId = `landing-faq-answer-${item.id}`;
+            return (
+              <article key={item.id} className={`self-start overflow-hidden rounded-xl border ${open ? "border-sky-500/60 bg-slate-900" : "border-white/10 bg-slate-950/35"}`}>
+                <h3>
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                    onClick={() => setOpenItemId((current) => current === item.id ? "" : item.id)}
+                    className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold leading-5 text-white hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:text-[15px]"
+                  >
+                    <span>{item.question}</span>
+                    <ChevronDown className={`h-5 w-5 shrink-0 text-sky-300 transition-transform ${open ? "rotate-180 text-amber-300" : ""}`} aria-hidden="true" />
+                  </button>
+                </h3>
+                <div id={panelId} hidden={!open} className="border-t border-white/10 px-4 py-3 text-sm leading-6 text-sky-50/72">
+                  {item.answer}
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -469,16 +581,36 @@ function HowItWorks() {
 
 function VideoPreview({ navigate }) {
   const [overviewOpen, setOverviewOpen] = useState(false);
+  const [overviewInitialTab, setOverviewInitialTab] = useState("overview");
   const triggerRef = useRef(null);
+  const faqTriggerRef = useRef(null);
+  const openerRef = useRef(null);
   const jsonLd = JSON.stringify(buildPublicFaqJsonLd(PUBLIC_FAQ_CURATED_ITEMS)).replace(/</g, "\\u003c");
 
   const openOverview = () => {
+    setOverviewInitialTab("overview");
+    openerRef.current = triggerRef.current;
     setOverviewOpen(true);
     window.dispatchEvent(
       new CustomEvent("mhb:analytics", {
         detail: {
           event: "product_overview_opened",
           category: "product_overview",
+        },
+      })
+    );
+  };
+
+  const openQuestions = () => {
+    setOverviewInitialTab("questions");
+    openerRef.current = faqTriggerRef.current;
+    setOverviewOpen(true);
+    window.dispatchEvent(
+      new CustomEvent("mhb:analytics", {
+        detail: {
+          event: "product_overview_opened",
+          category: "product_overview",
+          source: "landing_faq",
         },
       })
     );
@@ -495,10 +627,11 @@ function VideoPreview({ navigate }) {
         },
       })
     );
-    requestAnimationFrame(() => triggerRef.current?.focus());
+    requestAnimationFrame(() => openerRef.current?.focus());
   };
 
   return (
+    <>
     <section className="mx-auto px-4 pb-16 sm:px-6 lg:px-8">
       <script type="application/ld+json" data-testid="landing-faq-jsonld" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
@@ -566,8 +699,10 @@ function VideoPreview({ navigate }) {
           </div>
         </div>
       </div>
-      <ProductOverviewModal visible={overviewOpen} onClose={closeOverview} navigate={navigate} />
+      <ProductOverviewModal visible={overviewOpen} initialTab={overviewInitialTab} onClose={closeOverview} navigate={navigate} />
     </section>
+    <LandingFaq onViewAll={openQuestions} viewAllRef={faqTriggerRef} />
+    </>
   );
 }
 

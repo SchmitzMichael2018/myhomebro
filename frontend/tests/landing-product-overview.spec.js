@@ -62,6 +62,49 @@ test("existing play action opens the combined overview and restores focus on clo
   );
 });
 
+test("landing guidance explains each stage by hover, focus, and activation", async ({ page }) => {
+  const firstStep = page.getByTestId("how-it-works-step-1");
+  const thirdStep = page.getByTestId("how-it-works-step-3");
+
+  await firstStep.scrollIntoViewIfNeeded();
+  await expect(firstStep).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("how-it-works-detail-1")).toBeVisible();
+
+  await thirdStep.hover();
+  await expect(thirdStep).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("how-it-works-detail-3")).toContainText("Availability and matching");
+
+  const secondStep = page.getByTestId("how-it-works-step-2");
+  await secondStep.focus();
+  await expect(secondStep).toHaveAttribute("aria-expanded", "true");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fifthStep = page.getByTestId("how-it-works-step-5");
+  await fifthStep.click();
+  await expect(fifthStep).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("how-it-works-detail-5")).toContainText("Follow milestones");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("landing FAQ answers essentials and opens the complete Questions view", async ({ page }) => {
+  const faqPreview = page.getByTestId("landing-faq-preview");
+  await faqPreview.scrollIntoViewIfNeeded();
+  await expect(faqPreview.getByRole("button")).toHaveCount(6);
+
+  const paymentQuestion = faqPreview.getByRole("button", { name: "How are payments handled?" });
+  await paymentQuestion.click();
+  await expect(paymentQuestion).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#landing-faq-answer-payment-handling")).toBeVisible();
+
+  const viewAll = page.getByTestId("landing-view-all-faqs");
+  await viewAll.click();
+  const modal = page.getByTestId("product-overview-modal");
+  await expect(modal.getByRole("tab", { name: "Questions" })).toHaveAttribute("aria-selected", "true");
+  await expect(modal.getByRole("button", { name: "What is MyHomeBro?" })).toBeVisible();
+  await modal.getByRole("button", { name: "Close product overview" }).click();
+  await expect(viewAll).toBeFocused();
+});
+
 test("audience selectors personalize all five steps and persist across tabs", async ({ page }) => {
   const modal = await openOverview(page);
   const homeowner = modal.getByTestId("product-audience-homeowner");

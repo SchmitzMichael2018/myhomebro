@@ -177,7 +177,7 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
   );
 }
 
-export default function ProductOverviewModal({ visible, onClose, navigate }) {
+export default function ProductOverviewModal({ visible, initialTab = "overview", onClose, navigate }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [activeAudience, setActiveAudience] = useState(DEFAULT_AUDIENCE);
   const [openItemId, setOpenItemId] = useState("");
@@ -186,11 +186,11 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
 
   useEffect(() => {
     if (!visible) return;
-    setActiveTab("overview");
+    setActiveTab(TABS.some((tab) => tab.id === initialTab) ? initialTab : "overview");
     setActiveAudience(DEFAULT_AUDIENCE);
     setOpenItemId("");
     setShowAllQuestions(false);
-  }, [visible]);
+  }, [initialTab, visible]);
 
   const selectTab = (tabId, focus = false) => {
     setActiveTab(tabId);
