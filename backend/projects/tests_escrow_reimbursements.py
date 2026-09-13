@@ -163,7 +163,7 @@ class EscrowReimbursementRequestTests(TestCase):
         self.assertEqual(expense.contingency_stage, ExpenseRequest.ContingencyStage.FINAL_RECEIPT_SUBMITTED)
         self.assertTrue(bool(expense.final_receipt))
 
-    def test_reimbursement_requires_receipt_or_proof(self):
+    def test_reimbursement_requires_final_receipt(self):
         response = self.client.post(
             "/api/projects/expense-requests/",
             {
@@ -177,7 +177,7 @@ class EscrowReimbursementRequestTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Receipt or proof", response.data["detail"])
+        self.assertIn("Final receipt is required", response.data["detail"])
 
     def test_reimbursement_requires_signed_funded_escrow(self):
         self.agreement.escrow_funded = False
