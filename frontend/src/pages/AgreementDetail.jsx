@@ -3918,12 +3918,12 @@ export default function AgreementDetail({
                 className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-sky-100/60"
                 aria-label="Agreement workspace breadcrumb"
               >
-                <a href="/app/agreements" className="hover:text-white">
+                <a href="/app/agreements" className="inline-flex min-h-6 items-center hover:text-white">
                   Agreements
                 </a>
                 <span>/</span>
                 {customerWorkspaceUrl ? (
-                  <a href={customerWorkspaceUrl} className="hover:text-white">
+                  <a href={customerWorkspaceUrl} className="inline-flex min-h-6 items-center hover:text-white">
                     {norm.homeownerName}
                   </a>
                 ) : (
@@ -4645,7 +4645,7 @@ export default function AgreementDetail({
                 <button
                   type="button"
                   onClick={() => setWorkspaceTab('milestones')}
-                  className="text-sm font-semibold text-blue-200 hover:text-white"
+                  className="inline-flex min-h-6 items-center text-sm font-semibold text-blue-200 hover:text-white"
                 >
                   View All Milestones
                 </button>
