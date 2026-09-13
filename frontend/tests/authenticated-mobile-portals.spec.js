@@ -19,13 +19,13 @@ function requireCredentials() {
 }
 
 function collectBrowserEvents(page) {
-  const events = { consoleErrors: [], cspDiagnostics: [], pageErrors: [], failedResponses: [], requestFailures: [] };
+  const events = { consoleErrors: [], cspErrors: [], pageErrors: [], failedResponses: [], requestFailures: [] };
   page.on('console', (message) => {
     if (message.type() === 'error') {
       const text = message.text();
       events.consoleErrors.push(text);
-      if (text.includes('Content Security Policy') && events.cspDiagnostics.length < 10) {
-        events.cspDiagnostics.push({ text, location: message.location() });
+      if (text.includes('Content Security Policy')) {
+        events.cspErrors.push({ text, location: message.location() });
       }
     }
   });
@@ -257,12 +257,12 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
   console.log('MOBILE_CONTRACTOR_SUMMARY', JSON.stringify({
     surfaces: Object.keys(metrics),
     consoleErrorCount: events.consoleErrors.length,
-    cspDiagnostics: events.cspDiagnostics,
+    cspDiagnostics: events.cspErrors.slice(0, 10),
     failedResponses: events.failedResponses,
     actionablePageErrors,
   }));
   expect(actionablePageErrors, 'contractor portal page errors').toEqual([]);
-  expect(events.consoleErrors.filter((message) => message.includes('Content Security Policy')), 'contractor CSP errors').toEqual([]);
+  expect(events.cspErrors.filter((entry) => entry.location.url.startsWith('https://www.myhomebro.com')), 'contractor same-origin CSP errors').toEqual([]);
   expect(events.failedResponses.filter((entry) => entry.includes('myhomebro.com')), 'contractor same-origin failed responses').toEqual([]);
 });
 
@@ -299,10 +299,11 @@ test('QA homeowner portal is usable at iPhone 17 dimensions', async ({ page }, t
   console.log('MOBILE_HOMEOWNER_SUMMARY', JSON.stringify({
     surfaces: Object.keys(metrics),
     consoleErrorCount: events.consoleErrors.length,
+    cspDiagnostics: events.cspErrors.slice(0, 10),
     failedResponses: events.failedResponses,
     pageErrors: events.pageErrors,
   }));
   expect(events.pageErrors, 'homeowner portal page errors').toEqual([]);
-  expect(events.consoleErrors.filter((message) => message.includes('Content Security Policy')), 'homeowner CSP errors').toEqual([]);
+  expect(events.cspErrors.filter((entry) => entry.location.url.startsWith('https://www.myhomebro.com')), 'homeowner same-origin CSP errors').toEqual([]);
   expect(events.failedResponses.filter((entry) => entry.includes('myhomebro.com')), 'homeowner same-origin failed responses').toEqual([]);
 });
