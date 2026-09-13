@@ -1824,7 +1824,7 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, preferences 
                           }
                           if (isUnread) onMarkRead?.(notification);
                         }}
-                        className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50"
+                        className="mt-3 inline-flex min-h-6 items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50"
                       >
                         Open related item
                         <ExternalLink size={14} />
@@ -2025,7 +2025,7 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
                           }
                           if (isUnreadNotification(notification)) onMarkRead?.(notification);
                         }}
-                        className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50"
+                        className="mt-3 inline-flex min-h-6 items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50"
                       >
                         Open related item
                         <ExternalLink size={14} />
