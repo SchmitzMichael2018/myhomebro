@@ -166,6 +166,20 @@ def _category_from_attachment_kind(kind: str) -> str:
     return mapping.get(kind, ResolutionEvidenceIndex.CATEGORY_OTHER)
 
 
+def uploaded_file_audit_metadata(uploaded) -> dict:
+    """Capture immutable upload facts without trusting the browser-supplied name alone."""
+    digest = hashlib.sha256()
+    for chunk in uploaded.chunks():
+        digest.update(chunk)
+    uploaded.seek(0)
+    return {
+        "original_filename": str(getattr(uploaded, "name", "") or "")[:255],
+        "file_size": int(getattr(uploaded, "size", 0) or 0),
+        "content_type": str(getattr(uploaded, "content_type", "") or "")[:120],
+        "sha256": digest.hexdigest(),
+    }
+
+
 def index_evidence(
     dispute: Dispute,
     attachment: DisputeAttachment,
@@ -176,6 +190,13 @@ def index_evidence(
     related_party: str = "",
     metadata: dict | None = None,
 ) -> ResolutionEvidenceIndex:
+    audit_metadata = {
+        "original_filename": getattr(attachment, "original_filename", ""),
+        "file_size": getattr(attachment, "file_size", 0),
+        "content_type": getattr(attachment, "content_type", ""),
+        "sha256": getattr(attachment, "sha256", ""),
+    }
+    audit_metadata.update(metadata or {})
     evidence, _created = ResolutionEvidenceIndex.objects.update_or_create(
         attachment=attachment,
         defaults={
@@ -187,7 +208,7 @@ def index_evidence(
             "related_party": related_party or infer_party_role(actor, dispute),
             "related_source_type": getattr(dispute, "source_type", ""),
             "related_source_object_id": getattr(dispute, "source_object_id", None),
-            "metadata": metadata or {},
+            "metadata": audit_metadata,
         },
     )
     record_timeline_event(

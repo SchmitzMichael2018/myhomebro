@@ -7,6 +7,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models, transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 
@@ -344,6 +345,23 @@ class Dispute(models.Model):
     urgent_reason = models.TextField(blank=True, default="")
     qualification_extension_count = models.PositiveSmallIntegerField(default=0)
     qualification_extension_reason = models.TextField(blank=True, default="")
+    qualification_extension_reason_type = models.CharField(max_length=40, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["milestone"], condition=Q(milestone__isnull=False), name="uniq_dispute_milestone_source"),
+            models.UniqueConstraint(fields=["payment_request"], condition=Q(payment_request__isnull=False), name="uniq_dispute_invoice_source"),
+            models.UniqueConstraint(fields=["draw_request"], condition=Q(draw_request__isnull=False), name="uniq_dispute_draw_source"),
+            models.UniqueConstraint(fields=["expense"], condition=Q(expense__isnull=False), name="uniq_dispute_expense_source"),
+            models.UniqueConstraint(fields=["amendment"], condition=Q(amendment__isnull=False), name="uniq_dispute_amendment_source"),
+            models.UniqueConstraint(fields=["warranty_request"], condition=Q(warranty_request__isnull=False), name="uniq_dispute_warranty_source"),
+            models.UniqueConstraint(fields=["warranty_service_request"], condition=Q(warranty_service_request__isnull=False), name="uniq_dispute_warranty_service_source"),
+            models.UniqueConstraint(
+                fields=["agreement"],
+                condition=Q(source_type__in=["agreement", "general_project_issue"], status__in=["initiated", "open", "under_review"], is_archived=False),
+                name="uniq_active_general_dispute_agreement",
+            ),
+        ]
 
     def ensure_public_token(self) -> str:
         if self.public_token:
@@ -1525,6 +1543,10 @@ class DisputeAttachment(models.Model):
     file = models.FileField(upload_to="disputes/%Y/%m/")
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     uploaded_at = models.DateTimeField(default=timezone.now)
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    file_size = models.PositiveBigIntegerField(default=0)
+    content_type = models.CharField(max_length=120, blank=True, default="")
+    sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
 
     def __str__(self) -> str:
         return f"Attachment #{self.pk} ({self.kind}) for dispute #{self.dispute_id}"
@@ -1543,6 +1565,10 @@ class DisputeReminderLog(models.Model):
     )
     sent_at = models.DateTimeField(default=timezone.now)
     dedupe_key = models.CharField(max_length=160, unique=True, null=True, blank=True)
+    email_status = models.CharField(max_length=32, blank=True, default="not_attempted")
+    sms_status = models.CharField(max_length=32, blank=True, default="not_attempted")
+    in_app_status = models.CharField(max_length=32, blank=True, default="not_attempted")
+    delivery_details = models.JSONField(default=dict, blank=True)
 
     def __str__(self) -> str:
         return f"Reminder {self.kind} → {self.sent_to} (dispute #{self.dispute_id})"

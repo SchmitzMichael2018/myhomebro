@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -28,6 +30,7 @@ from projects.services.dispute_workflow import (
     release_expired_hold,
 )
 from projects.services.dispute_allocation_execution import reconcile_agreement_escrow_payments_from_stripe
+from projects.services.resolution_workspace import uploaded_file_audit_metadata
 from projects.tasks import task_auto_release_undisputed_invoices
 
 
@@ -668,3 +671,65 @@ class DisputeQualificationWorkflowTests(TestCase):
         call_command("send_dispute_reminders")
         self.assertEqual(notify_mock.call_count, 1)
         self.assertEqual(dispute.reminder_logs.filter(kind="qualification_24h").count(), 1)
+
+    def test_database_prevents_duplicate_financial_source_under_race(self):
+        self._create_dispute()
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._create_dispute(description="A concurrent duplicate for the same milestone.")
+
+    def test_only_one_active_general_case_per_agreement(self):
+        Dispute.objects.create(
+            agreement=self.agreement,
+            source_type=Dispute.SOURCE_GENERAL_PROJECT_ISSUE,
+            initiator="homeowner",
+            reason="General concern",
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Dispute.objects.create(
+                agreement=self.agreement,
+                source_type=Dispute.SOURCE_AGREEMENT,
+                initiator="contractor",
+                reason="Same agreement-level concern",
+            )
+
+    def test_upload_audit_metadata_hashes_and_rewinds_file(self):
+        uploaded = SimpleUploadedFile("door-photo.jpg", b"test-image-content", content_type="image/jpeg")
+        metadata = uploaded_file_audit_metadata(uploaded)
+        self.assertEqual(metadata["original_filename"], "door-photo.jpg")
+        self.assertEqual(metadata["file_size"], len(b"test-image-content"))
+        self.assertEqual(metadata["content_type"], "image/jpeg")
+        self.assertEqual(len(metadata["sha256"]), 64)
+        self.assertEqual(uploaded.read(), b"test-image-content")
+
+    def test_external_authority_requires_validation_attestations(self):
+        dispute = initialize_dispute_workflow(self._create_dispute())
+        response = self.contractor_client.post(
+            f"/api/projects/disputes/{dispute.id}/external-documents/",
+            {
+                "document_type": "external_decision",
+                "title": "Outside decision",
+                "file": SimpleUploadedFile("decision.pdf", b"pdf", content_type="application/pdf"),
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("identifies", response.data["detail"])
+
+    def test_missed_response_records_no_automatic_finding(self):
+        dispute = initialize_dispute_workflow(self._create_dispute())
+        dispute.response_grace_due_at = timezone.now() - timedelta(minutes=1)
+        dispute.save(update_fields=["response_grace_due_at"])
+        call_command("check_dispute_deadlines")
+        dispute.refresh_from_db()
+        self.assertEqual(dispute.status, "under_review")
+        self.assertEqual(dispute.deadline_missed_by, "contractor")
+        event = dispute.timeline_events.filter(title="Final response deadline missed").get()
+        self.assertFalse(event.metadata["automatic_finding"])
+        self.assertTrue(dispute.payment_hold.is_active)
+
+    def test_reconciliation_command_does_not_move_money(self):
+        dispute = initialize_dispute_workflow(self._create_dispute())
+        call_command("audit_dispute_reconciliation", "--fail-on-warning")
+        dispute.refresh_from_db()
+        self.assertTrue(dispute.escrow_frozen)
+        self.assertTrue(dispute.payment_hold.is_active)

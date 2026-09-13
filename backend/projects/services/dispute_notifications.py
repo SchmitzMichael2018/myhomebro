@@ -229,7 +229,17 @@ def notify_homeowner_qualification(dispute, event: str) -> dict:
     subject, message = copy.get(event, copy["submitted"])
     if event == "expired":
         invoice = getattr(dispute, "payment_request", None)
+        if invoice is None:
+            milestone = getattr(dispute, "milestone", None)
+            try:
+                invoice = milestone.invoice if milestone is not None else None
+            except Exception:
+                invoice = None
         marked_complete_at = getattr(invoice, "marked_complete_at", None) if invoice else None
+        hold = getattr(dispute, "payment_hold", None)
+        held_cents = int(getattr(hold, "amount_cents", 0) or 0)
+        if held_cents:
+            message += f" The closed administrative hold covered ${held_cents / 100:,.2f}. No money was moved by the expiration itself."
         if marked_complete_at:
             release_at = marked_complete_at + timedelta(
                 hours=max(int(getattr(settings, "INVOICE_AUTO_RELEASE_HOURS", 72)), 1)

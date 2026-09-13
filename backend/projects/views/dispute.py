@@ -7,7 +7,7 @@ from datetime import datetime
 
 from django.conf import settings
 from django.core.exceptions import FieldError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -35,6 +35,7 @@ from ..services.dispute_status import is_terminal_dispute_status
 from ..services.dispute_allocation_execution import execute_dispute_escrow_allocation
 from ..services.dispute_workflow import (
     assess_dispute_qualification,
+    active_general_dispute_for_agreement,
     close_payment_hold,
     extend_qualification_deadline,
     existing_dispute_for_source,
@@ -75,6 +76,7 @@ from ..services.resolution_workspace import (
     index_evidence,
     record_timeline_event,
     sign_resolution_agreement,
+    uploaded_file_audit_metadata,
 )
 
 # ✅ Import your Milestone model (lives in projects.models)
@@ -104,6 +106,36 @@ except Exception:
 
 PROPOSAL_PREFIX = "MHB_PROPOSAL_V1:"
 DISPUTE_TERMINAL_MESSAGE = "This dispute is resolved and can no longer be modified."
+
+
+def _external_document_metadata(data, document_type: str, *, uploaded_by_party: str = ""):
+    authoritative = document_type in {"external_decision", "mutual_instructions"}
+    metadata = {
+        "uploaded_as_external_authority": authoritative,
+        "uploaded_by_party": uploaded_by_party,
+        "legal_effect_not_interpreted_by_platform": True,
+        "issuing_authority": str(data.get("issuing_authority") or "").strip()[:255],
+        "decision_date": str(data.get("decision_date") or "").strip()[:20],
+        "identifies_parties": str(data.get("identifies_parties") or "").lower() in {"1", "true", "yes", "on"},
+        "identifies_dispute": str(data.get("identifies_dispute") or "").lower() in {"1", "true", "yes", "on"},
+        "is_final_document": str(data.get("is_final_document") or "").lower() in {"1", "true", "yes", "on"},
+        "has_explicit_financial_instructions": str(data.get("has_explicit_financial_instructions") or "").lower() in {"1", "true", "yes", "on"},
+    }
+    if authoritative:
+        missing = []
+        if not metadata["issuing_authority"]:
+            missing.append("issuing authority or both-party source")
+        for key, label in (
+            ("identifies_parties", "the parties"),
+            ("identifies_dispute", "this dispute"),
+            ("is_final_document", "a final/complete document"),
+            ("has_explicit_financial_instructions", "explicit financial instructions"),
+        ):
+            if not metadata[key]:
+                missing.append(label)
+        if missing:
+            raise ValueError("Confirm that the document identifies " + ", ".join(missing) + ".")
+    return metadata
 
 
 def _q_is_valid(qs, clause: Q) -> bool:
@@ -464,6 +496,10 @@ class DisputeViewSet(viewsets.ModelViewSet):
             draw_request=ser.validated_data.get("draw_request"),
             expense=ser.validated_data.get("expense"),
         )
+        if source is None and not any(
+            ser.validated_data.get(key) for key in ("milestone", "payment_request", "draw_request", "expense", "amendment", "warranty_request")
+        ):
+            source = active_general_dispute_for_agreement(agreement)
         if source:
             return Response(
                 {
@@ -473,7 +509,21 @@ class DisputeViewSet(viewsets.ModelViewSet):
                 },
                 status=409,
             )
-        dispute = initialize_dispute_workflow(ser.save())
+        try:
+            with transaction.atomic():
+                dispute = initialize_dispute_workflow(ser.save())
+        except IntegrityError:
+            source = existing_dispute_for_source(
+                agreement=agreement,
+                milestone=ser.validated_data.get("milestone"),
+                invoice=ser.validated_data.get("payment_request"),
+                draw_request=ser.validated_data.get("draw_request"),
+                expense=ser.validated_data.get("expense"),
+            ) or active_general_dispute_for_agreement(agreement)
+            return Response(
+                {"detail": "A dispute for this source was created concurrently. Continue in the existing case.", "dispute_id": getattr(source, "id", None)},
+                status=409,
+            )
         ensure_case_created_event(dispute, actor=request.user)
 
         if email_admin_dispute_update:
@@ -573,6 +623,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
         dispute = extend_qualification_deadline(
             dispute,
             reason=ser.validated_data["reason"],
+            reason_type=ser.validated_data["reason_type"],
             business_days=ser.validated_data["business_days"],
             actor=request.user,
         )
@@ -583,7 +634,10 @@ class DisputeViewSet(viewsets.ModelViewSet):
             actor=request.user,
             description=ser.validated_data["reason"],
             related_object=dispute,
-            metadata={"qualification_due_at": dispute.qualification_due_at.isoformat()},
+            metadata={
+                "qualification_due_at": dispute.qualification_due_at.isoformat(),
+                "reason_type": ser.validated_data["reason_type"],
+            },
         )
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
 
@@ -746,6 +800,22 @@ class DisputeViewSet(viewsets.ModelViewSet):
         external_document = ser.validated_data.get("external_authority_document")
         if external_document and external_document.dispute_id != dispute.id:
             return Response({"detail": "The authority document must belong to this dispute."}, status=400)
+        if external_document:
+            authority_metadata = external_document.metadata or {}
+            required_authority_facts = {
+                "uploaded_as_external_authority": "is an outside decision or mutual instruction",
+                "issuing_authority": "identifies the issuing authority or both-party source",
+                "identifies_parties": "identifies both parties",
+                "identifies_dispute": "identifies this dispute",
+                "is_final_document": "is final and complete",
+                "has_explicit_financial_instructions": "contains explicit financial instructions",
+            }
+            missing_authority_facts = [label for key, label in required_authority_facts.items() if not authority_metadata.get(key)]
+            if missing_authority_facts:
+                return Response(
+                    {"detail": "The outside document cannot authorize an allocation until it " + ", ".join(missing_authority_facts) + "."},
+                    status=400,
+                )
         contractor_cents = ser.validated_data["contractor_amount_cents"]
         homeowner_cents = ser.validated_data["homeowner_amount_cents"]
         if contractor_cents + homeowner_cents != hold.amount_cents:
@@ -1026,6 +1096,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
             kind=kind,
             file=file,
             uploaded_by=request.user,
+            **uploaded_file_audit_metadata(file),
         )
         index_evidence(
             dispute,
@@ -1076,6 +1147,10 @@ class DisputeViewSet(viewsets.ModelViewSet):
             digest.update(chunk)
         uploaded.seek(0)
         from ..models_dispute import ResolutionDocument
+        try:
+            document_metadata = _external_document_metadata(request.data, document_type)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
         document = ResolutionDocument.objects.create(
             dispute=dispute,
             document_type=document_type,
@@ -1083,10 +1158,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
             file=uploaded,
             generated_by=request.user,
             sha256=digest.hexdigest(),
-            metadata={
-                "uploaded_as_external_authority": document_type in {"external_decision", "mutual_instructions"},
-                "legal_effect_not_interpreted_by_platform": True,
-            },
+            metadata=document_metadata,
         )
         dispute.workflow_stage = Dispute.STAGE_EXTERNAL_RESOLUTION
         dispute.last_activity_at = timezone.now()
@@ -1596,6 +1668,10 @@ def public_dispute_external_document(request, dispute_id: int):
     for chunk in uploaded.chunks():
         digest.update(chunk)
     uploaded.seek(0)
+    try:
+        document_metadata = _external_document_metadata(request.data, document_type, uploaded_by_party="customer")
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
     document = ResolutionDocument.objects.create(
         dispute=dispute,
         document_type=document_type,
@@ -1603,11 +1679,7 @@ def public_dispute_external_document(request, dispute_id: int):
         file=uploaded,
         generated_by=None,
         sha256=digest.hexdigest(),
-        metadata={
-            "uploaded_as_external_authority": document_type in {"external_decision", "mutual_instructions"},
-            "uploaded_by_party": "customer",
-            "legal_effect_not_interpreted_by_platform": True,
-        },
+        metadata=document_metadata,
     )
     dispute.workflow_stage = Dispute.STAGE_EXTERNAL_RESOLUTION
     dispute.last_activity_at = timezone.now()
@@ -1681,6 +1753,7 @@ def public_dispute_message(request, dispute_id: int):
             kind=attachment_kind,
             file=file_obj,
             uploaded_by=None,
+            **uploaded_file_audit_metadata(file_obj),
         )
         index_evidence(
             dispute,

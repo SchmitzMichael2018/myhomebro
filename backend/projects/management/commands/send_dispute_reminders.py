@@ -31,6 +31,22 @@ def _homeowner_user(dispute):
     return get_user_model().objects.filter(email__iexact=email).first() if email else None
 
 
+def _status(result, *, attempted=True):
+    return "sent" if bool(result) else ("failed" if attempted else "no_recipient")
+
+
+def _record_delivery(log, *, email=None, sms=None, in_app=None, details=None):
+    if email is not None:
+        log.email_status = _status(email)
+    if sms is not None:
+        sms_ok = sms.get("ok") if isinstance(sms, dict) else sms
+        log.sms_status = _status(sms_ok, attempted=not (isinstance(sms, dict) and sms.get("reason_code") == "no_phone"))
+    if in_app is not None:
+        log.in_app_status = _status(in_app)
+    log.delivery_details = details or {}
+    log.save(update_fields=["email_status", "sms_status", "in_app_status", "delivery_details"])
+
+
 class Command(BaseCommand):
     help = "Send dispute reminders (24h before due, and overdue) + create in-app notifications."
 
@@ -66,7 +82,8 @@ class Command(BaseCommand):
             if not created:
                 skipped += 1
                 continue
-            notify_homeowner_qualification(d, event)
+            delivery = notify_homeowner_qualification(d, event)
+            _record_delivery(_log, email=delivery.get("email_sent"), sms=delivery.get("sms"), details={"event": event})
             sent += 1
 
         # 1) Response due soon (open disputes)
@@ -96,17 +113,18 @@ class Command(BaseCommand):
             email_admin_dispute_update(d, admin_email, "Response due within 24h")
 
             contractor_user = _contractor_user(d)
+            email_sent = None
             if missed_by == "contractor" and contractor_user:
-                email_contractor_status_update(d, contractor_user.email, "Response due within 24h", msg)
+                email_sent = email_contractor_status_update(d, contractor_user.email, "Response due within 24h", msg)
             elif missed_by == "homeowner":
-                email_homeowner_response_deadline(d, "Response due within 24 hours", msg)
+                email_sent = email_homeowner_response_deadline(d, "Response due within 24 hours", msg)
 
             # In-app (best-effort)
             recipient = contractor_user if missed_by == "contractor" else _homeowner_user(d)
-            if recipient:
-                try_create_inapp_notification(recipient, title, msg, kind="dispute")
+            in_app_sent = try_create_inapp_notification(recipient, title, msg, kind="dispute") if recipient else False
 
-            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
+            log = DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
+            _record_delivery(log, email=email_sent, in_app=in_app_sent, details={"expected_responder": missed_by})
             sent += 1
 
         # 2) Initial response deadline passed: the one-business-day grace period starts.
@@ -130,16 +148,17 @@ class Command(BaseCommand):
 
             email_admin_dispute_update(d, admin_email, "Response grace period started")
             contractor_user = _contractor_user(d)
+            email_sent = None
             if missed_by == "contractor" and contractor_user:
-                email_contractor_status_update(d, contractor_user.email, "Final response grace period", msg)
+                email_sent = email_contractor_status_update(d, contractor_user.email, "Final response grace period", msg)
             elif missed_by == "homeowner":
-                email_homeowner_response_deadline(d, "Final response grace period", msg)
+                email_sent = email_homeowner_response_deadline(d, "Final response grace period", msg)
 
             recipient = contractor_user if missed_by == "contractor" else _homeowner_user(d)
-            if recipient:
-                try_create_inapp_notification(recipient, title, msg, kind="dispute")
+            in_app_sent = try_create_inapp_notification(recipient, title, msg, kind="dispute") if recipient else False
 
-            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
+            log = DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
+            _record_delivery(log, email=email_sent, in_app=in_app_sent, details={"expected_responder": missed_by})
             sent += 1
 
         # 3) Final response deadline passed.
@@ -160,14 +179,15 @@ class Command(BaseCommand):
             msg = f"The four-business-day response period and one-business-day grace period ended without a response from {missed_by}."
             email_admin_dispute_update(d, admin_email, "Final response deadline missed")
             contractor_user = _contractor_user(d)
+            email_sent = None
             if missed_by == "contractor" and contractor_user:
-                email_contractor_status_update(d, contractor_user.email, "Final response deadline missed", msg)
+                email_sent = email_contractor_status_update(d, contractor_user.email, "Final response deadline missed", msg)
             elif missed_by == "homeowner":
-                email_homeowner_response_deadline(d, "Final response deadline missed", msg)
+                email_sent = email_homeowner_response_deadline(d, "Final response deadline missed", msg)
             recipient = contractor_user if missed_by == "contractor" else _homeowner_user(d)
-            if recipient:
-                try_create_inapp_notification(recipient, title, msg, kind="dispute")
-            DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
+            in_app_sent = try_create_inapp_notification(recipient, title, msg, kind="dispute") if recipient else False
+            log = DisputeReminderLog.objects.create(dispute=d, kind=kind, sent_to=missed_by)
+            _record_delivery(log, email=email_sent, in_app=in_app_sent, details={"expected_responder": missed_by, "automatic_finding": False})
             sent += 1
 
         # 4) Proposal decision due soon (homeowner decision)

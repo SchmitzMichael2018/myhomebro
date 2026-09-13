@@ -40,7 +40,12 @@ class Command(BaseCommand):
                     defaults={"dispute": dispute, "kind": "expiration_pending", "sent_to": "homeowner"},
                 )
                 if created:
-                    notify_homeowner_qualification(dispute, "expiration_pending")
+                    delivery = notify_homeowner_qualification(dispute, "expiration_pending")
+                    _log.email_status = "sent" if delivery.get("email_sent") else "failed"
+                    sms = delivery.get("sms") or {}
+                    _log.sms_status = "sent" if sms.get("ok") else ("no_recipient" if sms.get("reason_code") == "no_phone" else "failed")
+                    _log.delivery_details = {"event": "expiration_pending"}
+                    _log.save(update_fields=["email_status", "sms_status", "delivery_details"])
                     contractor = getattr(getattr(dispute.agreement, "contractor", None), "user", None)
                     if contractor and contractor.email:
                         email_contractor_status_update(
@@ -73,7 +78,12 @@ class Command(BaseCommand):
                     defaults={"dispute": dispute, "kind": "hold_expired", "sent_to": "homeowner"},
                 )
                 if created:
-                    notify_homeowner_qualification(dispute, "expired")
+                    delivery = notify_homeowner_qualification(dispute, "expired")
+                    _log.email_status = "sent" if delivery.get("email_sent") else "failed"
+                    sms = delivery.get("sms") or {}
+                    _log.sms_status = "sent" if sms.get("ok") else ("no_recipient" if sms.get("reason_code") == "no_phone" else "failed")
+                    _log.delivery_details = {"event": "expired", "money_moved": False}
+                    _log.save(update_fields=["email_status", "sms_status", "delivery_details"])
                     contractor = getattr(getattr(dispute.agreement, "contractor", None), "user", None)
                     if contractor and contractor.email:
                         email_contractor_status_update(
@@ -100,6 +110,17 @@ class Command(BaseCommand):
             d.deadline_missed_by = missed_by
             d.last_activity_at = now
             d.save(update_fields=["status", "deadline_missed_by", "last_activity_at", "updated_at"])
+            record_timeline_event(
+                d,
+                ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+                "Final response deadline missed",
+                description=(
+                    f"The {missed_by} did not respond within four business days plus the one-business-day grace period. "
+                    "No automatic finding was made. The case proceeds using the existing record, and any active source-specific payment hold remains unchanged."
+                ),
+                related_object=d,
+                metadata={"deadline_missed_by": missed_by, "automatic_finding": False, "payment_hold_changed": False},
+            )
             updated += 1
 
         # Overdue proposal decision deadline (homeowner decision)
@@ -107,6 +128,7 @@ class Command(BaseCommand):
             proposal_sent_at__isnull=False,
             proposal_grace_due_at__isnull=False,
             proposal_grace_due_at__lt=now,
+            deadline_missed_by="",
         ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "closed", "canceled", "cancelled"])
 
         for d in qs2.iterator():
@@ -114,6 +136,14 @@ class Command(BaseCommand):
             d.deadline_missed_by = "homeowner"
             d.last_activity_at = now
             d.save(update_fields=["status", "deadline_missed_by", "last_activity_at", "updated_at"])
+            record_timeline_event(
+                d,
+                ResolutionCaseTimelineEvent.EVENT_QUALIFICATION_UPDATED,
+                "Final proposal decision deadline missed",
+                description="The homeowner did not decide within four business days plus the one-business-day grace period. No allocation or finding occurred automatically; the case remains under review.",
+                related_object=d,
+                metadata={"deadline_missed_by": "homeowner", "automatic_finding": False, "money_moved": False},
+            )
             updated += 1
 
         self.stdout.write(self.style.SUCCESS(f"check_dispute_deadlines: updated {updated} dispute(s)."))

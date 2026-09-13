@@ -360,7 +360,7 @@ def assess_dispute_qualification(dispute: Dispute, *, actor=None, explanation: s
 
 
 @transaction.atomic
-def extend_qualification_deadline(dispute: Dispute, *, reason: str, actor=None, business_days: int = 1, now=None) -> Dispute:
+def extend_qualification_deadline(dispute: Dispute, *, reason: str, reason_type: str = "other_documented_reason", actor=None, business_days: int = 1, now=None) -> Dispute:
     reason = str(reason or "").strip()
     if not reason:
         raise ValueError("An extension reason is required.")
@@ -373,10 +373,11 @@ def extend_qualification_deadline(dispute: Dispute, *, reason: str, actor=None, 
     )
     dispute.qualification_extension_count += 1
     dispute.qualification_extension_reason = reason
+    dispute.qualification_extension_reason_type = str(reason_type or "other_documented_reason")
     dispute.qualification_decided_at = None
     dispute.save(update_fields=[
         "qualification_due_at", "qualification_grace_due_at", "qualification_extension_count",
-        "qualification_extension_reason", "qualification_decided_at", "updated_at",
+        "qualification_extension_reason", "qualification_extension_reason_type", "qualification_decided_at", "updated_at",
     ])
     try:
         hold = DisputePaymentHold.objects.select_for_update().get(dispute=dispute)
@@ -665,6 +666,16 @@ def existing_dispute_for_source(*, agreement, milestone=None, invoice=None, draw
         draw_request=draw_request,
         expense=expense,
     )
+
+
+def active_general_dispute_for_agreement(agreement):
+    """Return the current agreement-level case so new facts join it instead of duplicating it."""
+    if agreement is None:
+        return None
+    return _active_disputes().filter(
+        agreement=agreement,
+        source_type__in=[Dispute.SOURCE_AGREEMENT, Dispute.SOURCE_GENERAL_PROJECT_ISSUE],
+    ).order_by("-created_at", "-id").first()
 
 
 def invoice_has_active_dispute_hold(invoice) -> bool:

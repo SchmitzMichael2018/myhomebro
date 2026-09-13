@@ -992,6 +992,7 @@ function ResolutionEvidence({ dispute, attachments, attachmentUrl }) {
                     <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{String(evidence?.category || a?.kind || "other").replaceAll("_", " ")}</div>
                     <div className="truncate text-sm font-extrabold text-slate-950">{name}</div>
                     <div className="text-xs text-slate-500">{evidence?.uploaded_at ? new Date(evidence.uploaded_at).toLocaleString() : ""}</div>
+                    {evidence?.metadata?.sha256 ? <div className="mt-1 truncate font-mono text-[10px] text-slate-500" title={evidence.metadata.sha256}>SHA-256: {evidence.metadata.sha256}</div> : null}
                     {evidence?.ai_summary ? <div className="mt-1 text-xs text-slate-600">{evidence.ai_summary}</div> : null}
                   </div>
                   {url ? <a className="mhb-btn" href={url} target="_blank" rel="noreferrer" style={{ padding: "6px 10px", fontSize: 12 }}>Open</a> : null}
@@ -1131,6 +1132,7 @@ function WorkPausePanel({ dispute, onChanged }) {
   };
   return <WorkspaceSection title="Work Pause" eyebrow="Separate from payment hold">
     <p className="text-sm text-slate-600">A payment dispute does not automatically stop the project. Use this only when work or site access should pause for safety, mutual agreement, an external process, or termination review.</p>
+    <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700">A pause request does not itself terminate the agreement, return remaining funds, change responsibility for site security, or alter undisputed work. Record the affected work/area. Any termination, refund, or partial-work allocation requires separate written instructions or a signed resolution.</div>
     {pauses.length ? <div className="mt-3 grid gap-2">{pauses.map((pause) => <div key={pause.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"><div className="flex justify-between gap-2"><strong>{String(pause.reason_type).replaceAll("_", " ")}</strong><Badge tone={pause.status === "accepted" ? "warn" : "default"}>{pause.status}</Badge></div><div className="mt-1">{pause.explanation}</div>{pause.scope ? <div className="mt-1 text-slate-500">Scope: {pause.scope}</div> : null}</div>)}</div> : null}
     {!isClosed(dispute) ? <div className="mt-4 grid gap-2 md:grid-cols-3"><select value={reasonType} onChange={(event) => setReasonType(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2"><option value="voluntary">Voluntary pause</option><option value="safety">Safety or hostile conditions</option><option value="site_access">Site access unavailable</option><option value="external_process">External resolution process</option><option value="termination_review">Termination review</option></select><input value={scope} onChange={(event) => setScope(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Work or area to pause" /><input value={explanation} onChange={(event) => setExplanation(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Reason and relevant facts" /><button className="mhb-btn md:col-start-3" type="button" disabled={busy} onClick={submit}>{busy ? "Submitting…" : "Request Work Pause"}</button></div> : null}
   </WorkspaceSection>;
@@ -1141,6 +1143,7 @@ function QualificationAdminControls({ dispute, onChanged }) {
   const [reason, setReason] = useState("");
   const [reactivate, setReactivate] = useState(false);
   const [extensionReason, setExtensionReason] = useState("");
+  const [extensionReasonType, setExtensionReasonType] = useState("other_documented_reason");
   const [days, setDays] = useState(1);
   const [busy, setBusy] = useState(false);
   const override = async () => {
@@ -1153,7 +1156,7 @@ function QualificationAdminControls({ dispute, onChanged }) {
   const extend = async () => {
     if (!extensionReason.trim()) return toast.error("Explain why the extension is justified.");
     setBusy(true);
-    try { await api.post(`/projects/disputes/${dispute.id}/qualification-extension/`, { reason: extensionReason, business_days: Number(days) }); toast.success("Qualification deadline extended and audited."); setExtensionReason(""); onChanged?.(); }
+    try { await api.post(`/projects/disputes/${dispute.id}/qualification-extension/`, { reason_type: extensionReasonType, reason: extensionReason, business_days: Number(days) }); toast.success("Qualification deadline extended and audited."); setExtensionReason(""); onChanged?.(); }
     catch (error) { toast.error(error?.response?.data?.detail || "Could not extend the deadline."); }
     finally { setBusy(false); }
   };
@@ -1166,11 +1169,13 @@ function QualificationAdminControls({ dispute, onChanged }) {
       <button type="button" disabled={busy} onClick={override} className="mhb-btn primary">Record Override</button>
       <label className="flex items-center gap-2 text-xs font-semibold text-rose-800 lg:col-span-3"><input type="checkbox" checked={reactivate} onChange={(event) => setReactivate(event.target.checked)} /> Explicitly reactivate this source hold if it previously expired</label>
     </div>
-    <div className="mt-4 grid gap-2 border-t border-slate-300 pt-4 lg:grid-cols-[120px_1fr_auto]">
+    <div className="mt-4 grid gap-2 border-t border-slate-300 pt-4 lg:grid-cols-[120px_220px_1fr_auto]">
       <input type="number" min="1" max="10" value={days} onChange={(event) => setDays(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2" aria-label="Extension business days" />
+      <select value={extensionReasonType} onChange={(event) => setExtensionReasonType(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="medical_emergency">Medical emergency</option><option value="documented_technical_failure">Documented technical failure</option><option value="travel_or_unavailability">Unavoidable absence</option><option value="property_access_delay">Property access delay</option><option value="inspection_or_document_delay">Inspection/document delay</option><option value="safety_or_emergency_condition">Safety/emergency condition</option><option value="other_documented_reason">Other documented reason</option></select>
       <input value={extensionReason} onChange={(event) => setExtensionReason(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder="Reason for extension" />
       <button type="button" disabled={busy} onClick={extend} className="mhb-btn">Extend Business Days</button>
     </div>
+    <p className="mt-2 text-xs text-slate-600">Extensions require a specific, documented reason. Business days are Monday through Friday in the platform timezone; weekends are excluded and platform holidays currently count unless an extension is granted.</p>
   </div>;
 }
 
@@ -1208,18 +1213,22 @@ function ExternalDirectivePanel({ dispute, onChanged }) {
   const [file, setFile] = useState(null);
   const [documentType, setDocumentType] = useState("external_decision");
   const [title, setTitle] = useState("");
+  const [authority, setAuthority] = useState("");
+  const [attestations, setAttestations] = useState({ identifies_parties: false, identifies_dispute: false, is_final_document: false, has_explicit_financial_instructions: false });
   const [busy, setBusy] = useState(false);
   const upload = async () => {
     if (!file) return toast.error("Choose the written directive or inspection document.");
-    const form = new FormData(); form.append("file", file); form.append("document_type", documentType); form.append("title", title || file.name);
+    const authoritative = ["external_decision", "mutual_instructions"].includes(documentType);
+    if (authoritative && (!authority.trim() || Object.values(attestations).some((value) => !value))) return toast.error("Complete the authority and document-validation checklist.");
+    const form = new FormData(); form.append("file", file); form.append("document_type", documentType); form.append("title", title || file.name); form.append("issuing_authority", authority); Object.entries(attestations).forEach(([key, value]) => form.append(key, String(value)));
     setBusy(true);
     try { await api.post(`/projects/disputes/${dispute.id}/external-documents/`, form); toast.success("External document added to the case record."); setFile(null); setTitle(""); onChanged?.(); }
     catch (error) { toast.error(error?.response?.data?.detail || "Could not upload the external document."); }
     finally { setBusy(false); }
   };
   return <WorkspaceSection title="Outside Documentation" eyebrow="Party-arranged process">
-    <p className="text-sm text-slate-600">MyHomeBro does not select or supervise an outside inspector, mediator, arbitrator, court, or attorney. Upload their written directive here so the authorized payment instructions can be validated against this dispute.</p>
-    {!isClosed(dispute) ? <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2"><option value="external_decision">Outside decision or order</option><option value="mutual_instructions">Mutual written instructions</option><option value="inspection_report">Inspection report</option><option value="other">Other record</option></select><input value={title} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Document title" /><input type="file" accept="application/pdf,image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" /><button type="button" className="mhb-btn" disabled={busy || !file} onClick={upload}>{busy ? "Uploading…" : "Add to Case Record"}</button></div> : null}
+    <p className="text-sm text-slate-600">MyHomeBro does not select, supervise, or interpret the legal effect of an outside inspector, mediator, arbitrator, court, or attorney. Staff validates identity, finality, and exact payment instructions before a document can authorize any allocation.</p>
+    {!isClosed(dispute) ? <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2"><option value="external_decision">Outside decision or order</option><option value="mutual_instructions">Mutual written instructions</option><option value="inspection_report">Inspection report</option><option value="other">Other record</option></select><input value={title} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Document title" /><input value={authority} onChange={(event) => setAuthority(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" placeholder="Issuing authority or both-party source" /><input type="file" accept="application/pdf,image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" />{["identifies_parties", "identifies_dispute", "is_final_document", "has_explicit_financial_instructions"].map((key) => <label key={key} className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={attestations[key]} onChange={(event) => setAttestations((current) => ({ ...current, [key]: event.target.checked }))} />{({ identifies_parties: "Identifies both parties", identifies_dispute: "Identifies this dispute", is_final_document: "Final and complete", has_explicit_financial_instructions: "States exact financial instructions" })[key]}</label>)}<button type="button" className="mhb-btn xl:col-start-4" disabled={busy || !file} onClick={upload}>{busy ? "Uploading…" : "Add to Case Record"}</button></div> : null}
   </WorkspaceSection>;
 }
 
@@ -1337,6 +1346,9 @@ function DetailsModal({
           {Array.isArray(dispute.missing_information) && dispute.missing_information.length ? <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Information still needed</strong><ul className="mt-1 list-disc pl-5">{dispute.missing_information.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
           {dispute.urgent_reason ? <div className="mt-3 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm font-semibold text-rose-950">Urgent human review: {dispute.urgent_reason}</div> : null}
           <p className="mt-3 text-xs leading-5 text-blue-800">Qualification controls only whether the identified payment source remains held. It is not a finding of fault and does not decide separate warranty rights.</p>
+          <p className="mt-1 text-xs leading-5 text-blue-800">Business days are Monday through Friday in the platform timezone. Weekends are excluded; platform holidays currently count unless staff grants a documented extension.</p>
+          {String(dispute.payment_mode || "").toLowerCase() === "direct" ? <div className="mt-3 rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-800"><strong>Direct-pay record only:</strong> MyHomeBro can document the concern but cannot hold or release money already paid outside platform escrow. Refunds, chargebacks, or other remedies must be handled with the contractor, payment provider, insurer, or legal professional as appropriate.</div> : null}
+          {dispute.deadline_missed_by ? <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950"><strong>Final response period ended without a {String(dispute.deadline_missed_by).replaceAll("_", " ")} response.</strong> No automatic finding was made. The case proceeds from the existing record, and any active source-specific payment hold remains unchanged until a separate resolution or hold event.</div> : null}
         </div>
         <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm leading-6 text-violet-950">
           <strong>When professional help may be needed:</strong> MyHomeBro organizes the record and supports party-approved outcomes, but it does not decide legal fault or act as an attorney, inspector, insurer, mediator, arbitrator, or court. A true business or legal conflict may continue off platform. Either party can upload the resulting written decision or agreement; no money moves until the authority and exact instructions are validated.
@@ -1383,6 +1395,7 @@ function DetailsModal({
         <div className="mt-4 grid gap-4">
           <ResolutionOverview dispute={dispute} proposal={proposal} isAdmin={isAdmin} />
           <ResolutionTimeline dispute={dispute} proposal={proposal} attachments={attachments} />
+          {Array.isArray(dispute.reminder_logs) && dispute.reminder_logs.length ? <WorkspaceSection title="Notification Delivery" eyebrow="Audit trail"><div className="grid gap-2">{dispute.reminder_logs.map((row) => <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{String(row.kind || "notification").replaceAll("_", " ")}</strong><span>{row.sent_at ? new Date(row.sent_at).toLocaleString() : ""}</span></div><div className="mt-1 text-xs text-slate-600">To {row.sent_to || "party"} · Email: {row.email_status} · Text: {row.sms_status} · In-app: {row.in_app_status}</div></div>)}</div></WorkspaceSection> : null}
           <PartyStatements dispute={dispute} />
           <AgreementReview dispute={dispute} />
           <PaymentImpact dispute={dispute} />

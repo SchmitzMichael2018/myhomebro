@@ -93,8 +93,8 @@ from projects.services.customer_notification_preferences import (
 from projects.services.customer_accounts import ensure_customer_identity_for_user
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute, DisputeAttachment
-from projects.services.dispute_workflow import assess_dispute_qualification, existing_dispute_for_source, initialize_dispute_workflow
-from projects.services.resolution_workspace import index_evidence
+from projects.services.dispute_workflow import active_general_dispute_for_agreement, assess_dispute_qualification, existing_dispute_for_source, initialize_dispute_workflow
+from projects.services.resolution_workspace import index_evidence, uploaded_file_audit_metadata
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_maintenance import MaintenanceWorkOrder
@@ -10180,7 +10180,7 @@ class CustomerPortalAgreementDisputeView(APIView):
             if not milestone:
                 return Response({"detail": "Milestone not found for this agreement."}, status=status.HTTP_404_NOT_FOUND)
 
-        existing = existing_dispute_for_source(agreement=agreement, milestone=milestone) if milestone else None
+        existing = existing_dispute_for_source(agreement=agreement, milestone=milestone) if milestone else active_general_dispute_for_agreement(agreement)
         if existing:
             return Response(
                 {
@@ -10231,6 +10231,7 @@ class CustomerPortalAgreementDisputeView(APIView):
                 kind=kind,
                 file=uploaded,
                 uploaded_by=user,
+                **uploaded_file_audit_metadata(uploaded),
             )
             index_evidence(
                 dispute,
