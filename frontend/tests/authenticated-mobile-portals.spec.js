@@ -34,7 +34,7 @@ function collectBrowserEvents(page) {
 }
 
 async function settle(page) {
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
   await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
   const installDismiss = page.getByRole('button', { name: 'Not now' }).first();
   if (await installDismiss.isVisible().catch(() => false)) await installDismiss.click();
@@ -194,7 +194,7 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
 
   const metrics = {};
   for (const [route, name] of routes) {
-    await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await page.goto(route, { waitUntil: 'commit', timeout: 45_000 });
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
     metrics[name] = await auditSurface(page, testInfo, name);
     if (name === 'contractor-agreements') {

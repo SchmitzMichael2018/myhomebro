@@ -2608,7 +2608,7 @@ export default function ContractorPublicPresencePage() {
                       <option value="">Select a trade</option>
                       {['Electrical contractor', 'General contractor', 'Kitchen remodeling', 'Bathroom remodeling', 'HVAC', 'Plumbing', 'Roofing', 'Painting', 'Landscaping', profile.primary_trade].filter(Boolean).filter((item, index, arr) => arr.indexOf(item) === index).map((trade) => <option key={trade} value={trade}>{trade}</option>)}
                     </select>
-                    <button type="button" onClick={() => setCustomTradeOpen((open) => !open)} className="text-xs font-bold text-blue-700">+ Add custom trade</button>
+                    <button type="button" onClick={() => setCustomTradeOpen((open) => !open)} className="inline-flex min-h-6 items-center text-xs font-bold text-blue-700">+ Add custom trade</button>
                     {customTradeOpen ? <input value={profile.primary_trade || ''} onChange={(e) => setProfile((prev) => ({ ...prev, primary_trade: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Enter a custom trade" data-testid="business-primary-trade-custom" /> : null}
                   </label>
                   <label className="space-y-1">

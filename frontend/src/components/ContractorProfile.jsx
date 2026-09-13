@@ -152,7 +152,7 @@ function ProfileCompletenessBar({ meData }) {
             <button
               type="button"
               onClick={() => setShowDetails((v) => !v)}
-              className="text-xs text-slate-400 hover:text-slate-600"
+              className="inline-flex min-h-6 items-center text-xs text-slate-400 hover:text-slate-600"
             >
               {showDetails ? "Hide ↑" : "View details ↓"}
             </button>
@@ -207,7 +207,7 @@ function ProfileCompletenessBar({ meData }) {
                   <button
                     type="button"
                     onClick={() => navigate(route)}
-                    className={`shrink-0 text-xs font-semibold whitespace-nowrap ${
+                    className={`inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center whitespace-nowrap text-xs font-semibold ${
                       isHighlight
                         ? "text-amber-700 hover:text-amber-900"
                         : "text-slate-400 hover:text-slate-600"
