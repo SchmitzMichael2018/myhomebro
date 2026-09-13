@@ -85,6 +85,11 @@
 .fc .fc-daygrid-week-number {
   color: var(--fc-muted); font-size: .75rem; line-height: 1; padding: .25rem .375rem;
 }
+.fc .fc-col-header-cell-cushion {
+  display: inline-flex;
+  min-height: 1.5rem;
+  align-items: center;
+}
 
 /* Today highlight */
 .fc .fc-daygrid-day.fc-day-today,

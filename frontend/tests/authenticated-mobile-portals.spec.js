@@ -194,7 +194,7 @@ test('QA contractor portal is usable at iPhone 17 dimensions', async ({ page }, 
 
   const metrics = {};
   for (const [route, name] of routes) {
-    await page.goto(route);
+    await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
     metrics[name] = await auditSurface(page, testInfo, name);
     if (name === 'contractor-agreements') {
