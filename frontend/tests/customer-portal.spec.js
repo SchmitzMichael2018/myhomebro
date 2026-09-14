@@ -4778,10 +4778,10 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
-  await expect(page.getByTestId("property-command-summary")).toContainText("Rental Property");
+  await expect(page.getByTestId("property-command-summary")).not.toContainText("Rental Property");
   await expect(page.getByTestId("property-summary-rental-stats")).toContainText("Units");
   await page.getByTestId("property-profile-form-toggle").click();
-  await expect(page.getByTestId("property-profile-collapsed-summary")).toContainText("Rental Property");
+  await expect(page.getByTestId("property-profile-collapsed-summary")).not.toContainText("Rental Property");
   await expect(page.getByTestId("property-profile-collapsed-summary")).toContainText("Units");
   await expect(page.getByTestId("property-summary-add-unit")).toBeVisible();
   await page.getByTestId("property-profile-form-toggle").click();
@@ -5030,11 +5030,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-vendor-search").fill("Pipe");
   await page.getByTestId("property-work-order-vendor").selectOption("701");
   await page.getByTestId("property-work-order-continue-finalize").click();
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Pipe Pros");
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Preferred Vendor");
+  await page.getByTestId("property-work-order-scheduled").fill("2026-06-18T15:30");
+  await expect(page.getByTestId("property-work-order-send-saved-vendor")).toBeEnabled();
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
   expect(submittedWorkOrderEditPayload).toMatchObject({
     assignment_type: "vendor",
     assigned_vendor_id: 701,
+    scheduled_for: "2026-06-18T15:30",
   });
   await expect(page.getByTestId("property-work-order-901")).toContainText("Vendor");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Pipe Pros");
@@ -6598,7 +6603,7 @@ test("property manager portal presents a role-aware operations command center", 
         units: [{ id: 1 }, { id: 2 }],
         tenants: [{ id: 1, status: "active" }, { id: 2, status: "former" }],
         rental_tools_enabled: true,
-        is_rental_property: true,
+        is_rental_property: false,
       },
     ],
     tenant_maintenance_requests: [{ id: 71, title: "Kitchen leak", status: "submitted", status_label: "Submitted" }],
@@ -6632,7 +6637,25 @@ test("property manager portal presents a role-aware operations command center", 
   await expect(page.getByTestId("rental-operations-subscription-banner")).toContainText("Rental Operations: internal assignments");
   await page.getByTestId("customer-dashboard-tab-maintenance").click();
   await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
+  await expect(page.getByTestId("maintenance-refresh")).toBeVisible();
   await expect(page.getByTestId("customer-dashboard-context-tabs")).toContainText("Project Requests");
+  await page.getByTestId("property-work-order-add").click();
+  await page.getByTestId("property-work-order-title").fill("QA saved-vendor routing");
+  await page.getByTestId("property-work-order-description").fill("Verify a preferred vendor can receive a secure work-order invitation.");
+  await page.getByTestId("property-work-order-assignment-type").selectOption("vendor");
+  await page.getByTestId("property-work-order-continue-contractors").click();
+  await page.getByTestId("property-work-order-vendor").selectOption("1");
+  await page.getByTestId("property-work-order-continue-finalize").click();
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Preferred Plumbing");
+  await expect(page.getByTestId("property-work-order-send-saved-vendor")).toBeEnabled();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("property-summary-rental-badge")).toHaveCount(0);
+  await page.getByTestId("customer-property-add-button").click();
+  await expect(page.getByLabel("Property name", { exact: true })).toHaveValue("New Property");
+  await expect(page.getByLabel("Street", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("City", { exact: true })).toHaveValue("");
+  await expect(page.getByTestId("property-rental-toggle")).not.toBeChecked();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("property-management-command-center")).toBeVisible();

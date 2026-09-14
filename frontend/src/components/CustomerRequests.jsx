@@ -441,6 +441,19 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
   const selectedMarketplaceContractorIds = selectedRecipients.filter((recipient) => recipient.source === "myhomebro_contractor" && recipient.directory_entry_id).map((recipient) => Number(recipient.directory_entry_id));
   const selectedMarketplaceCount = selectedMarketplaceContractorIds.length;
   const selectedRecipientCount = selectedRecipients.length;
+  const selectedSavedVendor = activeVendors.find((vendor) => String(vendor.id) === String(form.assigned_vendor_id)) || null;
+  const savedVendorRecipient = selectedSavedVendor
+    ? {
+        source: "preferred_vendor",
+        source_label: "Preferred Vendor",
+        vendor_id: selectedSavedVendor.id,
+        name: selectedSavedVendor.name || "Vendor",
+        trade: selectedSavedVendor.trade_category || form.category,
+        email: selectedSavedVendor.email || "",
+        phone: selectedSavedVendor.phone || "",
+        location: selectedSavedVendor.address || selectedSavedVendor.city || "",
+      }
+    : null;
   const manualVendorReady = Boolean(manualVendor.name.trim() && (manualVendor.email.trim() || manualVendor.phone.trim()));
   const manualVendorRecipient = {
     source: "manual_vendor",
@@ -456,7 +469,13 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
     save_as_vendor: Boolean(manualVendor.save_as_vendor),
     location: activeProperty?.address || activeProperty?.display_name || "",
   };
-  const finalizeRecipients = form.assignment_type === "vendor" && vendorEntryMode === "manual" && manualVendor.name.trim() ? [manualVendorRecipient] : selectedRecipients;
+  const finalizeRecipients = form.assignment_type === "vendor"
+    ? vendorEntryMode === "manual" && manualVendor.name.trim()
+      ? [manualVendorRecipient]
+      : savedVendorRecipient
+        ? [savedVendorRecipient]
+        : []
+    : selectedRecipients;
   const recipientHasContactPath = (recipient) => recipient.source === "myhomebro_contractor" || Boolean((recipient.email || "").trim() || (recipient.phone || "").trim());
   const sendableRecipientCount = selectedRecipients.filter(recipientHasContactPath).length;
   const missingContactRecipients = selectedRecipients.filter((recipient) => !recipientHasContactPath(recipient));
@@ -714,7 +733,7 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
             directory_entry_ids: selectedMarketplaceContractorIds,
             recipients: selectedRecipientPayload(),
           });
-        } else if (options.sendToMarketplace && form.assignment_type === "vendor" && vendorEntryMode === "manual" && created?.work_order?.id) {
+        } else if (options.sendToMarketplace && form.assignment_type === "vendor" && created?.work_order?.id) {
           await onSendToMarketplace?.(form.property_id || activePropertyId, created.work_order.id, {
             recipients: selectedRecipientPayload(),
           });
@@ -726,7 +745,7 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
             directory_entry_ids: selectedMarketplaceContractorIds,
             recipients: selectedRecipientPayload(),
           });
-        } else if (options.sendToMarketplace && form.assignment_type === "vendor" && vendorEntryMode === "manual") {
+        } else if (options.sendToMarketplace && form.assignment_type === "vendor") {
           await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id, {
             recipients: selectedRecipientPayload(),
           });
@@ -754,7 +773,7 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
     try {
       await onSendToMarketplace?.(row.property_profile_id || activePropertyId, row.id);
     } catch (err) {
-      setError(err?.response?.data?.detail || "Could not send that work order to the marketplace.");
+      setError(err?.response?.data?.detail || "Could not send that work order.");
     }
   };
 
@@ -1540,8 +1559,8 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
                   {saving ? "Saving..." : "Send Work Order to Selected Recipients"}
                 </button>
               ) : null}
-              {workflowStep === 3 && form.assignment_type === "vendor" && vendorEntryMode === "manual" && (!editing.marketplace_status || editing.marketplace_status === "not_sent" || editing.marketplace_status === "withdrawn" || editing.marketplace_status === "declined") ? (
-                <button type="button" data-testid="property-work-order-send-manual-vendor" disabled={saving || !form.title.trim() || !form.description.trim() || !manualVendorReady || paidOperationLocked} onClick={(event) => submit(event, { sendToMarketplace: true })} className="rounded-xl border border-amber-300/50 bg-amber-300/15 px-4 py-2 text-sm font-extrabold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50">
+              {workflowStep === 3 && form.assignment_type === "vendor" && (!editing.marketplace_status || editing.marketplace_status === "not_sent" || editing.marketplace_status === "withdrawn" || editing.marketplace_status === "declined") ? (
+                <button type="button" data-testid={vendorEntryMode === "manual" ? "property-work-order-send-manual-vendor" : "property-work-order-send-saved-vendor"} disabled={saving || !form.title.trim() || !form.description.trim() || (vendorEntryMode === "manual" ? !manualVendorReady : !selectedSavedVendor) || paidOperationLocked} onClick={(event) => submit(event, { sendToMarketplace: true })} className="rounded-xl border border-amber-300/50 bg-amber-300/15 px-4 py-2 text-sm font-extrabold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50">
                   {saving ? "Saving..." : "Send Work Order to Vendor"}
                 </button>
               ) : null}
@@ -1782,7 +1801,7 @@ function comparisonHighlights(bids) {
   }, {});
 }
 
-export default function CustomerRequests({ requests = [], bids = [], tenantMaintenanceRequests = [], propertyWorkOrders = [], teamMembers = [], vendors = [], propertyProfile = {}, propertyProfiles = [], isPropertyManagementCompany = false, token = "", onCreateRequest, onUpdateRequest, onReviewTenantMaintenanceRequest, onCreatePropertyWorkOrder, onUpdatePropertyWorkOrder, onSendPropertyWorkOrderToMarketplace, onWithdrawPropertyWorkOrderMarketplace, onCreatePropertyWorkOrderAgreementDraft, onPreviewPropertyWorkOrderContractorMatches, onImportVendor, onCreateWorkOrderFromTenantRequest, onImproveRequest, onStartContractorSearch, onRouteRequestContractors, onCancelRequest, onDeleteRequest, onAcceptBid, acceptingBidId = "", creating = false, focusedRequestId = "", onFocusedRequestHandled, initialDraft = null, onInitialDraftHandled, rentalOperations = {}, onStartRentalOperationsCheckout, mode = "requests" }) {
+export default function CustomerRequests({ requests = [], bids = [], tenantMaintenanceRequests = [], propertyWorkOrders = [], teamMembers = [], vendors = [], propertyProfile = {}, propertyProfiles = [], isPropertyManagementCompany = false, token = "", onCreateRequest, onUpdateRequest, onReviewTenantMaintenanceRequest, onCreatePropertyWorkOrder, onUpdatePropertyWorkOrder, onSendPropertyWorkOrderToMarketplace, onWithdrawPropertyWorkOrderMarketplace, onCreatePropertyWorkOrderAgreementDraft, onPreviewPropertyWorkOrderContractorMatches, onImportVendor, onCreateWorkOrderFromTenantRequest, onImproveRequest, onStartContractorSearch, onRouteRequestContractors, onCancelRequest, onDeleteRequest, onAcceptBid, onRefresh, refreshing = false, acceptingBidId = "", creating = false, focusedRequestId = "", onFocusedRequestHandled, initialDraft = null, onInitialDraftHandled, rentalOperations = {}, onStartRentalOperationsCheckout, mode = "requests" }) {
   const [pendingAwardBid, setPendingAwardBid] = useState(null);
   const [activeComparisonKey, setActiveComparisonKey] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -2261,10 +2280,15 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
               <h2 className="mt-1 text-xl font-semibold text-white">Resident maintenance review</h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Review resident-submitted requests, inspect photos and attachments, update status, and create work orders when approved.</p>
             </div>
-            <Badge>
-              {visibleTenantMaintenanceRequests.length} request
-              {visibleTenantMaintenanceRequests.length === 1 ? "" : "s"}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge>
+                {visibleTenantMaintenanceRequests.length} request
+                {visibleTenantMaintenanceRequests.length === 1 ? "" : "s"}
+              </Badge>
+              <button type="button" data-testid="maintenance-refresh" disabled={refreshing} onClick={() => onRefresh?.()} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-sky-400/20 disabled:opacity-50">
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
           </div>
           <div className="mt-4 grid gap-3 text-sm text-slate-300 lg:grid-cols-4">
             <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">

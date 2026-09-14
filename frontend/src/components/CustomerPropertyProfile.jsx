@@ -599,7 +599,7 @@ function PropertySummarySection({ profile, profileOptions, rentalToolsEnabled = 
               Primary Property
             </span>
           ) : null}
-          {profile?.is_rental_property || rentalToolsEnabled ? (
+          {profile?.is_rental_property ? (
             <span
               data-testid="property-summary-rental-badge"
               className="ml-2 mt-3 inline-flex rounded-full border border-sky-300/45 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100"
@@ -2701,10 +2701,13 @@ export default function CustomerPropertyProfile({
 }) {
   const profileOptions = useMemo(() => (profiles.length ? profiles : profile?.id ? [profile] : []), [profiles, profile]);
   const [selectedProfileId, setSelectedProfileId] = useState(profile?.id || profileOptions[0]?.id || "");
-  const selectedProfile =
-    String(profile?.id || "") === String(selectedProfileId || "")
-      ? profile
-      : profileOptions.find((row) => String(row.id) === String(selectedProfileId)) || profile || {};
+  const selectedProfile = useMemo(
+    () =>
+      String(profile?.id || "") === String(selectedProfileId || "")
+        ? profile
+        : profileOptions.find((row) => String(row.id) === String(selectedProfileId)) || profile || {},
+    [profile, profileOptions, selectedProfileId]
+  );
   const [form, setForm] = useState(selectedProfile || {});
   const [addingProperty, setAddingProperty] = useState(false);
   const [systemModalMode, setSystemModalMode] = useState("");
@@ -2740,14 +2743,18 @@ export default function CustomerPropertyProfile({
   };
 
   useEffect(() => {
-    const nextId = profile?.id || profileOptions[0]?.id || "";
-    setSelectedProfileId(nextId);
-  }, [profile?.id, profileOptions]);
+    if (addingProperty) return;
+    setSelectedProfileId((currentId) => {
+      if (currentId && profileOptions.some((row) => String(row.id) === String(currentId))) return currentId;
+      return profile?.id || profileOptions[0]?.id || "";
+    });
+  }, [profile?.id, profileOptions, addingProperty]);
 
   useEffect(() => {
+    if (addingProperty) return;
     setForm(selectedProfile || {});
     setSystemForm((prev) => ({ ...(prev || emptySystemForm(selectedProfile?.id)), property_id: selectedProfile?.id || null }));
-  }, [selectedProfileId]);
+  }, [selectedProfileId, addingProperty, selectedProfile]);
 
   const update = (field, value) => setForm((prev) => ({ ...(prev || {}), [field]: value }));
   const closeSystemModal = () => {
@@ -3018,7 +3025,7 @@ export default function CustomerPropertyProfile({
                   <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-slate-200">
                     {propertyTypeLabel(form)}
                   </span>
-                  {form?.is_rental_property || rentalToolsEnabled ? (
+                  {form?.is_rental_property ? (
                     <span className="rounded-full border border-sky-300/40 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
                       Rental Property
                     </span>

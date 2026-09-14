@@ -3041,6 +3041,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [focusedRequestId, setFocusedRequestId] = useState("");
   const [requestDraft, setRequestDraft] = useState(null);
   const [startingRentalOperationsCheckout, setStartingRentalOperationsCheckout] = useState(false);
+  const [refreshingPortal, setRefreshingPortal] = useState(false);
 
   const customerName = portal?.customer?.name || "Customer";
   const notifications = normalizePortalNotifications(portal?.notifications || []);
@@ -3069,15 +3070,24 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     setActiveTab("requests");
   }, []);
 
-  const refreshPortal = async () => {
+  const refreshPortal = useCallback(async () => {
     if (!token) return;
+    setRefreshingPortal(true);
     try {
       const { data } = await api.get(`/projects/customer-portal/${encodeURIComponent(token)}/`);
       onPortalUpdate?.(data);
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Could not refresh your workspace.");
+    } finally {
+      setRefreshingPortal(false);
     }
-  };
+  }, [token, onPortalUpdate]);
+  const openWorkspaceTab = useCallback((tab) => {
+    setActiveTab(tab);
+    if (isPropertyManagementAccount && ["overview", "maintenance", "notifications"].includes(tab)) {
+      void refreshPortal();
+    }
+  }, [isPropertyManagementAccount, refreshPortal]);
 
   const startRentalOperationsCheckout = async () => {
     const endpoint = rentalOperations.checkout_endpoint || `/projects/customer-portal/${encodeURIComponent(token)}/rental-operations/checkout/`;
@@ -3692,10 +3702,10 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     try {
       const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/send-to-marketplace/`, payload);
       if (data?.portal) onPortalUpdate?.(data.portal);
-      toast.success("Work order sent to marketplace contractors.");
+      toast.success("Work order sent to selected recipients.");
       return data;
     } catch (error) {
-      toast.error(error?.response?.data?.detail || "Could not send that work order to the marketplace.");
+      toast.error(error?.response?.data?.detail || "Could not send that work order.");
       throw error;
     }
   };
@@ -3737,7 +3747,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") {
-      return <OverviewPanel portal={{ ...portal, notifications }} onOpenTab={setActiveTab} tenantMaintenanceTab={showMaintenanceTab ? "maintenance" : "requests"} isPropertyManagementAccount={isPropertyManagementAccount} markingId={markingNotificationId} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} />;
+      return <OverviewPanel portal={{ ...portal, notifications }} onOpenTab={openWorkspaceTab} tenantMaintenanceTab={showMaintenanceTab ? "maintenance" : "requests"} isPropertyManagementAccount={isPropertyManagementAccount} markingId={markingNotificationId} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} />;
     }
     if (activeTab === "projects") {
       return (
@@ -3790,6 +3800,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           isPropertyManagementCompany={showMaintenanceTab}
           rentalOperations={rentalOperations}
           onStartRentalOperationsCheckout={startRentalOperationsCheckout}
+          onRefresh={refreshPortal}
+          refreshing={refreshingPortal}
           mode={activeTab === "maintenance" ? "maintenance" : "requests"}
           creating={creatingRequest}
           acceptingBidId={acceptingBidId}
@@ -3977,7 +3989,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
     if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} agreements={portal?.agreements || []} token={token} onPortalUpdate={onPortalUpdate} targetReimbursementId={targetReimbursementId} targetAgreementId={targetAgreementId} />;
     if (activeTab === "notifications") {
-      return <NotificationsCenter notifications={notifications} unreadCount={unreadCount} preferences={portal?.notification_cleanup_preferences || {}} notificationPreferences={portal?.notification_preferences || {}} markingId={markingNotificationId} archivingId={archivingNotificationId} restoringId={restoringNotificationId} savingPreferences={savingNotificationPreferences} savingNotificationPreferences={savingDeliveryPreferences} preferenceError={notificationPreferenceError} notificationPreferenceError={deliveryPreferenceError} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} onArchive={archiveNotification} onRestore={restoreNotification} onSavePreferences={saveNotificationCleanupPreferences} onSaveNotificationPreferences={saveCustomerNotificationPreferences} onOpenTab={setActiveTab} onOpenReminder={openReminderDetail} />;
+      return <NotificationsCenter notifications={notifications} unreadCount={unreadCount} preferences={portal?.notification_cleanup_preferences || {}} notificationPreferences={portal?.notification_preferences || {}} markingId={markingNotificationId} archivingId={archivingNotificationId} restoringId={restoringNotificationId} savingPreferences={savingNotificationPreferences} savingNotificationPreferences={savingDeliveryPreferences} preferenceError={notificationPreferenceError} notificationPreferenceError={deliveryPreferenceError} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} onArchive={archiveNotification} onRestore={restoreNotification} onSavePreferences={saveNotificationCleanupPreferences} onSaveNotificationPreferences={saveCustomerNotificationPreferences} onOpenTab={openWorkspaceTab} onOpenReminder={openReminderDetail} />;
     }
     if (activeTab === "account") {
       return (
@@ -4010,7 +4022,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       );
     }
     return <CustomerDocuments documents={portal?.documents || []} propertyProfile={portal?.property_profile || {}} uploading={uploadingPropertyFile} uploadError={uploadError} onUpload={uploadPropertyFile} />;
-  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingDeliveryPreferences, deliveryPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingDeliveryPreferences, deliveryPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab, openWorkspaceTab, refreshPortal, refreshingPortal]);
 
   const mobilePrimaryAction = useMemo(() => {
     const actionNotification = notifications.find((notification) => isActionableNotification(notification) && notification.action_url);
@@ -4087,7 +4099,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
 
           <nav className="mt-6 flex gap-2 overflow-x-auto pb-1" aria-label={isPropertyManagementAccount ? "Property management workspace tabs" : "Customer workspace tabs"}>
             {visibleTabs.map(([key, label, Icon]) => (
-              <button key={key} type="button" data-testid={`customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${primaryTabFor(activeTab, isPropertyManagementAccount) === key ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"}`}>
+              <button key={key} type="button" data-testid={`customer-dashboard-tab-${key}`} onClick={() => openWorkspaceTab(key)} className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${primaryTabFor(activeTab, isPropertyManagementAccount) === key ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"}`}>
                 <Icon size={16} />
                 {label}
               </button>
@@ -4096,7 +4108,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           {secondaryTabs.length ? (
             <nav className="mt-3 flex gap-2 overflow-x-auto border-t border-slate-700/70 pt-3" aria-label={`${primaryTabFor(activeTab, isPropertyManagementAccount)} sections`} data-testid="customer-dashboard-context-tabs">
               {secondaryTabs.map(([key, label]) => (
-                <button key={key} type="button" data-testid={key === "projects" || key === "property" || (isPropertyManagementAccount && key === "maintenance") ? `customer-dashboard-section-${key}` : `customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeTab === key ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-300/40" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                <button key={key} type="button" data-testid={key === "projects" || key === "property" || (isPropertyManagementAccount && key === "maintenance") ? `customer-dashboard-section-${key}` : `customer-dashboard-tab-${key}`} onClick={() => openWorkspaceTab(key)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeTab === key ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-300/40" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                   {label}
                 </button>
               ))}
