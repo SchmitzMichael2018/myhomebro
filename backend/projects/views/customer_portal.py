@@ -856,7 +856,7 @@ def _tenant_maintenance_status_timeline(row: TenantMaintenanceRequest) -> list[d
                     "created_at": _safe_dt(work_order.closed_at),
                 }
             )
-    return timeline
+    return sorted(timeline, key=lambda item: item.get("created_at") or "")
 
 
 def _tenant_maintenance_public_status_payload(row: TenantMaintenanceRequest) -> dict:
@@ -8085,6 +8085,7 @@ class CustomerPortalPropertyWorkOrderView(APIView):
         previous_assignment = (row.assignment_type, row.assigned_staff_member_id, row.assigned_vendor_id, row.assigned_contractor_id)
         previous_staff_id = row.assigned_staff_member_id
         previous_scheduled_for = row.scheduled_for
+        previous_notes = (row.internal_notes, row.completion_notes)
         for field, value in field_values.items():
             if getattr(row, field) != value:
                 setattr(row, field, value)
@@ -8113,7 +8114,7 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             activity_messages.append((PropertyWorkOrderActivity.TYPE_ASSIGNED, self._assignment_activity_message(row)))
         if "scheduled_for" in field_values and previous_scheduled_for != row.scheduled_for:
             activity_messages.append((PropertyWorkOrderActivity.TYPE_SCHEDULED, "Work order schedule updated."))
-        if "internal_notes" in field_values or "completion_notes" in field_values:
+        if previous_notes != (row.internal_notes, row.completion_notes):
             activity_messages.append((PropertyWorkOrderActivity.TYPE_NOTE_ADDED, "Work order notes updated."))
         if update_fields:
             row.save(update_fields=[*update_fields, "updated_at"])

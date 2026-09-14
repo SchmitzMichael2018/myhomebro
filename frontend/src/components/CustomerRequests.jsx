@@ -282,6 +282,7 @@ function TenantMaintenanceReviewQueue({ requests = [], requestFilter = "active",
         {filteredRequests.length ? (
           filteredRequests.map((request) => {
             const busy = String(updatingId) === String(request.id);
+            const isArchived = ["closed", "rejected"].includes(String(request.status || ""));
             return (
               <article key={request.id} data-testid={`tenant-maintenance-request-${request.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -343,19 +344,28 @@ function TenantMaintenanceReviewQueue({ requests = [], requestFilter = "active",
                       }))
                     }
                     rows={2}
+                    readOnly={isArchived}
                     className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                   />
                 </label>
 
                 <div className="mt-3 flex flex-wrap gap-2" data-testid={`tenant-maintenance-actions-${request.id}`}>
-                  {TENANT_MAINTENANCE_STATUS_ACTIONS.map(([status, label]) => (
-                    <button key={status} type="button" data-testid={`tenant-maintenance-${status}-${request.id}`} disabled={busy} onClick={() => submitReview(request, status)} className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-300/60 hover:bg-amber-300/10 disabled:opacity-50">
-                      {busy ? "Saving..." : label}
-                    </button>
-                  ))}
-                  <button type="button" data-testid={`tenant-maintenance-save-notes-${request.id}`} disabled={busy} onClick={() => submitReview(request, request.status || "under_review")} className="rounded-lg bg-amber-300 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
-                    Save Notes
-                  </button>
+                  {isArchived ? (
+                    <span className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-400">
+                      This request is closed and retained as read-only property history.
+                    </span>
+                  ) : (
+                    <>
+                      {TENANT_MAINTENANCE_STATUS_ACTIONS.map(([status, label]) => (
+                        <button key={status} type="button" data-testid={`tenant-maintenance-${status}-${request.id}`} disabled={busy} onClick={() => submitReview(request, status)} className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-300/60 hover:bg-amber-300/10 disabled:opacity-50">
+                          {busy ? "Saving..." : label}
+                        </button>
+                      ))}
+                      <button type="button" data-testid={`tenant-maintenance-save-notes-${request.id}`} disabled={busy} onClick={() => submitReview(request, request.status || "under_review")} className="rounded-lg bg-amber-300 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
+                        Save Notes
+                      </button>
+                    </>
+                  )}
                   {request.can_create_work_order || (request.status === "approved" && !request.converted_to_work_order) ? (
                     <button type="button" data-testid={`tenant-maintenance-create-work-order-${request.id}`} disabled={busy || String(convertingId) === String(request.id)} onClick={() => onCreateWorkOrder?.(request)} className="rounded-lg border border-emerald-300/45 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-50">
                       {String(convertingId) === String(request.id) ? "Creating..." : "Create Work Order"}

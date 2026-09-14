@@ -25968,6 +25968,7 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIn(PropertyWorkOrderActivity.TYPE_COMPLETED, activity_types)
         self.assertIn(PropertyWorkOrderActivity.TYPE_CLOSED, activity_types)
         self.assertIn(PropertyWorkOrderActivity.TYPE_ATTACHMENT_ADDED, activity_types)
+        self.assertEqual(activity_types.count(PropertyWorkOrderActivity.TYPE_NOTE_ADDED), 2)
         self.assertEqual(complete_response.data["work_order"]["completion_attachment_count"], 1)
         self.assertTrue(complete_response.data["work_order"]["activities"])
         self.assertEqual(MaintenanceWorkOrder.objects.count(), 0)

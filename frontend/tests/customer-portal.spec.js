@@ -4945,6 +4945,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("tenant-maintenance-filter-archived").click();
   await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Old dishwasher leak");
   await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Closed");
+  await expect(page.getByTestId("tenant-maintenance-actions-802")).toContainText("read-only property history");
+  await expect(page.getByTestId("tenant-maintenance-under_review-802")).toHaveCount(0);
+  await expect(page.getByTestId("tenant-maintenance-notes-802")).toHaveAttribute("readonly", "");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toHaveCount(0);
   await page.getByTestId("tenant-maintenance-filter-all").click();
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
@@ -6606,7 +6609,10 @@ test("property manager portal presents a role-aware operations command center", 
         is_rental_property: false,
       },
     ],
-    tenant_maintenance_requests: [{ id: 71, title: "Kitchen leak", status: "submitted", status_label: "Submitted" }],
+    tenant_maintenance_requests: [
+      { id: 71, title: "Kitchen leak", status: "submitted", status_label: "Submitted" },
+      { id: 72, title: "Completed faucet repair", status: "closed", status_label: "Closed", manager_notes: "Repair verified." },
+    ],
     property_work_orders: [
       { id: 81, title: "Repair kitchen leak", status: "scheduled", assignment_type: "vendor" },
       { id: 82, title: "Replace smoke detector", status: "completed", assignment_type: "internal_staff" },
@@ -6639,6 +6645,11 @@ test("property manager portal presents a role-aware operations command center", 
   await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
   await expect(page.getByTestId("maintenance-refresh")).toBeVisible();
   await expect(page.getByTestId("customer-dashboard-context-tabs")).toContainText("Project Requests");
+  await page.getByTestId("tenant-maintenance-filter-archived").click();
+  await expect(page.getByTestId("tenant-maintenance-actions-72")).toContainText("read-only property history");
+  await expect(page.getByTestId("tenant-maintenance-under_review-72")).toHaveCount(0);
+  await expect(page.getByTestId("tenant-maintenance-notes-72")).toHaveAttribute("readonly", "");
+  await page.getByTestId("tenant-maintenance-filter-active").click();
   await page.getByTestId("property-work-order-add").click();
   await page.getByTestId("property-work-order-title").fill("QA saved-vendor routing");
   await page.getByTestId("property-work-order-description").fill("Verify a preferred vendor can receive a secure work-order invitation.");
