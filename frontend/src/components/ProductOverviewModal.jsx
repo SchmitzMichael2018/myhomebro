@@ -11,6 +11,10 @@ import {
   X,
 } from 'lucide-react';
 
+import contractorWalkthroughPoster from '../assets/product-overview/myhomebro-contractor-walkthrough-poster.jpg?url';
+import contractorWalkthroughSource from '../assets/product-overview/myhomebro-contractor-walkthrough.mp4?url';
+import contractorWalkthroughTranscript from '../assets/product-overview/myhomebro-contractor-walkthrough.txt?no-inline';
+import contractorWalkthroughCaptions from '../assets/product-overview/myhomebro-contractor-walkthrough.vtt?no-inline';
 import homeownerWalkthroughPoster from '../assets/product-overview/myhomebro-homeowner-walkthrough-poster.jpg?url';
 import homeownerWalkthroughSource from '../assets/product-overview/myhomebro-homeowner-walkthrough.mp4?url';
 import homeownerWalkthroughTranscript from '../assets/product-overview/myhomebro-homeowner-walkthrough.txt?no-inline';
@@ -244,12 +248,20 @@ const AUDIENCE_VIDEOS = {
     title: 'From customer request to paid project',
     description:
       'A contractor-focused tour of estimates, agreements, milestones, team coordination, and payments.',
-    duration: 'About 90 seconds',
-    source: import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_VIDEO_URL || '',
-    poster: import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_POSTER_URL || '',
-    captions: import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_CAPTIONS_URL || '',
+    duration: 'About 2 minutes',
+    source:
+      import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_VIDEO_URL ||
+      contractorWalkthroughSource,
+    poster:
+      import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_POSTER_URL ||
+      contractorWalkthroughPoster,
+    captions:
+      import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_CAPTIONS_URL ||
+      contractorWalkthroughCaptions,
     transcript:
-      import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_TRANSCRIPT_URL || '',
+      import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_TRANSCRIPT_URL ||
+      contractorWalkthroughTranscript,
+    aiNarration: true,
   },
   homeowner: {
     title: 'From project idea to organized closeout',

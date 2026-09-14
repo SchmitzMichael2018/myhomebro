@@ -204,14 +204,42 @@ test("audience transition respects reduced-motion preference", async ({ page }) 
   await expect(workflow).toHaveAttribute("data-audience", "homeowner");
 });
 
-test("Videos show the homeowner walkthrough, honest role-aware placeholders, and Quick Answers", async ({ page }) => {
+test("Videos show available walkthroughs, an honest remaining placeholder, and Quick Answers", async ({ page }) => {
   const modal = await openOverview(page);
 
   await modal.getByRole("tab", { name: "Videos" }).click();
   await expect(modal.getByTestId("product-video-library")).toBeVisible();
   await expect(modal.locator('[data-testid^="product-video-"]')).toHaveCount(4);
-  await expect(modal.getByText("Video in preparation")).toHaveCount(2);
-  await expect(modal.locator("video")).toHaveCount(1);
+  await expect(modal.getByText("Video in preparation")).toHaveCount(1);
+  await expect(modal.locator("video")).toHaveCount(2);
+
+  const contractorVideo = modal.getByTestId("product-video-contractor");
+  await expect(contractorVideo.locator("video")).toHaveAttribute(
+    "poster",
+    /myhomebro-contractor-walkthrough-poster\.jpg/
+  );
+  await expect(contractorVideo.locator("source")).toHaveAttribute(
+    "src",
+    /myhomebro-contractor-walkthrough\.mp4/
+  );
+  await expect
+    .poll(() => contractorVideo.locator("video").evaluate((media) => media.readyState))
+    .toBeGreaterThanOrEqual(1);
+  const contractorDuration = await contractorVideo
+    .locator("video")
+    .evaluate((media) => media.duration);
+  expect(contractorDuration).toBeGreaterThan(119);
+  expect(contractorDuration).toBeLessThan(120);
+  await expect(contractorVideo.locator('track[kind="captions"]')).toHaveAttribute(
+    "src",
+    /myhomebro-contractor-walkthrough\.vtt/
+  );
+  await expect(
+    contractorVideo.getByText("AI-generated narration", { exact: false })
+  ).toBeVisible();
+  await expect(
+    contractorVideo.getByRole("link", { name: "Read transcript" })
+  ).toHaveAttribute("href", /myhomebro-contractor-walkthrough\.txt/);
 
   await modal.getByRole("tab", { name: "Tour" }).click();
   await modal.getByTestId("product-audience-contractor").click();
