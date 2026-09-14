@@ -11,6 +11,10 @@ import {
   X,
 } from 'lucide-react';
 
+import homeownerWalkthroughPoster from '../assets/product-overview/myhomebro-homeowner-walkthrough-poster.jpg?url';
+import homeownerWalkthroughSource from '../assets/product-overview/myhomebro-homeowner-walkthrough.mp4?url';
+import homeownerWalkthroughTranscript from '../assets/product-overview/myhomebro-homeowner-walkthrough.txt?no-inline';
+import homeownerWalkthroughCaptions from '../assets/product-overview/myhomebro-homeowner-walkthrough.vtt?no-inline';
 import { PUBLIC_FAQ_ITEMS } from '../lib/publicFaq.js';
 import Modal from './Modal.jsx';
 
@@ -254,16 +258,16 @@ const AUDIENCE_VIDEOS = {
     duration: 'About 90 seconds',
     source:
       import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_VIDEO_URL ||
-      '/videos/product-overview/myhomebro-homeowner-walkthrough.mp4',
+      homeownerWalkthroughSource,
     poster:
       import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_POSTER_URL ||
-      '/videos/product-overview/myhomebro-homeowner-walkthrough-poster.jpg',
+      homeownerWalkthroughPoster,
     captions:
       import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_CAPTIONS_URL ||
-      '/videos/product-overview/myhomebro-homeowner-walkthrough.vtt',
+      homeownerWalkthroughCaptions,
     transcript:
       import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_TRANSCRIPT_URL ||
-      '/videos/product-overview/myhomebro-homeowner-walkthrough.txt',
+      homeownerWalkthroughTranscript,
     aiNarration: true,
   },
   property_manager: {

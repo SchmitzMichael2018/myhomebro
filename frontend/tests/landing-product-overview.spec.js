@@ -133,11 +133,11 @@ test("audience selectors personalize all five steps and persist across tabs", as
   await expect(homeownerVideo).toBeVisible();
   await expect(homeownerVideo.locator("video")).toHaveAttribute(
     "poster",
-    "/videos/product-overview/myhomebro-homeowner-walkthrough-poster.jpg"
+    /myhomebro-homeowner-walkthrough-poster\.jpg/
   );
   await expect(homeownerVideo.locator("source")).toHaveAttribute(
     "src",
-    "/videos/product-overview/myhomebro-homeowner-walkthrough.mp4"
+    /myhomebro-homeowner-walkthrough\.mp4/
   );
   await expect
     .poll(() => homeownerVideo.locator("video").evaluate((media) => media.readyState))
@@ -147,12 +147,12 @@ test("audience selectors personalize all five steps and persist across tabs", as
   expect(videoDuration).toBeLessThan(94);
   await expect(homeownerVideo.locator('track[kind="captions"]')).toHaveAttribute(
     "src",
-    "/videos/product-overview/myhomebro-homeowner-walkthrough.vtt"
+    /myhomebro-homeowner-walkthrough\.vtt/
   );
   await expect(homeownerVideo.getByText("AI-generated narration", { exact: false })).toBeVisible();
   await expect(homeownerVideo.getByRole("link", { name: "Read transcript" })).toHaveAttribute(
     "href",
-    "/videos/product-overview/myhomebro-homeowner-walkthrough.txt"
+    /myhomebro-homeowner-walkthrough\.txt/
   );
   await modal.getByRole("tab", { name: "Quick Answers" }).click();
   await expect(modal.getByRole("button", { name: "What happens after I submit a project request?" })).toBeVisible();
