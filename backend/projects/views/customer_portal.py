@@ -797,7 +797,13 @@ def _tenant_maintenance_status_timeline(row: TenantMaintenanceRequest) -> list[d
             "created_at": _safe_dt(row.created_at),
         }
     ]
-    if row.status != TenantMaintenanceRequest.STATUS_SUBMITTED:
+    has_closed_work_order = PropertyWorkOrder.objects.filter(
+        source_tenant_request=row,
+        status=PropertyWorkOrder.STATUS_CLOSED,
+    ).exists()
+    if row.status != TenantMaintenanceRequest.STATUS_SUBMITTED and not (
+        row.status == TenantMaintenanceRequest.STATUS_CLOSED and has_closed_work_order
+    ):
         timeline.append(
             {
                 "label": row.get_status_display(),
@@ -821,12 +827,15 @@ def _tenant_maintenance_status_timeline(row: TenantMaintenanceRequest) -> list[d
             }
         )
         if work_order.scheduled_for:
+            scheduled_activity = work_order.activities.filter(
+                activity_type=PropertyWorkOrderActivity.TYPE_SCHEDULED,
+            ).order_by("created_at", "id").first()
             timeline.append(
                 {
                     "label": "Visit scheduled",
                     "status": PropertyWorkOrder.STATUS_SCHEDULED,
                     "description": "The service visit has been scheduled.",
-                    "created_at": _safe_dt(work_order.scheduled_for),
+                    "created_at": _safe_dt(getattr(scheduled_activity, "created_at", None) or work_order.created_at),
                 }
             )
         if work_order.started_at:

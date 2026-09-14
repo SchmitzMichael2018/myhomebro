@@ -25957,6 +25957,12 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIsNotNone(row.closed_at)
         source_request.refresh_from_db()
         self.assertEqual(source_request.status, TenantMaintenanceRequest.STATUS_CLOSED)
+        resident_status_response = self.client.get(f"/api/projects/maintenance-request/status/{source_request.status_token}/")
+        self.assertEqual(resident_status_response.status_code, 200, resident_status_response.data)
+        self.assertEqual(
+            [item["label"] for item in resident_status_response.data["timeline"]],
+            ["Submitted", "Work order created", "Visit scheduled", "Work started", "Work completed", "Request closed"],
+        )
         self.assertEqual(PropertyWorkOrderAttachment.objects.count(), 1)
         attachment = PropertyWorkOrderAttachment.objects.get()
         self.assertEqual(attachment.original_filename, "completed.jpg")
