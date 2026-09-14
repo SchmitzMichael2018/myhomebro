@@ -417,6 +417,7 @@ export default function AdminDashboard() {
   const isAdmin = ["admin", "platform_admin"].includes(String(role).toLowerCase());
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [overview, setOverview] = useState(null);
   const [goals, setGoals] = useState(null);
@@ -440,7 +441,7 @@ export default function AdminDashboard() {
   const [agreementQuery, setAgreementQuery] = useState(qFromUrl || "");
 
   // Contractor query (optional persistence later)
-  const [contractorQuery, setContractorQuery] = useState("");
+  const [contractorQuery, setContractorQuery] = useState(view === "contractors" ? qFromUrl : "");
   const [contractorFilter, setContractorFilter] = useState("newest");
 
   // User tools
@@ -457,6 +458,22 @@ export default function AdminDashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, view]);
+
+  useEffect(() => {
+    if (view !== "contractors") return undefined;
+    setContractorQuery(getQ(location.search));
+    return undefined;
+  }, [location.search, view]);
+
+  useEffect(() => {
+    if (view !== "contractors") return undefined;
+    const timeout = window.setTimeout(() => {
+      if (getQ(location.search) !== contractorQuery) {
+        setParam(navigate, location, "q", contractorQuery);
+      }
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [contractorQuery, location, navigate, view]);
 
   function goTo(viewName) {
     setParams(navigate, location, { view: viewName }, false);
@@ -475,7 +492,7 @@ export default function AdminDashboard() {
   }
 
   async function loadCore() {
-    const [o, g, c, s, h, a, d] = await Promise.all([
+    const results = await Promise.allSettled([
       api.get(`${ADMIN_BASE}/overview/`),
       api.get(`${ADMIN_BASE}/goals/`),
       api.get(`${ADMIN_BASE}/contractors/`),
@@ -484,14 +501,17 @@ export default function AdminDashboard() {
       api.get(`${ADMIN_BASE}/agreements/`),
       api.get(`${ADMIN_BASE}/disputes/?status=all&include_archived=${showArchivedDisputes ? 1 : 0}`),
     ]);
-
-    setOverview(o.data);
-    setGoals(g.data);
-    setContractors(c.data?.results || []);
-    setSubcontractors(s.data?.results || []);
-    setHomeowners(h.data?.results || []);
-    setAgreements(a.data?.results || []);
-    setDisputes(d.data?.results || []);
+    const [o, g, c, s, h, a, d] = results;
+    if (o.status === "fulfilled") setOverview(o.value.data);
+    if (g.status === "fulfilled") setGoals(g.value.data);
+    if (c.status === "fulfilled") setContractors(c.value.data?.results || []);
+    if (s.status === "fulfilled") setSubcontractors(s.value.data?.results || []);
+    if (h.status === "fulfilled") setHomeowners(h.value.data?.results || []);
+    if (a.status === "fulfilled") setAgreements(a.value.data?.results || []);
+    if (d.status === "fulfilled") setDisputes(d.value.data?.results || []);
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed === results.length) throw results[0].reason;
+    if (failed) setLoadError(`${failed} overview section${failed === 1 ? "" : "s"} could not be refreshed. Available data is still shown.`);
   }
 
   async function loadGeo() {
@@ -513,14 +533,34 @@ export default function AdminDashboard() {
 
   async function loadAll() {
     setLoading(true);
+    setLoadError("");
     setPwResetMsg("");
     try {
-      await loadCore();
-      if (view === "geo") await loadGeo();
-      if (view === "fee_audit") await loadFeeAudit();
+      if (view === "overview") await loadCore();
+      else if (view === "goals") {
+        const res = await api.get(`${ADMIN_BASE}/goals/`);
+        setGoals(res.data);
+      } else if (view === "contractors") {
+        const [contractorRes, subcontractorRes] = await Promise.all([
+          api.get(`${ADMIN_BASE}/contractors/`),
+          api.get(`${ADMIN_BASE}/subcontractors/`),
+        ]);
+        setContractors(contractorRes.data?.results || []);
+        setSubcontractors(subcontractorRes.data?.results || []);
+      } else if (view === "homeowners") {
+        const res = await api.get(`${ADMIN_BASE}/homeowners/`);
+        setHomeowners(res.data?.results || []);
+      } else if (view === "agreements") {
+        const res = await api.get(`${ADMIN_BASE}/agreements/`);
+        setAgreements(res.data?.results || []);
+      } else if (view === "disputes") {
+        const res = await api.get(`${ADMIN_BASE}/disputes/?status=all&include_archived=${showArchivedDisputes ? 1 : 0}`);
+        setDisputes(res.data?.results || []);
+      } else if (view === "geo") await loadGeo();
+      else if (view === "fee_audit") await loadFeeAudit();
     } catch (err) {
       console.error("Admin load error:", err);
-      alert("Admin data failed to load. Check console + API permissions.");
+      setLoadError("This section could not be loaded. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -529,15 +569,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!whoamiLoading && isAdmin) loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whoamiLoading, isAdmin, showArchivedDisputes]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (loading) return;
-    if (view === "geo") loadGeo();
-    if (view === "fee_audit") loadFeeAudit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [whoamiLoading, isAdmin, showArchivedDisputes, view]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -845,12 +877,9 @@ export default function AdminDashboard() {
           { key: "marketplace", label: "Marketplace", action: () => navigate("/app/admin/marketplace") },
           { key: "contractors", label: "Contractors", action: () => goTo("contractors") },
           { key: "homeowners", label: "Customers", action: () => goTo("homeowners") },
+          { key: "agreements", label: "Agreements", action: () => goTo("agreements") },
           { key: "fee_audit", label: "Financial Operations", action: () => goTo("fee_audit") },
-          { key: "fee_waivers", label: "Fee Waivers", action: () => navigate("/app/admin/fee-waivers") },
           { key: "disputes", label: "Resolution", action: () => goToDisputes("active") },
-          { key: "warranty", label: "Warranty", action: () => navigate("/app/admin?view=overview#warranty-oversight") },
-          { key: "platform_health", label: "Platform Health", action: () => navigate("/app/admin?view=overview#platform-health") },
-          { key: "support", label: "Support", action: () => goTo("support") },
           { key: "settings", label: "Settings", action: () => navigate("/app/admin/templates") },
         ].map(({ key, label, action }) => (
           <button
@@ -869,6 +898,13 @@ export default function AdminDashboard() {
           </button>
         ))}
       </div>
+
+      {loadError ? (
+        <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300/35 bg-rose-400/10 px-4 py-3 text-sm font-bold text-rose-100">
+          <span>{loadError}</span>
+          <button type="button" onClick={loadAll} className="rounded-lg border border-rose-200/40 bg-white/10 px-3 py-1.5 text-xs font-black text-white hover:bg-white/15">Try again</button>
+        </div>
+      ) : null}
 
       {loading ? (
         <SoftCard className="mt-6 p-5">
@@ -921,7 +957,7 @@ export default function AdminDashboard() {
               </SectionCard>
 
               <SectionCard
-                title={opsCenter.label || "Marketplace Operations Center"}
+                title={opsCenter.label || "Platform Operations Center"}
                 subtitle="Unified admin attention queue for marketplace health, money risk, resolution pressure, warranty oversight, platform health, and human-approved next steps."
                 testId="admin-marketplace-operations-center"
                 tone={centerAttention.some((item) => item.severity === "high" || item.severity === "critical") ? "warn" : "neutral"}
@@ -1083,7 +1119,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-sky-50">
-                      {centerAudit.status || "foundation"}
+                        {centerAudit.status || "Current"}
                     </span>
                   </div>
                   {Array.isArray(centerAudit.items) && centerAudit.items.length ? (
@@ -2174,6 +2210,9 @@ export default function AdminDashboard() {
                   <button onClick={loadFeeAudit} className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-slate-50">
                     Refresh Ledger
                   </button>
+                  <button onClick={() => navigate("/app/admin/fee-waivers")} className="rounded-xl border border-sky-200/30 bg-sky-400/10 px-4 py-2 text-sm font-extrabold text-sky-50 hover:bg-sky-400/20">
+                    Manage Fee Waivers
+                  </button>
                 </div>
 
                 {feeAudit?.summary && (
@@ -2189,11 +2228,11 @@ export default function AdminDashboard() {
               <TableShell>
                 <table className="min-w-full text-xs">
                   <thead className="border-b border-black/10 bg-white/60">
-                    <tr><Th>Receipt</Th><Th>Created</Th><Th>Agreement</Th><Th>Invoice</Th><Th>Plan</Th><Th>Charged</Th><Th>Expected</Th><Th>Delta</Th><Th>Mismatch</Th></tr>
+                    <tr><Th>Receipt</Th><Th>Created</Th><Th>Agreement</Th><Th>Invoice</Th><Th>Plan</Th><Th>Promotion</Th><Th>Before waiver</Th><Th>Waived</Th><Th>Charged</Th><Th>Expected</Th><Th>Delta</Th><Th>Mismatch</Th></tr>
                   </thead>
                   <tbody>
                     {(feeAudit?.results || []).length === 0 ? (
-                      <tr><Td colSpan={9} className="text-slate-600">No ledger rows.</Td></tr>
+                      <tr><Td colSpan={12} className="text-slate-600">No ledger rows.</Td></tr>
                     ) : (
                       feeAudit.results.map((r) => (
                         <tr key={r.receipt_number} className="border-b border-black/5">
@@ -2202,6 +2241,9 @@ export default function AdminDashboard() {
                           <Td>{r.agreement_id || "—"}</Td>
                           <Td>{r.invoice_id || "—"}</Td>
                           <Td>{r.fee_plan_code || r.tier_name || "—"}</Td>
+                          <Td>{r.promotion_code ? `${r.promotion_code} (${Number(r.waiver_percent || 0)}%)` : "—"}</Td>
+                          <Td>{r.platform_fee_before_promotion_cents == null ? "—" : fmtMoney(r.platform_fee_before_promotion_cents / 100)}</Td>
+                          <Td>{r.waived_fee_cents ? fmtMoney(r.waived_fee_cents / 100) : "—"}</Td>
                           <Td>{fmtMoney((r.fee_charged_cents || 0) / 100)}</Td>
                           <Td>{fmtMoney((r.fee_expected_cents || 0) / 100)}</Td>
                           <Td className="font-extrabold">{fmtMoney((r.delta_cents || 0) / 100)}</Td>

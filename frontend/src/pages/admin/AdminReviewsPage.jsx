@@ -109,7 +109,7 @@ export default function AdminReviewsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.status, params.contractor, params.rating, params.date_from, params.date_to]);
+  }, [params.status, params.rating, params.date_from, params.date_to]);
 
   const openDetail = (row) => {
     setSelected(row);
@@ -125,6 +125,7 @@ export default function AdminReviewsPage() {
 
   const moderate = async (action) => {
     if (!selected) return;
+    if (["hide", "reject"].includes(action) && !window.confirm(`Are you sure you want to ${action} this review? This changes its public visibility.`)) return;
     setBusy(action);
     try {
       const { data } = await api.post(`/projects/admin/contractor-reviews/${selected.id}/moderate/`, {
@@ -197,11 +198,11 @@ export default function AdminReviewsPage() {
             </select>
             <input className={inputClass} type="date" value={filters.date_from} onChange={(event) => setFilters((prev) => ({ ...prev, date_from: event.target.value }))} data-testid="admin-reviews-date-from-filter" />
             <input className={inputClass} type="date" value={filters.date_to} onChange={(event) => setFilters((prev) => ({ ...prev, date_to: event.target.value }))} data-testid="admin-reviews-date-to-filter" />
-            <button type="button" className={buttonClass} onClick={load}>Refresh</button>
+            <button type="button" className={buttonClass} onClick={load}>Apply filters</button>
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/10" data-testid="admin-reviews-list">
+        <section className="overflow-x-auto rounded-3xl border border-white/10 bg-white/10" data-testid="admin-reviews-list">
           <table className="w-full min-w-[1100px] text-left text-sm">
             <thead className="bg-slate-950/50 text-xs uppercase tracking-wide text-sky-100/60">
               <tr>

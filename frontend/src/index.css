@@ -2467,8 +2467,28 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   border: 1px solid rgb(148 163 184 / 0.2);
   border-radius: 1rem;
   background: var(--mhb-surface-sidebar);
-  padding: 1rem 14rem 1rem 1.25rem;
+  padding: 1rem 1.25rem;
   box-shadow: var(--mhb-shadow-card);
+}
+
+.mhb-sidebar-subitem {
+  border-color: rgb(148 163 184 / 0.22);
+  background: rgb(255 255 255 / 0.07);
+  color: #cbd5e1;
+}
+
+.mhb-sidebar-subitem:hover,
+.mhb-sidebar-subitem:focus-visible {
+  border-color: rgb(125 211 252 / 0.45);
+  background: rgb(255 255 255 / 0.13);
+  color: #fff;
+}
+
+.mhb-sidebar-subitem.is-active {
+  border-color: rgb(147 197 253 / 0.55);
+  background: #1d4ed8;
+  color: #fff;
+  box-shadow: 0 8px 20px rgb(2 8 23 / 0.22);
 }
 
 .mhb-admin-header-action,
@@ -2616,12 +2636,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 .mhb-admin-contractors-table tbody tr:hover {
   background: var(--mhb-surface-interactive-hover) !important;
-}
-
-@media (max-width: 767px) {
-  .mhb-admin-header {
-    padding-right: 1.25rem;
-  }
 }
 
 /* Authenticated appearance integration. Operational dark remains the baseline;

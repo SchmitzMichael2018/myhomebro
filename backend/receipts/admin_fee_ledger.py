@@ -31,15 +31,24 @@ def _decimal_to_cents(amount: Decimal) -> int:
 
 def _expected_fee_cents_from_snapshot(r: Receipt) -> Optional[int]:
     """
-    Expected fee (after agreement cap) computed from the stored snapshot.
+    Expected fee (after agreement cap and promotion) computed from the stored snapshot.
 
     We store:
       - platform_fee_uncapped_cents (uncapped)
       - cap_remaining_cents (remaining cap BEFORE applying this payment)
-    Expected applied fee = min(uncapped, cap_remaining)
+    Expected applied fee = platform_fee_before_promotion - waived_fee when
+    promotion snapshots exist, otherwise min(uncapped, cap_remaining).
 
     Returns None if insufficient snapshot.
     """
+    before_promotion = getattr(r, "platform_fee_before_promotion_cents", None)
+    waived = getattr(r, "waived_fee_cents", None)
+    if before_promotion is not None:
+        try:
+            return max(int(before_promotion) - int(waived or 0), 0)
+        except (TypeError, ValueError):
+            return None
+
     uncapped = getattr(r, "platform_fee_uncapped_cents", None)
     remaining = getattr(r, "cap_remaining_cents", None)
 
@@ -175,6 +184,10 @@ def admin_fee_ledger(request):
             "fee_plan_code": getattr(r, "fee_plan_code", None),
             "tier_name": getattr(r, "tier_name", None),
             "fee_engine_version": getattr(r, "fee_engine_version", None),
+            "promotion_code": getattr(r, "promotion_code", None),
+            "waiver_percent": str(getattr(r, "waiver_percent", "") or ""),
+            "platform_fee_before_promotion_cents": getattr(r, "platform_fee_before_promotion_cents", None),
+            "waived_fee_cents": getattr(r, "waived_fee_cents", None),
 
             "platform_fee_uncapped_cents": getattr(r, "platform_fee_uncapped_cents", None),
             "cap_total_cents": getattr(r, "cap_total_cents", None),

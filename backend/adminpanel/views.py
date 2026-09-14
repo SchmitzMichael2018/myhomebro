@@ -27,6 +27,7 @@ from projects.services.agreements.contractor_signing import send_signature_reque
 from projects.services.contractor_reviews import contractor_performance_summary, moderate_review
 from projects.services.dispute_status import is_terminal_dispute_status
 from projects.services.recommendations import build_admin_recommendations
+from receipts.admin_fee_ledger import _expected_fee_cents_from_snapshot
 
 User = get_user_model()
 
@@ -2000,16 +2001,11 @@ class AdminFeeLedger(APIView):
         for r in qs[:limit]:
             charged = int(getattr(r, "platform_fee_cents", 0) or 0)
 
-            # Expected fee = min(uncapped, cap_remaining_before)
-            uncapped = getattr(r, "platform_fee_uncapped_cents", None)
-            remaining = getattr(r, "cap_remaining_cents", None)
-
-            if uncapped is None:
+            before_promotion = getattr(r, "platform_fee_before_promotion_cents", None)
+            waived = int(getattr(r, "waived_fee_cents", 0) or 0)
+            expected = _expected_fee_cents_from_snapshot(r)
+            if expected is None:
                 expected = charged
-            else:
-                uncapped = int(uncapped or 0)
-                remaining = int(remaining or 0) if remaining is not None else uncapped
-                expected = max(min(uncapped, max(remaining, 0)), 0)
 
             delta = charged - expected
             is_mismatch = abs(delta) > 1  # > $0.01
@@ -2040,6 +2036,10 @@ class AdminFeeLedger(APIView):
                 "fee_plan_code": getattr(r, "fee_plan_code", None),
                 "tier_name": getattr(r, "tier_name", None),
                 "fee_engine_version": getattr(r, "fee_engine_version", None),
+                "promotion_code": getattr(r, "promotion_code", None),
+                "waiver_percent": str(getattr(r, "waiver_percent", "") or ""),
+                "platform_fee_before_promotion_cents": before_promotion,
+                "waived_fee_cents": waived,
 
                 "cap_total_cents": getattr(r, "cap_total_cents", None),
                 "cap_already_collected_cents": getattr(r, "cap_already_collected_cents", None),

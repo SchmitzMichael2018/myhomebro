@@ -162,7 +162,7 @@ export default function AdminReimbursementsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.status, params.contractor, params.project]);
+  }, [params.status]);
 
   return (
     <div data-testid="admin-reimbursements-page" className="mhb-admin-page min-h-screen px-4 py-6 text-white sm:px-6 lg:px-8">
@@ -193,11 +193,11 @@ export default function AdminReimbursementsPage() {
             </select>
             <input className={inputClass} placeholder="Contractor" value={filters.contractor} onChange={(event) => setFilters((prev) => ({ ...prev, contractor: event.target.value }))} data-testid="admin-reimbursements-contractor-filter" />
             <input className={inputClass} placeholder="Project or agreement ID" value={filters.project} onChange={(event) => setFilters((prev) => ({ ...prev, project: event.target.value }))} data-testid="admin-reimbursements-project-filter" />
-            <button type="button" className={buttonClass} onClick={load}>Refresh</button>
+            <button type="button" className={buttonClass} onClick={load}>Apply filters</button>
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/10" data-testid="admin-reimbursements-list">
+        <section className="overflow-x-auto rounded-3xl border border-white/10 bg-white/10" data-testid="admin-reimbursements-list">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-slate-950/50 text-xs uppercase tracking-wide text-sky-100/60">
               <tr>

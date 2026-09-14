@@ -6,7 +6,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import api, { clearAuth, getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
+import { clearAuth, getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
 import { PwaInstallButton } from "./PwaInstallAccess.jsx";
 import toast from "react-hot-toast";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
@@ -131,17 +131,24 @@ function Item({ to, label, icon: Icon, emoji, title, hint, count = 0 }) {
 }
 
 function SubItem({ to, label }) {
+  const location = useLocation();
+  const [targetPath, targetSearch = ""] = to.split("?");
+  const targetParams = new URLSearchParams(targetSearch);
+  const currentParams = new URLSearchParams(location.search);
+  const targetView = targetParams.get("view");
+  const isCurrent = location.pathname === targetPath && (
+    targetView ? currentParams.get("view") === targetView : !currentParams.get("view")
+  );
+
   return (
     <NavLink
       to={to}
       data-close-sidebar="1"
-      className={({ isActive }) =>
+      aria-current={isCurrent ? "page" : undefined}
+      className={() =>
         [
-          "ml-6 flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-          "border",
-          isActive
-            ? "bg-slate-900 text-white border-black/10 shadow-sm"
-            : "bg-white/40 text-slate-700 border-black/10 hover:bg-white hover:text-slate-900",
+          "mhb-sidebar-subitem ml-6 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition",
+          isCurrent ? "is-active" : "",
         ].join(" ")
       }
     >
@@ -307,11 +314,9 @@ export default function Sidebar({ variant = "desktop" }) {
             <div className="mt-2 space-y-1">
               <SubItem to="/app/admin" label="Overview" />
               <SubItem to="/app/admin/marketplace" label="Marketplace" />
-              <SubItem to="/app/admin/marketplace/analytics" label="Marketplace Analytics" />
               <SubItem to="/app/admin/maintenance" label="Maintenance" />
               <SubItem to="/app/admin/reimbursements" label="Reimbursements" />
               <SubItem to="/app/admin/reviews" label="Review Moderation" />
-              <SubItem to="/app/admin/contractor-directory" label="Directory" />
               <SubItem to="/app/admin/templates" label="Templates" />
               <SubItem to="/app/admin?view=goals" label="Goals (CEO)" />
               <SubItem to="/app/admin?view=contractors" label="Contractors" />
@@ -320,6 +325,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <SubItem to="/app/admin/disputes" label="Resolution Cases" />
               <SubItem to="/app/admin?view=geo" label="Geo / Map" />
               <SubItem to="/app/admin?view=fee_audit" label="Fee Audit" />
+              <SubItem to="/app/admin/fee-waivers" label="Fee Waivers" />
               <SubItem to="/app/admin?view=support" label="User Tools" />
             </div>
           )}
@@ -369,7 +375,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/disputes`} label="Resolution" icon={MessageSquareWarning} />
       </>
     );
-  }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);
+  }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor, reviewQueueCount]);
 
   const accountNav = useMemo(() => {
     if (isAdmin) {
