@@ -48,6 +48,24 @@ def _draw_released_amount(agreement: Agreement) -> Decimal:
     return total
 
 
+def _customer_refunded_amount(agreement: Agreement) -> Decimal:
+    # Imported lazily because the refund workflow also reads this escrow ledger.
+    from projects.models_customer_refund_request import CustomerRefundTransaction
+
+    refunded_cents = sum(
+        int(amount_cents or 0)
+        for amount_cents in CustomerRefundTransaction.objects.filter(
+            refund_request__agreement=agreement,
+            status=CustomerRefundTransaction.Status.SUCCEEDED,
+            action__in=(
+                CustomerRefundTransaction.Action.REFUND,
+                CustomerRefundTransaction.Action.EXTERNAL_RECORD,
+            ),
+        ).values_list("amount_cents", flat=True)
+    )
+    return money(Decimal(refunded_cents) / Decimal("100"))
+
+
 def _reimbursement_amounts(agreement: Agreement, *, exclude_id: int | None = None) -> tuple[Decimal, Decimal]:
     qs = ExpenseRequest.objects.filter(
         agreement=agreement,
@@ -150,13 +168,14 @@ def escrow_ledger(agreement: Agreement, *, exclude_reimbursement_id: int | None 
     funded = money(getattr(agreement, "escrow_funded_amount", 0))
     invoice_released = _invoice_released_amount(agreement)
     draw_released = _draw_released_amount(agreement)
+    customer_refunded = _customer_refunded_amount(agreement)
     reimbursement_released, reimbursement_pending = _reimbursement_amounts(
         agreement,
         exclude_id=exclude_reimbursement_id,
     )
     released = invoice_released + draw_released + reimbursement_released
     holds = funded if agreement_has_escrow_hold(agreement) else Decimal("0.00")
-    available = funded - released - reimbursement_pending - holds
+    available = funded - released - reimbursement_pending - customer_refunded - holds
     if available < Decimal("0.00"):
         available = Decimal("0.00")
     return {
@@ -166,6 +185,7 @@ def escrow_ledger(agreement: Agreement, *, exclude_reimbursement_id: int | None 
         "reimbursement_released": reimbursement_released,
         "reimbursement_pending": reimbursement_pending,
         "released_total": released,
+        "customer_refunded": customer_refunded,
         "holds": holds,
         "available": available,
     }
