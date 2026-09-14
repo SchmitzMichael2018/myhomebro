@@ -143,8 +143,8 @@ test("audience selectors personalize all five steps and persist across tabs", as
     .poll(() => homeownerVideo.locator("video").evaluate((media) => media.readyState))
     .toBeGreaterThanOrEqual(1);
   const videoDuration = await homeownerVideo.locator("video").evaluate((media) => media.duration);
-  expect(videoDuration).toBeGreaterThan(93);
-  expect(videoDuration).toBeLessThan(94);
+  expect(videoDuration).toBeGreaterThan(98);
+  expect(videoDuration).toBeLessThan(99);
   await expect(homeownerVideo.locator('track[kind="captions"]')).toHaveAttribute(
     "src",
     /myhomebro-homeowner-walkthrough\.vtt/
@@ -228,8 +228,8 @@ test("Videos show all role walkthroughs and Quick Answers", async ({ page }) => 
   const contractorDuration = await contractorVideo
     .locator("video")
     .evaluate((media) => media.duration);
-  expect(contractorDuration).toBeGreaterThan(119);
-  expect(contractorDuration).toBeLessThan(120);
+  expect(contractorDuration).toBeGreaterThan(124);
+  expect(contractorDuration).toBeLessThan(125);
   await expect(contractorVideo.locator('track[kind="captions"]')).toHaveAttribute(
     "src",
     /myhomebro-contractor-walkthrough\.vtt/
@@ -256,8 +256,8 @@ test("Videos show all role walkthroughs and Quick Answers", async ({ page }) => 
   const propertyManagerDuration = await propertyManagerVideo
     .locator("video")
     .evaluate((media) => media.duration);
-  expect(propertyManagerDuration).toBeGreaterThan(127);
-  expect(propertyManagerDuration).toBeLessThan(129);
+  expect(propertyManagerDuration).toBeGreaterThan(132);
+  expect(propertyManagerDuration).toBeLessThan(134);
   await expect(propertyManagerVideo.locator('track[kind="captions"]')).toHaveAttribute(
     "src",
     /myhomebro-property-manager-walkthrough\.vtt/

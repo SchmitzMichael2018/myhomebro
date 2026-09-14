@@ -21,6 +21,7 @@ import imageio_ffmpeg
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = ROOT / "frontend" / "src" / "assets" / "product-overview"
+LOGO_PATH = ROOT / "frontend" / "src" / "assets" / "myhomebro_logo.png"
 DEFAULT_CAPTURE_DIR = ROOT / ".tmp" / "property-manager-walkthrough-captures"
 BUILD_DIR = ROOT / ".tmp" / "property-manager-walkthrough-build"
 
@@ -152,7 +153,7 @@ def wrap(draw: ImageDraw.ImageDraw, text: str, text_font: ImageFont.ImageFont, w
     return lines
 
 
-def render_title_slide(segment: dict, destination: Path) -> None:
+def render_title_slide(segment: dict, destination: Path, *, closing: bool = False) -> None:
     canvas = Image.new("RGB", (1920, 1080), "#020b1c")
     draw = ImageDraw.Draw(canvas)
     for radius, color in [(720, "#082c56"), (480, "#07366c"), (260, "#0b4b86")]:
@@ -161,6 +162,22 @@ def render_title_slide(segment: dict, destination: Path) -> None:
         layer_draw.ellipse((1360 - radius, 170 - radius, 1360 + radius, 170 + radius), fill=color)
         canvas = Image.alpha_composite(canvas.convert("RGBA"), layer.filter(ImageFilter.GaussianBlur(radius // 3)))
     draw = ImageDraw.Draw(canvas)
+    if closing:
+        logo = Image.open(LOGO_PATH).convert("RGB")
+        logo = ImageOps.fit(logo, (430, 430), method=Image.Resampling.LANCZOS)
+        shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+        shadow_draw.rounded_rectangle((745, 122, 1175, 552), radius=48, fill=(0, 0, 0, 150))
+        canvas = Image.alpha_composite(canvas.convert("RGBA"), shadow.filter(ImageFilter.GaussianBlur(24)))
+        canvas.paste(logo, (745, 112))
+        draw = ImageDraw.Draw(canvas)
+        draw.text((960, 620), "Plan clearly. Work confidently. Keep the record.", font=font(35, True), fill="#ffffff", anchor="mm")
+        draw.rounded_rectangle((715, 710, 1205, 792), radius=24, fill="#2563eb")
+        draw.text((960, 751), "myhomebro.com", font=font(30, True), fill="#ffffff", anchor="mm")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        canvas.convert("RGB").save(destination, quality=96)
+        return
+
     draw.text((180, 260), segment["eyebrow"], font=font(24, True), fill="#fcd34d")
     y = 325
     for line in wrap(draw, segment["title"], font(72, True), 1180):
@@ -256,7 +273,7 @@ def main() -> None:
                 raise FileNotFoundError(source)
             render_product_slide(segment, source, frame_path)
         else:
-            render_title_slide(segment, frame_path)
+            render_title_slide(segment, frame_path, closing=index == len(SEGMENTS) - 1)
         frame_paths.append(frame_path)
 
         audio_path = audio_dir / f"{index:02d}.wav"

@@ -271,7 +271,7 @@ const AUDIENCE_VIDEOS = {
     title: 'From project idea to organized closeout',
     description:
       'A homeowner-focused tour of requests, estimates, agreements, progress reviews, payments, and records.',
-    duration: 'About 90 seconds',
+    duration: 'About 1 minute 40 seconds',
     source:
       import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_VIDEO_URL ||
       homeownerWalkthroughSource,
