@@ -56,10 +56,38 @@ if [ -z "${VITE_PWA_ENABLED:-}" ]; then
   export VITE_PWA_ENABLED
 fi
 echo "PWA build enabled: $VITE_PWA_ENABLED"
-if [ -f package-lock.json ]; then
-  npm ci || npm install
-else
-  npm install
+
+install_frontend_dependencies() {
+  if [ -f package-lock.json ]; then
+    npm ci
+  else
+    npm install
+  fi
+}
+
+if ! install_frontend_dependencies || ! "$FRONTEND_DIR/node_modules/.bin/esbuild" --version >/dev/null 2>&1; then
+  echo "Frontend dependency install is unhealthy; rebuilding the scoped dependency directory and npm cache"
+  NODE_MODULES_DIR="$(readlink -f "$FRONTEND_DIR/node_modules")"
+  if [ "$NODE_MODULES_DIR" != "$FRONTEND_DIR/node_modules" ]; then
+    echo "Refusing to remove unexpected dependency path: $NODE_MODULES_DIR"
+    exit 1
+  fi
+  chmod -R u+rwX "$NODE_MODULES_DIR" 2>/dev/null || true
+  rm -rf -- "$NODE_MODULES_DIR"
+  npm cache clean --force
+  install_frontend_dependencies
+  "$FRONTEND_DIR/node_modules/.bin/esbuild" --version >/dev/null
+fi
+
+# A build artifact copied from another machine may retain read-only directory
+# permissions. Vite must be able to replace its previous output safely.
+if [ -d "$FRONTEND_DIR/dist" ]; then
+  DIST_DIR="$(readlink -f "$FRONTEND_DIR/dist")"
+  if [ "$DIST_DIR" != "$FRONTEND_DIR/dist" ]; then
+    echo "Refusing to modify unexpected build output path: $DIST_DIR"
+    exit 1
+  fi
+  chmod -R u+rwX "$DIST_DIR"
 fi
 npm run build
 
