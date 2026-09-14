@@ -256,8 +256,8 @@ test("Videos show all role walkthroughs and Quick Answers", async ({ page }) => 
   const propertyManagerDuration = await propertyManagerVideo
     .locator("video")
     .evaluate((media) => media.duration);
-  expect(propertyManagerDuration).toBeGreaterThan(107);
-  expect(propertyManagerDuration).toBeLessThan(109);
+  expect(propertyManagerDuration).toBeGreaterThan(127);
+  expect(propertyManagerDuration).toBeLessThan(129);
   await expect(propertyManagerVideo.locator('track[kind="captions"]')).toHaveAttribute(
     "src",
     /myhomebro-property-manager-walkthrough\.vtt/

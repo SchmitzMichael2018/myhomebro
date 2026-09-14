@@ -287,10 +287,10 @@ const AUDIENCE_VIDEOS = {
     aiNarration: true,
   },
   property_manager: {
-    title: 'From maintenance request to property record',
+    title: 'From resident request to permanent property record',
     description:
-      'A property-focused tour of maintenance intake, vendor coordination, approvals, completion, and history.',
-    duration: 'About 1 minute 45 seconds',
+      'A property-management tour of resident intake, manager review, vendor coordination, completion evidence, and lasting maintenance history.',
+    duration: 'About 2 minutes',
     source:
       import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_VIDEO_URL ||
       propertyManagerWalkthroughSource,

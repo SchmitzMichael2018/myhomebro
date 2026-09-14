@@ -1,23 +1,25 @@
-From maintenance request to property record
+From resident request to permanent property record
 
-A property-focused tour of maintenance intake, vendor coordination, approvals, completion, and history.
 
-Welcome to MyHomeBro property operations, where maintenance stays connected from resident request through lasting property history.
 
-Home brings open actions, active work, recent updates, maintenance recommendations, and the property portfolio into one clear view.
+A property-management tour of resident intake, manager review, vendor coordination, completion evidence, and lasting maintenance history.
 
-Resident requests arrive with the property, unit, urgency, description, contact details, access permission, and supporting photos or documents.
 
-The manager reviews the facts, requests more information when needed, records notes, and approves valid work before a work order is created.
 
-Approved requests become traceable work orders with a responsible vendor or contractor, schedule, priority, resident context, and activity history.
+Welcome to MyHomeBro property operations. Here is how a resident maintenance need moves from first report to a complete, permanent property record.
 
-Completion stays documented with assignment, schedule, notes, evidence, and a full activity timeline, instead of disappearing after the repair is finished.
+The Property Manager Portal opens with a portfolio command center. Open requests, active work orders, properties, units, tenants, and preferred vendors are visible together, so the next action is clear.
 
-The property record connects the building profile, units, tenants, open maintenance, systems, and responsible people for each location.
+Residents can report the affected property and unit, describe the problem, set urgency, grant access, and attach helpful evidence. Their secure status page shows what happened without exposing the manager workspace.
 
-Maintenance Center surfaces due-soon and needs-attention items, so planned upkeep can be addressed before it becomes urgent.
+The manager reviews the facts and supporting files, requests more information when needed, records notes, and approves valid work. Closed requests stay available as read-only history instead of disappearing.
 
-Timeline and history preserve maintenance, documents, warranties, photos, projects, and completed service for future planning and informed decisions.
+An approved request becomes a traceable work order. The manager can route it to a preferred vendor, a participating contractor, or internal staff while preserving the resident and source request context.
 
-MyHomeBro helps property teams review, coordinate, complete, and preserve every maintenance record in one connected workflow.
+Scheduling uses clear date and time controls. During closeout, the manager can review completion notes, photos, receipts, or documents before marking the work complete and closing the maintenance request.
+
+The property record connects each building with its units, tenants, vendors, systems, and completed maintenance. That history gives future decisions better context and keeps recurring issues easier to recognize.
+
+Updates keep important changes visible, while finished requests and work orders move out of the active queue. Property teams can confirm what is pending, who is responsible, and what has already been completed.
+
+MyHomeBro gives residents a clear reporting path and gives property teams an accountable workflow, from maintenance request to permanent property intelligence.
