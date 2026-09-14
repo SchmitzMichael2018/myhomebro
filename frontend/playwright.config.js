@@ -13,6 +13,7 @@ export const captureTestEnv = [
 
 export default defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.js',
   fullyParallel: false,
   retries: process.env.CI ? 2 : 1,
   reporter: [

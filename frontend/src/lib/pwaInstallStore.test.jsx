@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+vi.mock("virtual:pwa-register", () => ({
+  registerSW: vi.fn(() => vi.fn()),
+}));
+
 class InstallWindow extends EventTarget {
   constructor() {
     super();

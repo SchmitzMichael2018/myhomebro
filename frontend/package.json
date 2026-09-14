@@ -23,12 +23,12 @@
     "test:unit:watch": "vitest"
   },
   "dependencies": {
-    "@fullcalendar/core": "6.1.19",
-    "@fullcalendar/daygrid": "6.1.19",
-    "@fullcalendar/google-calendar": "^6.1.17",
-    "@fullcalendar/interaction": "6.1.19",
-    "@fullcalendar/react": "6.1.19",
-    "@fullcalendar/timegrid": "6.1.19",
+    "@fullcalendar/core": "6.1.21",
+    "@fullcalendar/daygrid": "6.1.21",
+    "@fullcalendar/google-calendar": "6.1.21",
+    "@fullcalendar/interaction": "6.1.21",
+    "@fullcalendar/react": "6.1.21",
+    "@fullcalendar/timegrid": "6.1.21",
     "@googlemaps/js-api-loader": "^2.0.2",
     "@stripe/connect-js": "3.4.6",
     "@stripe/react-stripe-js": "^3.10.0",
@@ -49,7 +49,7 @@
     "react-input-mask": "^2.0.4",
     "react-markdown": "^10.1.0",
     "react-modal": "^3.16.1",
-    "react-router-dom": "6.30.4",
+    "react-router-dom": "7.18.3",
     "react-spinners": "^0.17.0",
     "react-to-print": "^3.1.1",
     "recharts": "^2.15.4",
@@ -75,13 +75,13 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.28",
     "prettier": "^3.0.0",
     "tailwindcss": "^3.4.17",
-    "vite": "^6.3.1",
+    "vite": "^6.4.3",
     "vite-plugin-compression": "^0.5.1",
     "vite-plugin-pwa": "^1.0.0",
-    "vitest": "^2.1.9"
+    "vitest": "4.1.11"
   },
   "eslintConfig": {
     "extends": [

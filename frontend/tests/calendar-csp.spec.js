@@ -32,7 +32,7 @@ test('Calendar loads once and switches month, week, and day views without styles
   });
   await installCalendarRoutes(page, [{ id: 91, title: 'Kitchen rough-in', start: '2026-08-10', end: '2026-08-11', calendar_status: 'scheduled', agreement_number: 14, order: 2, homeowner_name: 'Test Homeowner', amount: '1200.00' }]);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/app/calendar', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/calendar?date=2026-08-10', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.fc-dayGridMonth-view')).toBeVisible();
   await expect(page.getByText('Kitchen rough-in')).toBeVisible();
   await page.screenshot({ path: 'test-results/calendar-month.png', fullPage: true });
@@ -52,11 +52,11 @@ test('Calendar empty state refreshes and remains horizontally safe on mobile', a
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/app/calendar', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/No calendar events yet/)).toBeVisible();
-  await expect(page.locator('.fc-dayGridMonth-view')).toBeVisible();
+  await expect(page.locator('.fc-timeGridDay-view')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/calendar-empty-390.png', fullPage: true });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.locator('.fc-dayGridMonth-view')).toBeVisible();
+  await expect(page.locator('.fc-timeGridDay-view')).toBeVisible();
   expect(errors.filter((message) => /cssRules/i.test(message))).toEqual([]);
 });
 

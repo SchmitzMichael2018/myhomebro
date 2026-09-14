@@ -246,7 +246,7 @@ test("Smart Capture dashboard action opens the shared launcher and its hint dism
     source: "dashboard_quick_action",
   });
 
-  await page.getByTestId("capture-launcher").getByRole("button", { name: "Close modal" }).click();
+  await page.getByTestId("capture-launcher").getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("button", { name: "Dismiss Smart Capture hint" }).click();
   await expect(page.getByTestId("dashboard-smart-capture-hint")).toHaveCount(0);
   await page.reload({ waitUntil: "domcontentloaded" });
