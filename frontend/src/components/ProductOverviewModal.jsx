@@ -19,6 +19,10 @@ import homeownerWalkthroughPoster from '../assets/product-overview/myhomebro-hom
 import homeownerWalkthroughSource from '../assets/product-overview/myhomebro-homeowner-walkthrough.mp4?url';
 import homeownerWalkthroughTranscript from '../assets/product-overview/myhomebro-homeowner-walkthrough.txt?no-inline';
 import homeownerWalkthroughCaptions from '../assets/product-overview/myhomebro-homeowner-walkthrough.vtt?no-inline';
+import propertyManagerWalkthroughPoster from '../assets/product-overview/myhomebro-property-manager-walkthrough-poster.jpg?url';
+import propertyManagerWalkthroughSource from '../assets/product-overview/myhomebro-property-manager-walkthrough.mp4?url';
+import propertyManagerWalkthroughTranscript from '../assets/product-overview/myhomebro-property-manager-walkthrough.txt?no-inline';
+import propertyManagerWalkthroughCaptions from '../assets/product-overview/myhomebro-property-manager-walkthrough.vtt?no-inline';
 import { PUBLIC_FAQ_ITEMS } from '../lib/publicFaq.js';
 import Modal from './Modal.jsx';
 
@@ -286,13 +290,20 @@ const AUDIENCE_VIDEOS = {
     title: 'From maintenance request to property record',
     description:
       'A property-focused tour of maintenance intake, vendor coordination, approvals, completion, and history.',
-    duration: 'About 75 seconds',
-    source: import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_VIDEO_URL || '',
-    poster: import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_POSTER_URL || '',
+    duration: 'About 1 minute 45 seconds',
+    source:
+      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_VIDEO_URL ||
+      propertyManagerWalkthroughSource,
+    poster:
+      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_POSTER_URL ||
+      propertyManagerWalkthroughPoster,
     captions:
-      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_CAPTIONS_URL || '',
+      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_CAPTIONS_URL ||
+      propertyManagerWalkthroughCaptions,
     transcript:
-      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_TRANSCRIPT_URL || '',
+      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_TRANSCRIPT_URL ||
+      propertyManagerWalkthroughTranscript,
+    aiNarration: true,
   },
 };
 

@@ -204,14 +204,14 @@ test("audience transition respects reduced-motion preference", async ({ page }) 
   await expect(workflow).toHaveAttribute("data-audience", "homeowner");
 });
 
-test("Videos show available walkthroughs, an honest remaining placeholder, and Quick Answers", async ({ page }) => {
+test("Videos show all role walkthroughs and Quick Answers", async ({ page }) => {
   const modal = await openOverview(page);
 
   await modal.getByRole("tab", { name: "Videos" }).click();
   await expect(modal.getByTestId("product-video-library")).toBeVisible();
   await expect(modal.locator('[data-testid^="product-video-"]')).toHaveCount(4);
-  await expect(modal.getByText("Video in preparation")).toHaveCount(1);
-  await expect(modal.locator("video")).toHaveCount(2);
+  await expect(modal.getByText("Video in preparation")).toHaveCount(0);
+  await expect(modal.locator("video")).toHaveCount(3);
 
   const contractorVideo = modal.getByTestId("product-video-contractor");
   await expect(contractorVideo.locator("video")).toHaveAttribute(
@@ -240,6 +240,34 @@ test("Videos show available walkthroughs, an honest remaining placeholder, and Q
   await expect(
     contractorVideo.getByRole("link", { name: "Read transcript" })
   ).toHaveAttribute("href", /myhomebro-contractor-walkthrough\.txt/);
+
+  const propertyManagerVideo = modal.getByTestId("product-video-property_manager");
+  await expect(propertyManagerVideo.locator("video")).toHaveAttribute(
+    "poster",
+    /myhomebro-property-manager-walkthrough-poster\.jpg/
+  );
+  await expect(propertyManagerVideo.locator("source")).toHaveAttribute(
+    "src",
+    /myhomebro-property-manager-walkthrough\.mp4/
+  );
+  await expect
+    .poll(() => propertyManagerVideo.locator("video").evaluate((media) => media.readyState))
+    .toBeGreaterThanOrEqual(1);
+  const propertyManagerDuration = await propertyManagerVideo
+    .locator("video")
+    .evaluate((media) => media.duration);
+  expect(propertyManagerDuration).toBeGreaterThan(107);
+  expect(propertyManagerDuration).toBeLessThan(109);
+  await expect(propertyManagerVideo.locator('track[kind="captions"]')).toHaveAttribute(
+    "src",
+    /myhomebro-property-manager-walkthrough\.vtt/
+  );
+  await expect(
+    propertyManagerVideo.getByText("AI-generated narration", { exact: false })
+  ).toBeVisible();
+  await expect(
+    propertyManagerVideo.getByRole("link", { name: "Read transcript" })
+  ).toHaveAttribute("href", /myhomebro-property-manager-walkthrough\.txt/);
 
   await modal.getByRole("tab", { name: "Tour" }).click();
   await modal.getByTestId("product-audience-contractor").click();
