@@ -1,6 +1,6 @@
 // src/components/LandingPage.jsx
-import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   BriefcaseBusiness,
   Building2,
@@ -17,103 +17,118 @@ import {
   UsersRound,
   Wrench,
   X,
-} from "lucide-react";
-import logo from "../assets/myhomebro_logo.png";
-import homeownerCardImage from "../assets/landing/homeowner-card.png";
-import contractorCardImage from "../assets/landing/contractor-card.png";
-import kitchenPreviewImage from "../assets/kitchen-preview.jpg";
-import { PwaAppIcon, PwaInstallButton } from "./PwaInstallAccess.jsx";
-import ProductOverviewModal from "./ProductOverviewModal.jsx";
-import { PWA_FLAGS } from "../lib/pwaFlags.js";
-import { buildPublicFaqJsonLd, PUBLIC_FAQ_CURATED_ITEMS } from "../lib/publicFaq.js";
+} from 'lucide-react';
+import logo from '../assets/myhomebro_logo.png';
+import homeownerCardImage from '../assets/landing/homeowner-card.png';
+import contractorCardImage from '../assets/landing/contractor-card.png';
+import kitchenPreviewImage from '../assets/kitchen-preview.jpg';
+import { PwaAppIcon, PwaInstallButton } from './PwaInstallAccess.jsx';
+import ProductOverviewModal from './ProductOverviewModal.jsx';
+import { PWA_FLAGS } from '../lib/pwaFlags.js';
+import {
+  buildPublicFaqJsonLd,
+  PUBLIC_FAQ_CURATED_ITEMS,
+} from '../lib/publicFaq.js';
 
 const platformRowOne = [
   {
     icon: Lock,
-    title: "Secure & Private",
-    text: "Your information stays organized and shared only with the contractors you choose.",
+    title: 'Secure & Private',
+    text: 'Your information stays organized and shared only with the contractors you choose.',
   },
   {
     icon: ShieldCheck,
-    title: "Escrow Protected",
-    text: "Use escrow-supported payments for clearer project funding and release milestones.",
+    title: 'Escrow Protected',
+    text: 'Use escrow-supported payments for clearer project funding and release milestones.',
   },
   {
     icon: Sparkles,
-    title: "AI-Powered",
-    text: "Turn rough project ideas into clearer scope, planning notes, and next steps.",
+    title: 'AI-Powered',
+    text: 'Turn rough project ideas into clearer scope, planning notes, and next steps.',
   },
   {
     icon: ClipboardList,
-    title: "Organized & Clear",
-    text: "Keep details, documents, decisions, and updates in one project workspace.",
+    title: 'Organized & Clear',
+    text: 'Keep details, documents, decisions, and updates in one project workspace.',
   },
 ];
 
 const platformRowTwo = [
   {
     icon: Building2,
-    title: "Residential & Commercial",
-    text: "Plan home projects, remodels, repairs, commercial buildouts, and maintenance work.",
+    title: 'Residential & Commercial',
+    text: 'Plan home projects, remodels, repairs, commercial buildouts, and maintenance work.',
   },
   {
     icon: BriefcaseBusiness,
-    title: "Contractor Platform Built-In",
-    text: "Contractors can manage customers, agreements, milestones, payments, and project records.",
+    title: 'Contractor Platform Built-In',
+    text: 'Contractors can manage customers, agreements, milestones, payments, and project records.',
   },
 ];
 
 const howItWorks = [
   {
     icon: Wrench,
-    title: "Share Your Project",
-    text: "Tell us what you want to get done in your own words.",
-    detail: "Add the location, timing, budget range, and photos you already have. You can start with a rough idea and refine it before anything is sent.",
+    title: 'Share Your Project',
+    text: 'Tell us what you want to get done in your own words.',
+    detail:
+      'Add the location, timing, budget range, and photos you already have. You can start with a rough idea and refine it before anything is sent.',
   },
   {
     icon: ClipboardList,
-    title: "We Organize It",
-    text: "We shape your details into a clearer contractor-ready project plan.",
-    detail: "Project Assistant can identify missing details and prepare a clearer description. You review and control the information that becomes part of your request.",
+    title: 'We Organize It',
+    text: 'We shape your details into a clearer contractor-ready project plan.',
+    detail:
+      'Project Assistant can identify missing details and prepare a clearer description. You review and control the information that becomes part of your request.',
   },
   {
     icon: UsersRound,
-    title: "We Find Local Pros",
-    text: "We help surface trusted local contractors that fit the work.",
-    detail: "Your project details help participating contractors understand the work. Availability and matching depend on the project, location, and contractor participation.",
+    title: 'We Find Local Pros',
+    text: 'We help surface participating local contractors that fit the work.',
+    detail:
+      'Your project details help participating contractors understand the work. Availability and matching depend on the project, location, and contractor participation.',
   },
   {
     icon: MessageSquareText,
-    title: "Compare & Connect",
-    text: "Review options, ask questions, and choose the right fit.",
-    detail: "Keep estimates, questions, contractor responses, and decisions connected so you can compare the scope—not just the bottom-line price.",
+    title: 'Compare & Connect',
+    text: 'Review options, ask questions, and choose the right fit.',
+    detail:
+      'Keep estimates, questions, contractor responses, and decisions connected so you can compare the scope—not just the bottom-line price.',
   },
   {
     icon: Home,
-    title: "Get It Done",
-    text: "Manage documents, updates, payments, and next steps in one place.",
-    detail: "Follow milestones, review work, communicate, and retain agreements, receipts, photos, warranties, and project history in your workspace.",
+    title: 'Get It Done',
+    text: 'Manage documents, updates, payments, and next steps in one place.',
+    detail:
+      'Follow milestones, review work, communicate, and retain agreements, receipts, photos, warranties, and project history in your workspace.',
   },
 ];
 
 const landingFaqItems = [
-  "what-is-myhomebro",
-  "who-is-it-for",
-  "payment-handling",
-  "contractor-guarantees",
-  "project-assistant",
-  "dispute-process",
-].map((id) => PUBLIC_FAQ_CURATED_ITEMS.find((item) => item.id === id)).filter(Boolean);
+  'what-is-myhomebro',
+  'after-project-request',
+  'homeowner-cost',
+  'payment-method-differences',
+  'homeowner-refund-request',
+  'dispute-process',
+]
+  .map((id) => PUBLIC_FAQ_CURATED_ITEMS.find((item) => item.id === id))
+  .filter(Boolean);
 
 const previewBullets = [
-  "AI-powered project planning",
-  "Matches you with trusted pros",
-  "Escrow-secured payments",
-  "Real-time updates & messaging",
-  "All your project docs in one place",
+  'AI-powered project planning',
+  'Matches you with trusted pros',
+  'Escrow-secured payments',
+  'Real-time updates & messaging',
+  'All your project docs in one place',
 ];
 
-const featureChips = ["AI Planning", "Escrow Security", "Match & Connect", "Project Management"];
+const featureChips = [
+  'AI Planning',
+  'Escrow Security',
+  'Match & Connect',
+  'Project Management',
+];
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -122,23 +137,26 @@ export default function LandingPage() {
 
   useEffect(() => {
     function onPointerDown(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) setLoginOpen(false);
+      if (menuRef.current && !menuRef.current.contains(event.target))
+        setLoginOpen(false);
     }
 
     function onKeyDown(event) {
-      if (event.key === "Escape") setLoginOpen(false);
+      if (event.key === 'Escape') setLoginOpen(false);
     }
 
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
     return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
     };
   }, []);
 
   const scrollTo = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document
+      .getElementById(id)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
@@ -150,11 +168,15 @@ export default function LandingPage() {
         <nav className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => navigate('/')}
             className="flex items-center gap-3 rounded-2xl text-left focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             aria-label="Go to MyHomeBro homepage"
           >
-            <img src={logo} alt="MyHomeBro" className="h-10 w-10 rounded-xl object-cover shadow-lg shadow-blue-950/30" />
+            <img
+              src={logo}
+              alt="MyHomeBro"
+              className="h-10 w-10 rounded-xl object-cover shadow-lg shadow-blue-950/30"
+            />
             <div className="text-2xl font-bold tracking-tight">
               MyHome<span className="text-amber-300">Bro</span>
             </div>
@@ -163,28 +185,28 @@ export default function LandingPage() {
           <div className="order-3 flex w-full flex-wrap items-center justify-center gap-1 text-sm font-semibold text-sky-50/82 lg:order-2 lg:w-auto">
             <button
               type="button"
-              onClick={() => scrollTo("how-it-works")}
+              onClick={() => scrollTo('how-it-works')}
               className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               How It Works
             </button>
             <button
               type="button"
-              onClick={() => scrollTo("for-homeowners")}
+              onClick={() => scrollTo('for-homeowners')}
               className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               For Customers
             </button>
             <button
               type="button"
-              onClick={() => scrollTo("for-contractors")}
+              onClick={() => scrollTo('for-contractors')}
               className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               For Contractors
             </button>
             <button
               type="button"
-              onClick={() => scrollTo("frequently-asked-questions")}
+              onClick={() => scrollTo('frequently-asked-questions')}
               className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               FAQs
@@ -200,7 +222,10 @@ export default function LandingPage() {
             </a>
           </div>
 
-          <div className="relative order-2 flex items-center gap-3 lg:order-3" ref={menuRef}>
+          <div
+            className="relative order-2 flex items-center gap-3 lg:order-3"
+            ref={menuRef}
+          >
             <PwaInstallButton
               compact
               hideWhenInstalled
@@ -217,23 +242,48 @@ export default function LandingPage() {
               className="inline-flex items-center gap-2 rounded-xl border border-white/18 bg-slate-950/45 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:border-sky-200/35 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
               Log In
-              <ChevronDown className={`h-4 w-4 transition ${loginOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+              <ChevronDown
+                className={`h-4 w-4 transition ${loginOpen ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              />
             </button>
-            {loginOpen ? <LoginDropdown navigate={navigate} onLoginSelect={() => setLoginOpen(false)} /> : null}
+            {loginOpen ? (
+              <LoginDropdown
+                navigate={navigate}
+                onLoginSelect={() => setLoginOpen(false)}
+              />
+            ) : null}
           </div>
         </nav>
       </header>
 
       <main>
-        <div data-testid="landing-maintenance-notice" className="border-b border-white/10 bg-blue-950/24">
+        <div
+          data-testid="landing-maintenance-notice"
+          className="border-b border-white/10 bg-blue-950/24"
+        >
           <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 py-2.5 text-center text-sm text-sky-50/78 sm:px-6 lg:px-8">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
-            <span className="font-semibold text-white">We&apos;re making improvements to serve you better.</span>
-            <span className="hidden text-xs text-sky-100/55 sm:inline">Some features may be temporarily unavailable while updates are in progress.</span>
-            <a href="/legal/terms-of-service/" className="hidden text-xs font-semibold text-sky-300 hover:text-sky-200 sm:inline">
+            <ShieldCheck
+              className="h-4 w-4 shrink-0 text-amber-300"
+              aria-hidden="true"
+            />
+            <span className="font-semibold text-white">
+              We&apos;re making improvements to serve you better.
+            </span>
+            <span className="hidden text-xs text-sky-100/55 sm:inline">
+              Some features may be temporarily unavailable while updates are in
+              progress.
+            </span>
+            <a
+              href="/legal/terms-of-service/"
+              className="hidden text-xs font-semibold text-sky-300 hover:text-sky-200 sm:inline"
+            >
               Learn more
             </a>
-            <X className="ml-auto hidden h-4 w-4 text-sky-100/65 md:block" aria-hidden="true" />
+            <X
+              className="ml-auto hidden h-4 w-4 text-sky-100/65 md:block"
+              aria-hidden="true"
+            />
           </div>
         </div>
 
@@ -251,25 +301,29 @@ export default function LandingPage() {
             <span className="block text-amber-300">All in one place.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-sky-50/78">
-            MyHomeBro connects homeowners with trusted contractors and gives them the tools, security, and clarity to get projects done right.
+            MyHomeBro connects homeowners with participating contractors and
+            gives them the tools, security, and clarity to get projects done
+            right.
           </p>
 
           <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
             <button
               type="button"
               data-testid="landing-start-project-intake-button"
-              onClick={() => navigate("/start-project")}
+              onClick={() => navigate('/start-project')}
               className="inline-flex min-w-60 items-center justify-center gap-3 rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
               <Sparkles className="h-5 w-5" aria-hidden="true" />
               <span className="text-left leading-tight">
                 <span className="block">Start a Project</span>
-                <span className="block text-xs font-medium text-white/78">It&apos;s free to get started</span>
+                <span className="block text-xs font-medium text-white/78">
+                  It&apos;s free to get started
+                </span>
               </span>
             </button>
             <button
               type="button"
-              onClick={() => scrollTo("how-it-works")}
+              onClick={() => scrollTo('how-it-works')}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/18 bg-white/[0.04] px-6 py-4 text-base font-semibold text-white transition hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               <Play className="h-5 w-5 text-amber-300" aria-hidden="true" />
@@ -278,7 +332,7 @@ export default function LandingPage() {
             <button
               type="button"
               data-testid="landing-create-free-account-button"
-              onClick={() => navigate("/create-account")}
+              onClick={() => navigate('/create-account')}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300/35 bg-amber-300/10 px-6 py-4 text-base font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
               Create Free Account
@@ -286,18 +340,26 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-sky-50/82">
-            {["No Obligation", "Always Free", "Secure & Private"].map((item) => (
-              <div key={item} className="inline-flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-amber-300" aria-hidden="true" />
-                {item}
-              </div>
-            ))}
+            {['No Obligation', 'Free to Get Started', 'Secure & Private'].map(
+              (item) => (
+                <div key={item} className="inline-flex items-center gap-2">
+                  <CheckCircle2
+                    className="h-4 w-4 text-amber-300"
+                    aria-hidden="true"
+                  />
+                  {item}
+                </div>
+              )
+            )}
           </div>
         </section>
 
         <PlatformStrip />
         {PWA_FLAGS.enabled ? (
-          <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6" data-testid="landing-pwa-install-section">
+          <section
+            className="mx-auto max-w-6xl px-4 py-10 sm:px-6"
+            data-testid="landing-pwa-install-section"
+          >
             <div className="grid gap-5 rounded-3xl border border-amber-300/30 bg-slate-950/35 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur sm:p-7 md:grid-cols-[1fr_auto] md:items-center">
               <div className="flex items-start gap-4">
                 <PwaAppIcon className="h-14 w-14 sm:h-16 sm:w-16" />
@@ -306,26 +368,38 @@ export default function LandingPage() {
                     <Download className="h-5 w-5" aria-hidden="true" />
                     Take MyHomeBro with you
                   </div>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Install MyHomeBro</h2>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    Install MyHomeBro
+                  </h2>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/72">
-                    Keep your projects, estimates, messages, agreements, photos, payments, and property records in one place. Install MyHomeBro for faster
-                    access from your phone or desktop.
+                    Keep your projects, estimates, messages, agreements, photos,
+                    payments, and property records in one place. Install
+                    MyHomeBro for faster access from your phone or desktop.
                   </p>
-                  <ul className="mt-3 grid gap-1.5 text-sm text-sky-50/82 sm:grid-cols-3" data-testid="landing-pwa-benefits">
+                  <ul
+                    className="mt-3 grid gap-1.5 text-sm text-sky-50/82 sm:grid-cols-3"
+                    data-testid="landing-pwa-benefits"
+                  >
                     {[
-                      "Track projects and milestones",
-                      "Access estimates, agreements, and payments",
-                      "Keep messages, photos, warranties, and records organized",
+                      'Track projects and milestones',
+                      'Access estimates, agreements, and payments',
+                      'Keep messages, photos, warranties, and records organized',
                     ].map((benefit) => (
                       <li key={benefit} className="flex items-start gap-1.5">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+                        <CheckCircle2
+                          className="mt-0.5 h-4 w-4 shrink-0 text-amber-300"
+                          aria-hidden="true"
+                        />
                         <span>{benefit}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
               </div>
-              <PwaInstallButton className="min-h-11 w-full md:w-auto" installLabel="Install App" />
+              <PwaInstallButton
+                className="min-h-11 w-full md:w-auto"
+                installLabel="Install App"
+              />
             </div>
           </section>
         ) : null}
@@ -338,10 +412,19 @@ export default function LandingPage() {
       <footer className="border-t border-white/10 px-4 py-6 text-center text-sm text-sky-50/62">
         <div>&copy; {new Date().getFullYear()} MyHomeBro</div>
         <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 font-semibold">
-          <a href="/legal/terms-of-service/" className="text-sky-300 hover:text-sky-200">
+          <a
+            href="/legal/terms-of-service/"
+            className="text-sky-300 hover:text-sky-200"
+          >
             Terms of Service
           </a>
-          <a href="/legal/privacy-policy/" className="text-sky-300 hover:text-sky-200">
+          <a href="/faq" className="text-sky-300 hover:text-sky-200">
+            FAQs
+          </a>
+          <a
+            href="/legal/privacy-policy/"
+            className="text-sky-300 hover:text-sky-200"
+          >
             Privacy Policy
           </a>
         </div>
@@ -352,11 +435,13 @@ export default function LandingPage() {
 
 function LoginDropdown({ navigate, onLoginSelect }) {
   const openLoginModal = (audience) => {
-    window.dispatchEvent(new CustomEvent("mhb:open-login", { detail: { audience } }));
+    window.dispatchEvent(
+      new CustomEvent('mhb:open-login', { detail: { audience } })
+    );
     onLoginSelect?.();
   };
   const openSignupModal = () => {
-    window.dispatchEvent(new CustomEvent("mhb:open-signup"));
+    window.dispatchEvent(new CustomEvent('mhb:open-signup'));
     onLoginSelect?.();
   };
 
@@ -368,22 +453,29 @@ function LoginDropdown({ navigate, onLoginSelect }) {
       className="mhb-landing-login-menu absolute right-0 top-[calc(100%+0.75rem)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.13] bg-[#071a3a] shadow-[0_20px_50px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.04)]"
     >
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Log In</div>
+        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">
+          Log In
+        </div>
         <X className="h-4 w-4 text-sky-100/55" aria-hidden="true" />
       </div>
 
       <div className="space-y-4 p-4">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Customers</div>
-          <div className="mt-2 text-sm font-semibold text-white">View Your Project</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
+            Customers
+          </div>
+          <div className="mt-2 text-sm font-semibold text-white">
+            View Your Project
+          </div>
           <p className="mt-1 text-sm leading-6 text-sky-50/72">
-            Check updates, progress, documents, maintenance, and messages from your contractor or property team.
+            Check updates, progress, documents, maintenance, and messages from
+            your contractor or property team.
           </p>
           <button
             type="button"
             onClick={() => {
               onLoginSelect?.();
-              navigate("/portal");
+              navigate('/portal');
             }}
             className="mt-3 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/22 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
           >
@@ -393,7 +485,7 @@ function LoginDropdown({ navigate, onLoginSelect }) {
             type="button"
             onClick={() => {
               onLoginSelect?.();
-              navigate("/create-account");
+              navigate('/create-account');
             }}
             className="mt-3 w-full rounded-xl border border-amber-300/35 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
           >
@@ -402,12 +494,18 @@ function LoginDropdown({ navigate, onLoginSelect }) {
         </div>
 
         <div className="border-t border-white/10 pt-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Contractors</div>
-          <div className="mt-2 text-sm font-semibold text-white">Contractor Log In</div>
-          <p className="mt-1 text-sm leading-6 text-sky-50/72">Manage projects, clients, documents, and payments.</p>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
+            Contractors
+          </div>
+          <div className="mt-2 text-sm font-semibold text-white">
+            Contractor Log In
+          </div>
+          <p className="mt-1 text-sm leading-6 text-sky-50/72">
+            Manage projects, clients, documents, and payments.
+          </p>
           <button
             type="button"
-            onClick={() => openLoginModal("contractor")}
+            onClick={() => openLoginModal('contractor')}
             className="mt-3 w-full rounded-xl border border-sky-300/35 bg-white/[0.04] px-4 py-2.5 text-sm font-semibold text-sky-50 transition hover:bg-sky-400/10 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
           >
             Contractor Log In
@@ -447,7 +545,7 @@ function PlatformStrip() {
 
 function InfoCard({ icon: Icon, title, text, wide = false }) {
   return (
-    <div className={`bg-slate-950/18 p-5 ${wide ? "md:p-6" : ""}`}>
+    <div className={`bg-slate-950/18 p-5 ${wide ? 'md:p-6' : ''}`}>
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-full border border-blue-300/35 bg-blue-500/10 text-blue-200 shadow-[0_0_24px_rgba(37,99,235,0.12)]">
           <Icon className="h-5 w-5" aria-hidden="true" />
@@ -463,10 +561,15 @@ function HowItWorks() {
   const [activeStep, setActiveStep] = useState(0);
 
   return (
-    <section id="how-it-works" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
+    <section
+      id="how-it-works"
+      className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8"
+    >
       <div className="flex items-center justify-center gap-6">
         <div className="hidden h-px w-24 bg-gradient-to-r from-transparent to-amber-300/70 sm:block" />
-        <h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">How It Works</h2>
+        <h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+          How It Works
+        </h2>
         <div className="hidden h-px w-24 bg-gradient-to-l from-transparent to-amber-300/70 sm:block" />
       </div>
       <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-6 text-sky-50/68 sm:text-base">
@@ -477,46 +580,61 @@ function HowItWorks() {
           const active = activeStep === index;
           const detailId = `how-it-works-detail-${index + 1}`;
           return (
-          <button
-            key={title}
-            type="button"
-            data-testid={`how-it-works-step-${index + 1}`}
-            aria-expanded={active}
-            aria-controls={detailId}
-            onClick={() => setActiveStep(index)}
-            onMouseEnter={() => setActiveStep(index)}
-            onFocus={() => setActiveStep(index)}
-            className={`relative min-h-11 rounded-2xl px-3 py-4 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
-              active ? "bg-slate-950/48 shadow-lg shadow-slate-950/15" : "hover:bg-white/[0.04]"
-            }`}
-          >
-            {index < howItWorks.length - 1 ? (
-              <div className="absolute left-[calc(50%+2.5rem)] top-8 hidden w-[calc(100%-5rem)] border-t border-dashed border-sky-200/28 md:block" />
-            ) : null}
-            <div className={`relative mx-auto flex h-16 w-16 items-center justify-center rounded-full border text-blue-250 shadow-[0_0_26px_rgba(37,99,235,0.12)] transition-colors ${
-              active ? "border-amber-300/60 bg-amber-300/10" : "border-blue-300/24 bg-blue-500/8"
-            }`}>
-              <div className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-amber-300 text-xs font-bold text-slate-950">
-                {index + 1}
-              </div>
-              <Icon className="h-7 w-7 text-blue-300" aria-hidden="true" />
-            </div>
-            <div className="mt-5 font-semibold text-white">{title}</div>
-            <p className="mx-auto mt-3 max-w-48 text-sm leading-6 text-sky-50/68">{text}</p>
-            <div
-              id={detailId}
-              data-testid={`how-it-works-detail-${index + 1}`}
-              hidden={!active}
-              className="mt-4 border-t border-white/10 pt-4 text-left text-sm leading-6 text-sky-50/82"
+            <button
+              key={title}
+              type="button"
+              data-testid={`how-it-works-step-${index + 1}`}
+              aria-expanded={active}
+              aria-controls={detailId}
+              onClick={() => setActiveStep(index)}
+              onMouseEnter={() => setActiveStep(index)}
+              onFocus={() => setActiveStep(index)}
+              className={`relative min-h-11 rounded-2xl px-3 py-4 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                active
+                  ? 'bg-slate-950/48 shadow-lg shadow-slate-950/15'
+                  : 'hover:bg-white/[0.04]'
+              }`}
             >
-              <span className="font-semibold text-amber-200">What happens: </span>
-              {detail}
-            </div>
-            <span className={`mx-auto mt-3 flex w-fit items-center gap-1 text-xs font-semibold ${active ? "text-amber-200" : "text-sky-300"}`}>
-              {active ? "Details shown" : "Learn more"}
-              <ChevronDown className={`h-4 w-4 transition-transform ${active ? "rotate-180" : ""}`} aria-hidden="true" />
-            </span>
-          </button>
+              {index < howItWorks.length - 1 ? (
+                <div className="absolute left-[calc(50%+2.5rem)] top-8 hidden w-[calc(100%-5rem)] border-t border-dashed border-sky-200/28 md:block" />
+              ) : null}
+              <div
+                className={`relative mx-auto flex h-16 w-16 items-center justify-center rounded-full border text-blue-250 shadow-[0_0_26px_rgba(37,99,235,0.12)] transition-colors ${
+                  active
+                    ? 'border-amber-300/60 bg-amber-300/10'
+                    : 'border-blue-300/24 bg-blue-500/8'
+                }`}
+              >
+                <div className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-amber-300 text-xs font-bold text-slate-950">
+                  {index + 1}
+                </div>
+                <Icon className="h-7 w-7 text-blue-300" aria-hidden="true" />
+              </div>
+              <div className="mt-5 font-semibold text-white">{title}</div>
+              <p className="mx-auto mt-3 max-w-48 text-sm leading-6 text-sky-50/68">
+                {text}
+              </p>
+              <div
+                id={detailId}
+                data-testid={`how-it-works-detail-${index + 1}`}
+                hidden={!active}
+                className="mt-4 border-t border-white/10 pt-4 text-left text-sm leading-6 text-sky-50/82"
+              >
+                <span className="font-semibold text-amber-200">
+                  What happens:{' '}
+                </span>
+                {detail}
+              </div>
+              <span
+                className={`mx-auto mt-3 flex w-fit items-center gap-1 text-xs font-semibold ${active ? 'text-amber-200' : 'text-sky-300'}`}
+              >
+                {active ? 'Details shown' : 'Learn more'}
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${active ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                />
+              </span>
+            </button>
           );
         })}
       </div>
@@ -525,17 +643,25 @@ function HowItWorks() {
 }
 
 function LandingFaq({ onViewAll, viewAllRef }) {
-  const [openItemId, setOpenItemId] = useState(landingFaqItems[0]?.id || "");
+  const [openItemId, setOpenItemId] = useState(landingFaqItems[0]?.id || '');
 
   return (
-    <section id="frequently-asked-questions" className="mx-auto max-w-6xl scroll-mt-28 px-4 pb-16 sm:px-6 lg:px-8">
+    <section
+      id="frequently-asked-questions"
+      className="mx-auto max-w-6xl scroll-mt-28 px-4 pb-16 sm:px-6 lg:px-8"
+    >
       <div className="rounded-[2rem] border border-white/12 bg-slate-950/30 p-5 shadow-2xl shadow-slate-950/18 backdrop-blur sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Helpful answers</div>
-            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Frequently Asked Questions</h2>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
+              Helpful answers
+            </div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              Frequently Asked Questions
+            </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-sky-50/70 sm:text-base">
-              Start with the essentials about projects, contractors, payments, AI assistance, and disputes.
+              Start with the essentials about projects, contractors, payments,
+              AI assistance, and disputes.
             </p>
           </div>
           <button
@@ -549,25 +675,42 @@ function LandingFaq({ onViewAll, viewAllRef }) {
           </button>
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-2" data-testid="landing-faq-preview">
+        <div
+          className="mt-6 grid gap-3 md:grid-cols-2"
+          data-testid="landing-faq-preview"
+        >
           {landingFaqItems.map((item) => {
             const open = openItemId === item.id;
             const panelId = `landing-faq-answer-${item.id}`;
             return (
-              <article key={item.id} className={`self-start overflow-hidden rounded-xl border ${open ? "border-sky-500/60 bg-slate-900" : "border-white/10 bg-slate-950/35"}`}>
+              <article
+                key={item.id}
+                className={`self-start overflow-hidden rounded-xl border ${open ? 'border-sky-500/60 bg-slate-900' : 'border-white/10 bg-slate-950/35'}`}
+              >
                 <h3>
                   <button
                     type="button"
                     aria-expanded={open}
                     aria-controls={panelId}
-                    onClick={() => setOpenItemId((current) => current === item.id ? "" : item.id)}
+                    onClick={() =>
+                      setOpenItemId((current) =>
+                        current === item.id ? '' : item.id
+                      )
+                    }
                     className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold leading-5 text-white hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:text-[15px]"
                   >
                     <span>{item.question}</span>
-                    <ChevronDown className={`h-5 w-5 shrink-0 text-sky-300 transition-transform ${open ? "rotate-180 text-amber-300" : ""}`} aria-hidden="true" />
+                    <ChevronDown
+                      className={`h-5 w-5 shrink-0 text-sky-300 transition-transform ${open ? 'rotate-180 text-amber-300' : ''}`}
+                      aria-hidden="true"
+                    />
                   </button>
                 </h3>
-                <div id={panelId} hidden={!open} className="border-t border-white/10 px-4 py-3 text-sm leading-6 text-sky-50/72">
+                <div
+                  id={panelId}
+                  hidden={!open}
+                  className="border-t border-white/10 px-4 py-3 text-sm leading-6 text-sky-50/72"
+                >
                   {item.answer}
                 </div>
               </article>
@@ -581,48 +724,48 @@ function LandingFaq({ onViewAll, viewAllRef }) {
 
 function VideoPreview({ navigate }) {
   const [overviewOpen, setOverviewOpen] = useState(false);
-  const [overviewInitialTab, setOverviewInitialTab] = useState("overview");
+  const [overviewInitialTab, setOverviewInitialTab] = useState('overview');
   const triggerRef = useRef(null);
   const faqTriggerRef = useRef(null);
   const openerRef = useRef(null);
-  const jsonLd = JSON.stringify(buildPublicFaqJsonLd(PUBLIC_FAQ_CURATED_ITEMS)).replace(/</g, "\\u003c");
+  const jsonLd = JSON.stringify(
+    buildPublicFaqJsonLd(PUBLIC_FAQ_CURATED_ITEMS)
+  ).replace(/</g, '\\u003c');
 
   const openOverview = () => {
-    setOverviewInitialTab("overview");
+    setOverviewInitialTab('overview');
     openerRef.current = triggerRef.current;
     setOverviewOpen(true);
     window.dispatchEvent(
-      new CustomEvent("mhb:analytics", {
+      new CustomEvent('mhb:analytics', {
         detail: {
-          event: "product_overview_opened",
-          category: "product_overview",
+          event: 'product_overview_opened',
+          category: 'product_overview',
         },
       })
     );
   };
 
   const openQuestions = () => {
-    setOverviewInitialTab("questions");
-    openerRef.current = faqTriggerRef.current;
-    setOverviewOpen(true);
+    navigate('/faq');
     window.dispatchEvent(
-      new CustomEvent("mhb:analytics", {
+      new CustomEvent('mhb:analytics', {
         detail: {
-          event: "product_overview_opened",
-          category: "product_overview",
-          source: "landing_faq",
+          event: 'public_faq_opened',
+          category: 'faq',
+          source: 'landing_faq',
         },
       })
     );
   };
 
-  const closeOverview = (method = "dismiss") => {
+  const closeOverview = (method = 'dismiss') => {
     setOverviewOpen(false);
     window.dispatchEvent(
-      new CustomEvent("mhb:analytics", {
+      new CustomEvent('mhb:analytics', {
         detail: {
-          event: "product_overview_closed",
-          category: "product_overview",
+          event: 'product_overview_closed',
+          category: 'product_overview',
           method,
         },
       })
@@ -632,76 +775,110 @@ function VideoPreview({ navigate }) {
 
   return (
     <>
-    <section className="mx-auto px-4 pb-16 sm:px-6 lg:px-8">
-      <script type="application/ld+json" data-testid="landing-faq-jsonld" dangerouslySetInnerHTML={{ __html: jsonLd }} />
-      <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
-        <div className="p-3 sm:p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Platform Preview</div>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">See MyHomeBro in Action</h2>
-          <p className="mt-4 max-w-xl text-base leading-7 text-sky-50/72">A quick look at how we help you plan, connect, and manage with confidence.</p>
-          <div className="mt-7 space-y-3">
-            {previewBullets.map((item) => (
-              <div key={item} className="flex items-center gap-3 text-sm text-sky-50/78">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div data-testid="landing-video-preview" className="relative">
-          <div className="grid gap-3">
-            <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22 lg:min-h-[22rem]">
-              <img
-                src={kitchenPreviewImage}
-                alt="Warm kitchen remodel planning preview"
-                data-testid="landing-video-preview-asset"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-              <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.18),rgba(2,6,23,0.02)_44%,rgba(2,6,23,0.30)),radial-gradient(circle_at_50%_50%,transparent_38%,rgba(2,6,23,0.34)_100%)]" />
-              <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/16 blur-2xl" />
-              <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-slate-950/90 via-slate-950/28 to-transparent" />
-              <div className="absolute inset-0 z-10 flex items-center justify-center">
-                <button
-                  ref={triggerRef}
-                  type="button"
-                  aria-label="See MyHomeBro in action"
-                  data-testid="product-overview-trigger"
-                  onClick={openOverview}
-                  className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-blue-700 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+      <section className="mx-auto px-4 pb-16 sm:px-6 lg:px-8">
+        <script
+          type="application/ld+json"
+          data-testid="landing-faq-jsonld"
+          dangerouslySetInnerHTML={{ __html: jsonLd }}
+        />
+        <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
+          <div className="p-3 sm:p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
+              Platform Preview
+            </div>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              See MyHomeBro in Action
+            </h2>
+            <p className="mt-4 max-w-xl text-base leading-7 text-sky-50/72">
+              A quick look at how we help you plan, connect, and manage with
+              confidence.
+            </p>
+            <div className="mt-7 space-y-3">
+              {previewBullets.map((item) => (
+                <div
+                  key={item}
+                  className="flex items-center gap-3 text-sm text-sky-50/78"
                 >
-                  <Play className="ml-1 h-9 w-9" aria-hidden="true" />
-                </button>
-              </div>
-              <div className="pointer-events-none absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-slate-950/62 p-4 backdrop-blur">
-                <div className="text-sm font-semibold text-white">Kitchen remodel workspace</div>
-                <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                  {[
-                    ["Scope", "AI organized"],
-                    ["Escrow", "Funding ready"],
-                    ["Docs", "All in one place"],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-xl bg-white/[0.06] px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-[0.14em] text-sky-100/52">{label}</div>
-                      <div className="mt-1 text-xs font-semibold text-sky-50">{value}</div>
-                    </div>
-                  ))}
+                  <CheckCircle2
+                    className="h-4 w-4 shrink-0 text-amber-300"
+                    aria-hidden="true"
+                  />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div data-testid="landing-video-preview" className="relative">
+            <div className="grid gap-3">
+              <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22 lg:min-h-[22rem]">
+                <img
+                  src={kitchenPreviewImage}
+                  alt="Warm kitchen remodel planning preview"
+                  data-testid="landing-video-preview-asset"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.18),rgba(2,6,23,0.02)_44%,rgba(2,6,23,0.30)),radial-gradient(circle_at_50%_50%,transparent_38%,rgba(2,6,23,0.34)_100%)]" />
+                <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/16 blur-2xl" />
+                <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-slate-950/90 via-slate-950/28 to-transparent" />
+                <div className="absolute inset-0 z-10 flex items-center justify-center">
+                  <button
+                    ref={triggerRef}
+                    type="button"
+                    aria-label="See MyHomeBro in action"
+                    data-testid="product-overview-trigger"
+                    onClick={openOverview}
+                    className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-blue-700 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+                  >
+                    <Play className="ml-1 h-9 w-9" aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="pointer-events-none absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-slate-950/62 p-4 backdrop-blur">
+                  <div className="text-sm font-semibold text-white">
+                    Kitchen remodel workspace
+                  </div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    {[
+                      ['Scope', 'AI organized'],
+                      ['Escrow', 'Funding ready'],
+                      ['Docs', 'All in one place'],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-xl bg-white/[0.06] px-3 py-2"
+                      >
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-sky-100/52">
+                          {label}
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-sky-50">
+                          {value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {featureChips.map((chip) => (
-              <span key={chip} className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5 text-xs font-semibold text-sky-50/78">
-                {chip}
-              </span>
-            ))}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {featureChips.map((chip) => (
+                <span
+                  key={chip}
+                  className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5 text-xs font-semibold text-sky-50/78"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
-      <ProductOverviewModal visible={overviewOpen} initialTab={overviewInitialTab} onClose={closeOverview} navigate={navigate} />
-    </section>
-    <LandingFaq onViewAll={openQuestions} viewAllRef={faqTriggerRef} />
+        <ProductOverviewModal
+          visible={overviewOpen}
+          initialTab={overviewInitialTab}
+          onClose={closeOverview}
+          navigate={navigate}
+        />
+      </section>
+      <LandingFaq onViewAll={openQuestions} viewAllRef={faqTriggerRef} />
     </>
   );
 }
@@ -714,15 +891,15 @@ function AudienceCards({ navigate }) {
         eyebrow="For Customers"
         title="Plan with confidence. Get it done right."
         bullets={[
-          "Organize your project the smart way",
-          "Get matched with trusted local contractors",
-          "Compare and choose at your pace",
+          'Organize your project the smart way',
+          'Connect with participating local contractors',
+          'Compare and choose at your pace',
           "It's free, secure, and commitment-free",
         ]}
         primaryLabel="Start a Project"
         secondaryLabel="Customer Log In"
-        onPrimary={() => navigate("/start-project")}
-        onSecondary={() => navigate("/portal")}
+        onPrimary={() => navigate('/start-project')}
+        onSecondary={() => navigate('/portal')}
         tone="homeowner"
       />
       <AudienceCard
@@ -730,18 +907,20 @@ function AudienceCards({ navigate }) {
         eyebrow="For Contractors"
         title="More quality projects. Less guesswork."
         bullets={[
-          "Get matched with qualified homeowners",
-          "Manage projects in one simple platform",
-          "Get paid securely with escrow",
-          "Grow your business and your reputation",
+          'Get matched with qualified homeowners',
+          'Manage projects in one simple platform',
+          'Get paid securely with escrow',
+          'Grow your business and your reputation',
         ]}
         primaryLabel="Contractor Sign Up"
         secondaryLabel="Contractor Log In"
-        onPrimary={() => window.dispatchEvent(new CustomEvent("mhb:open-signup"))}
+        onPrimary={() =>
+          window.dispatchEvent(new CustomEvent('mhb:open-signup'))
+        }
         onSecondary={() =>
           window.dispatchEvent(
-            new CustomEvent("mhb:open-login", {
-              detail: { audience: "contractor" },
+            new CustomEvent('mhb:open-login', {
+              detail: { audience: 'contractor' },
             })
           )
         }
@@ -751,44 +930,80 @@ function AudienceCards({ navigate }) {
   );
 }
 
-function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabel, onPrimary, onSecondary, tone }) {
-  const isHomeowner = tone === "homeowner";
+function AudienceCard({
+  id,
+  eyebrow,
+  title,
+  bullets,
+  primaryLabel,
+  secondaryLabel,
+  onPrimary,
+  onSecondary,
+  tone,
+}) {
+  const isHomeowner = tone === 'homeowner';
   const cardImage = isHomeowner ? homeownerCardImage : contractorCardImage;
   return (
     <div
       id={id}
       data-testid={`landing-${tone}-card`}
       className={`relative min-h-[17rem] overflow-hidden rounded-2xl border bg-slate-950 shadow-2xl shadow-slate-950/24 ${
-        isHomeowner ? "border-blue-300/34 shadow-blue-950/20" : "border-amber-300/34 shadow-amber-950/16"
+        isHomeowner
+          ? 'border-blue-300/34 shadow-blue-950/20'
+          : 'border-amber-300/34 shadow-amber-950/16'
       }`}
     >
       <img
         src={cardImage}
-        alt={isHomeowner ? "MyHomeBro homeowner project visual" : "MyHomeBro contractor platform visual"}
-        data-testid={isHomeowner ? "landing-homeowner-visual-asset" : "landing-contractor-visual-asset"}
+        alt={
+          isHomeowner
+            ? 'MyHomeBro homeowner project visual'
+            : 'MyHomeBro contractor platform visual'
+        }
+        data-testid={
+          isHomeowner
+            ? 'landing-homeowner-visual-asset'
+            : 'landing-contractor-visual-asset'
+        }
         className="absolute inset-0 h-full w-full object-cover"
       />
       <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/75 to-slate-950/10" />
       <div
         className={`absolute inset-0 ${
           isHomeowner
-            ? "bg-[radial-gradient(circle_at_78%_22%,rgba(59,130,246,0.18),transparent_34%)]"
-            : "bg-[radial-gradient(circle_at_78%_22%,rgba(251,191,36,0.16),transparent_34%)]"
+            ? 'bg-[radial-gradient(circle_at_78%_22%,rgba(59,130,246,0.18),transparent_34%)]'
+            : 'bg-[radial-gradient(circle_at_78%_22%,rgba(251,191,36,0.16),transparent_34%)]'
         }`}
       />
       <div
-        data-testid={isHomeowner ? "landing-homeowner-image-panel" : "landing-contractor-image-panel"}
+        data-testid={
+          isHomeowner
+            ? 'landing-homeowner-image-panel'
+            : 'landing-contractor-image-panel'
+        }
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
       />
       <div className="relative z-10 flex min-h-[17rem] items-center">
         <div className="w-full max-w-[17rem] p-4 sm:p-5">
-          <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>{eyebrow}</div>
-          <h2 className="mt-1.5 whitespace-pre-line text-xl font-semibold leading-tight text-white">{title.replace(". ", ".\n")}</h2>
+          <div
+            className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isHomeowner ? 'text-sky-300' : 'text-amber-200'}`}
+          >
+            {eyebrow}
+          </div>
+          <h2 className="mt-1.5 whitespace-pre-line text-xl font-semibold leading-tight text-white">
+            {title.replace('. ', '.\n')}
+          </h2>
           <div className="mt-2.5 space-y-1">
             {bullets.map((bullet) => (
-              <div key={bullet} className="flex items-start gap-2 text-[11px] leading-4 text-sky-50/76">
-                <CheckCircle2 className={`mt-0.5 h-3 w-3 shrink-0 ${isHomeowner ? "text-sky-300" : "text-amber-300"}`} aria-hidden="true" />
+              <div
+                key={bullet}
+                className="flex items-start gap-2 text-[11px] leading-4 text-sky-50/76"
+              >
+                <CheckCircle2
+                  className={`mt-0.5 h-3 w-3 shrink-0 ${isHomeowner ? 'text-sky-300' : 'text-amber-300'}`}
+                  aria-hidden="true"
+                />
                 {bullet}
               </div>
             ))}
@@ -804,7 +1019,9 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
             <button
               type="button"
               onClick={onSecondary}
-              data-testid={isHomeowner ? "landing-customer-portal-button" : undefined}
+              data-testid={
+                isHomeowner ? 'landing-customer-portal-button' : undefined
+              }
               className="text-[11px] font-semibold text-sky-300 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               {secondaryLabel} →
@@ -818,16 +1035,25 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
 
 function TrustBand() {
   return (
-    <section id="about" className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-      <div data-testid="landing-trust-section" className="rounded-3xl border border-white/12 bg-white/[0.052] p-6 shadow-2xl shadow-slate-950/18 backdrop-blur">
+    <section
+      id="about"
+      className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8"
+    >
+      <div
+        data-testid="landing-trust-section"
+        className="rounded-3xl border border-white/12 bg-white/[0.052] p-6 shadow-2xl shadow-slate-950/18 backdrop-blur"
+      >
         <div className="flex items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/35 bg-amber-300/10 text-amber-200 shadow-[0_0_24px_rgba(251,191,36,0.12)]">
             <ShieldCheck className="h-6 w-6" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-white">Built on trust. Focused on results.</h2>
+            <h2 className="text-xl font-semibold text-white">
+              Built on trust. Focused on results.
+            </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/68">
-              MyHomeBro helps customers and contractors keep project scope, payments, records, and approvals organized from start to finish.
+              MyHomeBro helps customers and contractors keep project scope,
+              payments, records, and approvals organized from start to finish.
             </p>
           </div>
         </div>
@@ -860,16 +1086,29 @@ function TrustBand() {
   );
 }
 
-function TrustValueCard({ icon: Icon, value, label, title, text, tone = "blue", stars = false }) {
+function TrustValueCard({
+  icon: Icon,
+  value,
+  label,
+  title,
+  text,
+  tone = 'blue',
+  stars = false,
+}) {
   const displayTitle = title || value;
   const displayText = text || label;
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/24 p-4">
       <div className="flex items-center gap-4">
-        <Icon className={`h-9 w-9 ${tone === "amber" ? "text-amber-300" : "text-blue-300"}`} aria-hidden="true" />
+        <Icon
+          className={`h-9 w-9 ${tone === 'amber' ? 'text-amber-300' : 'text-blue-300'}`}
+          aria-hidden="true"
+        />
         <div>
           <div className="flex items-center gap-3">
-            <div className="text-base font-semibold text-white">{displayTitle}</div>
+            <div className="text-base font-semibold text-white">
+              {displayTitle}
+            </div>
             {stars ? <div className="text-amber-300">★★★★★</div> : null}
           </div>
           <p className="mt-1 text-sm leading-6 text-sky-50/70">{displayText}</p>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -9,116 +9,127 @@ import {
   Play,
   Sparkles,
   X,
-} from "lucide-react";
+} from 'lucide-react';
 
-import {
-  PUBLIC_FAQ_CATEGORIES,
-  PUBLIC_FAQ_CURATED_ITEMS,
-} from "../lib/publicFaq.js";
-import Modal from "./Modal.jsx";
+import { PUBLIC_FAQ_CURATED_ITEMS } from '../lib/publicFaq.js';
+import Modal from './Modal.jsx';
 
 const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "watch", label: "Watch" },
-  { id: "questions", label: "Questions" },
+  { id: 'overview', label: 'Overview' },
+  { id: 'watch', label: 'Watch' },
+  { id: 'questions', label: 'Questions' },
 ];
 
-const DEFAULT_AUDIENCE = "contractor";
+const DEFAULT_AUDIENCE = 'contractor';
 
 const AUDIENCE_PATHWAYS = {
   contractor: [
     {
-      title: "Capture the customer and job",
-      description: "Collect the request, property details, photos, and field notes.",
+      title: 'Capture the customer and job',
+      description:
+        'Collect the request, property details, photos, and field notes.',
     },
     {
-      title: "Prepare the estimate",
-      description: "Build scope, pricing, options, and next steps.",
+      title: 'Prepare the estimate',
+      description: 'Build scope, pricing, options, and next steps.',
     },
     {
-      title: "Send the agreement",
-      description: "Confirm responsibilities, schedule, milestones, and payment terms.",
+      title: 'Send the agreement',
+      description:
+        'Confirm responsibilities, schedule, milestones, and payment terms.',
     },
     {
-      title: "Manage work and payments",
-      description: "Coordinate customers, team members, progress, approvals, and funding.",
+      title: 'Manage work and payments',
+      description:
+        'Coordinate customers, team members, progress, approvals, and funding.',
     },
     {
-      title: "Close out and keep records",
-      description: "Preserve documents, warranties, receipts, photos, and project history.",
+      title: 'Close out and keep records',
+      description:
+        'Preserve documents, warranties, receipts, photos, and project history.',
     },
   ],
   homeowner: [
     {
-      title: "Start or join a project",
-      description: "Share what you need or access a contractor-created project.",
+      title: 'Start or join a project',
+      description:
+        'Share what you need or access a contractor-created project.',
     },
     {
-      title: "Review estimates",
-      description: "Compare scope, pricing, selections, and project expectations.",
+      title: 'Review estimates',
+      description:
+        'Compare scope, pricing, selections, and project expectations.',
     },
     {
-      title: "Approve the agreement",
-      description: "Review responsibilities, milestones, schedule, and payment terms.",
+      title: 'Approve the agreement',
+      description:
+        'Review responsibilities, milestones, schedule, and payment terms.',
     },
     {
-      title: "Follow progress and payments",
-      description: "See updates, communicate, review work, and track payment activity.",
+      title: 'Follow progress and payments',
+      description:
+        'See updates, communicate, review work, and track payment activity.',
     },
     {
-      title: "Keep your property records",
-      description: "Store agreements, receipts, photos, warranties, and project history.",
+      title: 'Keep your property records',
+      description:
+        'Store agreements, receipts, photos, warranties, and project history.',
     },
   ],
   property_manager: [
     {
-      title: "Add the property or unit",
-      description: "Organize properties, units, occupants, vendors, and existing records.",
+      title: 'Add the property or unit',
+      description:
+        'Organize properties, units, occupants, vendors, and existing records.',
     },
     {
-      title: "Capture a maintenance need",
-      description: "Record the issue, photos, urgency, location, and supporting details.",
+      title: 'Capture a maintenance need',
+      description:
+        'Record the issue, photos, urgency, location, and supporting details.',
     },
     {
-      title: "Coordinate vendor work",
-      description: "Review requests, assign work, collect estimates, and approve next steps.",
+      title: 'Coordinate vendor work',
+      description:
+        'Review requests, assign work, collect estimates, and approve next steps.',
     },
     {
-      title: "Track completion and payment",
-      description: "Follow updates, documentation, approvals, invoices, and completion.",
+      title: 'Track completion and payment',
+      description:
+        'Follow updates, documentation, approvals, invoices, and completion.',
     },
     {
-      title: "Maintain property history",
-      description: "Preserve maintenance, warranty, equipment, vendor, and unit records.",
+      title: 'Maintain property history',
+      description:
+        'Preserve maintenance, warranty, equipment, vendor, and unit records.',
     },
   ],
 };
 
 const AUDIENCES = [
   {
-    id: "contractor",
+    id: 'contractor',
     icon: BriefcaseBusiness,
-    title: "For contractors",
-    text: "Manage customers, estimates, projects, teams, payments, and field records.",
+    title: 'For contractors',
+    text: 'Manage customers, estimates, projects, teams, payments, and field records.',
   },
   {
-    id: "homeowner",
+    id: 'homeowner',
     icon: Home,
-    title: "For homeowners",
-    text: "Review documents, follow progress, communicate, and keep property records.",
+    title: 'For homeowners',
+    text: 'Review documents, follow progress, communicate, and keep property records.',
   },
   {
-    id: "property_manager",
+    id: 'property_manager',
     icon: Building2,
-    title: "For property managers",
-    text: "Track units, maintenance, vendors, warranties, and property history.",
+    title: 'For property managers',
+    text: 'Track units, maintenance, vendors, warranties, and property history.',
   },
 ];
 
 function trackProductOverview(event, detail = {}) {
   window.dispatchEvent(
-    new CustomEvent("mhb:analytics", {
-      detail: { event, category: "product_overview", ...detail },
+    new CustomEvent('mhb:analytics', {
+      detail: { event, category: 'product_overview', ...detail },
     })
   );
 }
@@ -139,8 +150,8 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
             data-testid={`product-question-${item.id}`}
             className={`self-start overflow-hidden rounded-xl border transition-colors motion-reduce:transition-none ${
               open
-                ? "border-sky-600 bg-slate-800"
-                : "border-slate-700 bg-slate-900 hover:border-slate-600"
+                ? 'border-sky-600 bg-slate-800'
+                : 'border-slate-700 bg-slate-900 hover:border-slate-600'
             }`}
           >
             <h4>
@@ -151,12 +162,12 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
                 aria-controls={panelId}
                 onClick={() => onToggle(item)}
                 className={`flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold leading-5 text-slate-50 transition-colors motion-reduce:transition-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:text-[15px] ${
-                  open ? "bg-slate-800" : "bg-slate-900 hover:bg-slate-800"
+                  open ? 'bg-slate-800' : 'bg-slate-900 hover:bg-slate-800'
                 }`}
               >
                 <span>{item.question}</span>
                 <ChevronDown
-                  className={`h-5 w-5 shrink-0 text-sky-300 transition-transform motion-reduce:transition-none ${open ? "rotate-180 text-amber-300" : ""}`}
+                  className={`h-5 w-5 shrink-0 text-sky-300 transition-transform motion-reduce:transition-none ${open ? 'rotate-180 text-amber-300' : ''}`}
                   aria-hidden="true"
                 />
               </button>
@@ -177,24 +188,29 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
   );
 }
 
-export default function ProductOverviewModal({ visible, initialTab = "overview", onClose, navigate }) {
-  const [activeTab, setActiveTab] = useState("overview");
+export default function ProductOverviewModal({
+  visible,
+  initialTab = 'overview',
+  onClose,
+  navigate,
+}) {
+  const [activeTab, setActiveTab] = useState('overview');
   const [activeAudience, setActiveAudience] = useState(DEFAULT_AUDIENCE);
-  const [openItemId, setOpenItemId] = useState("");
-  const [showAllQuestions, setShowAllQuestions] = useState(false);
+  const [openItemId, setOpenItemId] = useState('');
   const tabListRef = useRef(null);
 
   useEffect(() => {
     if (!visible) return;
-    setActiveTab(TABS.some((tab) => tab.id === initialTab) ? initialTab : "overview");
+    setActiveTab(
+      TABS.some((tab) => tab.id === initialTab) ? initialTab : 'overview'
+    );
     setActiveAudience(DEFAULT_AUDIENCE);
-    setOpenItemId("");
-    setShowAllQuestions(false);
+    setOpenItemId('');
   }, [initialTab, visible]);
 
   const selectTab = (tabId, focus = false) => {
     setActiveTab(tabId);
-    trackProductOverview("product_overview_tab_selected", { tab: tabId });
+    trackProductOverview('product_overview_tab_selected', { tab: tabId });
     if (focus) {
       requestAnimationFrame(() => {
         tabListRef.current?.querySelector(`[data-tab="${tabId}"]`)?.focus();
@@ -205,10 +221,12 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
   const handleTabKeyDown = (event) => {
     const currentIndex = TABS.findIndex((tab) => tab.id === activeTab);
     let nextIndex;
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % TABS.length;
-    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
-    if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = TABS.length - 1;
+    if (event.key === 'ArrowRight')
+      nextIndex = (currentIndex + 1) % TABS.length;
+    if (event.key === 'ArrowLeft')
+      nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = TABS.length - 1;
     if (nextIndex === undefined) return;
     event.preventDefault();
     selectTab(TABS[nextIndex].id, true);
@@ -216,9 +234,11 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
 
   const toggleQuestion = (item) => {
     setOpenItemId((current) => {
-      const next = current === item.id ? "" : item.id;
+      const next = current === item.id ? '' : item.id;
       if (next) {
-        trackProductOverview("product_question_opened", { question_id: item.id });
+        trackProductOverview('product_question_opened', {
+          question_id: item.id,
+        });
       }
       return next;
     });
@@ -226,15 +246,15 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
 
   const selectAudience = (audience) => {
     setActiveAudience(audience);
-    trackProductOverview("product_audience_selected", {
+    trackProductOverview('product_audience_selected', {
       audience,
-      source: "product_overview",
+      source: 'product_overview',
     });
   };
 
   const goTo = (destination, path) => {
-    trackProductOverview("product_overview_cta_clicked", { destination });
-    onClose("cta");
+    trackProductOverview('product_overview_cta_clicked', { destination });
+    onClose('cta');
     navigate(path);
   };
 
@@ -250,14 +270,20 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
       containerClassName="h-[100dvh] max-h-[100dvh] !bg-slate-950 text-white sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:max-w-5xl sm:rounded-3xl sm:border sm:border-slate-700"
       bodyClassName="h-full max-h-full overflow-y-auto overscroll-contain p-0"
     >
-      <div data-testid="product-overview-surface" className="flex min-h-full flex-col bg-slate-950 text-slate-50">
+      <div
+        data-testid="product-overview-surface"
+        className="flex min-h-full flex-col bg-slate-950 text-slate-50"
+      >
         <header className="sticky top-0 z-10 border-b border-slate-700 bg-slate-950/95 px-[max(1rem,env(safe-area-inset-left))] pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur sm:px-6 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
                 Product tour
               </div>
-              <h2 id="product-overview-title" className="mt-1 text-xl font-semibold text-white sm:text-2xl">
+              <h2
+                id="product-overview-title"
+                className="mt-1 text-xl font-semibold text-white sm:text-2xl"
+              >
                 See MyHomeBro in action
               </h2>
             </div>
@@ -265,7 +291,7 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
               type="button"
               aria-label="Close product overview"
               data-autofocus
-              onClick={() => onClose("close_button")}
+              onClick={() => onClose('close_button')}
               className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-white/14 text-sky-50 transition hover:bg-white/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
             >
               <X className="h-5 w-5" aria-hidden="true" />
@@ -293,7 +319,9 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
                   tabIndex={selected ? 0 : -1}
                   onClick={() => selectTab(tab.id)}
                   className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
-                    selected ? "bg-blue-600 text-white shadow-sm" : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                    selected
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-200 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   {tab.label}
@@ -308,21 +336,24 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
             id="product-panel-overview"
             role="tabpanel"
             aria-labelledby="product-tab-overview"
-            hidden={activeTab !== "overview"}
+            hidden={activeTab !== 'overview'}
             tabIndex={0}
           >
             <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               See how MyHomeBro keeps projects moving
             </h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 sm:text-base">
-              MyHomeBro brings customers, estimates, agreements, payments, project updates, messages,
-              and property records into one guided workspace.
+              MyHomeBro brings customers, estimates, agreements, payments,
+              project updates, messages, and property records into one guided
+              workspace.
             </p>
             <div className="mt-5 flex items-center justify-between gap-3">
               <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-sky-200">
                 Choose your view
               </h4>
-              <span className="text-xs text-slate-400">Pathway updates below</span>
+              <span className="text-xs text-slate-400">
+                Pathway updates below
+              </span>
             </div>
             <div
               data-testid="product-overview-audiences"
@@ -340,21 +371,29 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
                     onClick={() => selectAudience(id)}
                     className={`min-h-11 rounded-xl border p-3 text-left transition-colors motion-reduce:transition-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
                       selected
-                        ? "border-sky-400 bg-sky-950/70"
-                        : "border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800"
+                        ? 'border-sky-400 bg-sky-950/70'
+                        : 'border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800'
                     }`}
                   >
                     <span className="flex items-center gap-2">
-                      <Icon className={`h-5 w-5 ${selected ? "text-amber-300" : "text-sky-300"}`} aria-hidden="true" />
+                      <Icon
+                        className={`h-5 w-5 ${selected ? 'text-amber-300' : 'text-sky-300'}`}
+                        aria-hidden="true"
+                      />
                       <span className="font-semibold text-white">{title}</span>
                       {selected ? (
                         <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-sky-200">
-                          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                          <CheckCircle2
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
                           Selected
                         </span>
                       ) : null}
                     </span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-300">{text}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-300">
+                      {text}
+                    </span>
                   </button>
                 );
               })}
@@ -376,8 +415,12 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
                     {index + 1}
                   </span>
                   <div className="min-w-0 lg:mt-3">
-                    <h4 className="text-sm font-semibold leading-5 text-white">{step.title}</h4>
-                    <p className="mt-1 text-xs leading-5 text-slate-300">{step.description}</p>
+                    <h4 className="text-sm font-semibold leading-5 text-white">
+                      {step.title}
+                    </h4>
+                    <p className="mt-1 text-xs leading-5 text-slate-300">
+                      {step.description}
+                    </p>
                   </div>
                   {index < AUDIENCE_PATHWAYS[activeAudience].length - 1 ? (
                     <ArrowRight
@@ -394,13 +437,15 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
             id="product-panel-watch"
             role="tabpanel"
             aria-labelledby="product-tab-watch"
-            hidden={activeTab !== "watch"}
+            hidden={activeTab !== 'watch'}
             tabIndex={0}
           >
-            <h3 className="text-2xl font-semibold">Watch the project workflow</h3>
+            <h3 className="text-2xl font-semibold">
+              Watch the project workflow
+            </h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/74">
-              Watch how a customer request becomes an organized project—from intake and estimating
-              through agreements, milestones, and records.
+              Watch how a customer request becomes an organized project—from
+              intake and estimating through agreements, milestones, and records.
             </p>
             <div
               data-testid="product-video-fallback"
@@ -408,12 +453,17 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
             >
               <div className="flex h-full flex-col items-center justify-center px-5 text-center">
                 <span className="flex h-16 w-16 items-center justify-center rounded-full border border-sky-300/25 bg-blue-500/10">
-                  <Play className="ml-1 h-7 w-7 text-sky-200" aria-hidden="true" />
+                  <Play
+                    className="ml-1 h-7 w-7 text-sky-200"
+                    aria-hidden="true"
+                  />
                 </span>
-                <h4 className="mt-4 text-lg font-semibold text-white">Demo video coming soon</h4>
+                <h4 className="mt-4 text-lg font-semibold text-white">
+                  Demo video coming soon
+                </h4>
                 <p className="mt-2 max-w-md text-sm leading-6 text-sky-50/68">
-                  The product overview and common questions are available now while the approved
-                  demonstration is being prepared.
+                  The product overview and common questions are available now
+                  while the approved demonstration is being prepared.
                 </p>
               </div>
             </div>
@@ -424,7 +474,7 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
             role="tabpanel"
             aria-labelledby="product-tab-questions"
             data-testid="product-questions-panel"
-            hidden={activeTab !== "questions"}
+            hidden={activeTab !== 'questions'}
             tabIndex={0}
             className="bg-slate-950"
           >
@@ -432,50 +482,29 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
               <div>
                 <h3 className="text-2xl font-semibold">Common questions</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Clear answers about the platform, payments, AI assistance, privacy, and records.
+                  Clear answers about the platform, payments, AI assistance,
+                  privacy, and records.
                 </p>
               </div>
-              {!showAllQuestions ? (
-                <button
-                  type="button"
-                  data-testid="product-view-all-questions"
-                  onClick={() => {
-                    setShowAllQuestions(true);
-                    setOpenItemId("");
-                    trackProductOverview("product_view_all_questions_clicked");
-                  }}
-                  className="min-h-11 self-start rounded-xl border border-amber-400/70 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition-colors hover:border-amber-300 hover:bg-amber-300/15 hover:text-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:self-auto"
-                >
-                  View all questions
-                </button>
-              ) : null}
+              <button
+                type="button"
+                data-testid="product-view-all-questions"
+                onClick={() => {
+                  goTo('faq', '/faq');
+                  trackProductOverview('product_view_all_questions_clicked');
+                }}
+                className="min-h-11 self-start rounded-xl border border-amber-400/70 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition-colors hover:border-amber-300 hover:bg-amber-300/15 hover:text-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:self-auto"
+              >
+                Open full FAQ
+              </button>
             </div>
             <div className="mt-4 space-y-6">
-              {showAllQuestions ? (
-                PUBLIC_FAQ_CATEGORIES.map((category) => (
-                  <section key={category.id} aria-labelledby={`product-category-${category.id}`}>
-                    <h4
-                      id={`product-category-${category.id}`}
-                      className="mb-2 border-l-2 border-amber-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-sky-200"
-                    >
-                      {category.label}
-                    </h4>
-                    <FaqAccordion
-                      items={category.items}
-                      openItemId={openItemId}
-                      onToggle={toggleQuestion}
-                      idPrefix={`product-${category.id}`}
-                    />
-                  </section>
-                ))
-              ) : (
-                <FaqAccordion
-                  items={PUBLIC_FAQ_CURATED_ITEMS}
-                  openItemId={openItemId}
-                  onToggle={toggleQuestion}
-                  idPrefix="product-curated"
-                />
-              )}
+              <FaqAccordion
+                items={PUBLIC_FAQ_CURATED_ITEMS}
+                openItemId={openItemId}
+                onToggle={toggleQuestion}
+                idPrefix="product-curated"
+              />
             </div>
           </section>
         </div>
@@ -485,7 +514,7 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
-                onClick={() => goTo("start_project", "/start-project")}
+                onClick={() => goTo('start_project', '/start-project')}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               >
                 <Sparkles className="h-4 w-4" aria-hidden="true" />
@@ -493,17 +522,25 @@ export default function ProductOverviewModal({ visible, initialTab = "overview",
               </button>
               <button
                 type="button"
-                onClick={() => goTo("create_account", "/create-account")}
+                onClick={() => goTo('create_account', '/create-account')}
                 className="min-h-11 rounded-xl border border-sky-500 bg-slate-900 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-slate-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               >
                 Create Free Account
               </button>
             </div>
             <div className="flex items-center justify-center gap-4 text-sm font-semibold sm:justify-end">
-              <button type="button" onClick={() => goTo("login", "/login")} className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
+              <button
+                type="button"
+                onClick={() => goTo('login', '/login')}
+                className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              >
                 Log In
               </button>
-              <button type="button" onClick={() => goTo("support", "/login")} className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
+              <button
+                type="button"
+                onClick={() => goTo('support', '/login')}
+                className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              >
                 Contact Support
               </button>
             </div>
