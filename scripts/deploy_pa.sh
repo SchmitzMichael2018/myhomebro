@@ -76,7 +76,13 @@ cd "$BACKEND_DIR"
 python manage.py collectstatic --noinput
 
 echo "==> Reload app"
-touch "$BACKEND_DIR/wsgi.py"
+PYTHONANYWHERE_WSGI_FILE="${PYTHONANYWHERE_WSGI_FILE:-/var/www/www_myhomebro_com_wsgi.py}"
+if [ -f "$PYTHONANYWHERE_WSGI_FILE" ]; then
+  touch "$PYTHONANYWHERE_WSGI_FILE"
+else
+  echo "PythonAnywhere WSGI file not found at $PYTHONANYWHERE_WSGI_FILE; touching Django wsgi.py instead"
+  touch "$BACKEND_DIR/wsgi.py"
+fi
 
 if [ -f "$HOME/backend/.env" ]; then
   chmod 600 "$HOME/backend/.env"
