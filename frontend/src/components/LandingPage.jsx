@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ArrowRight,
   BriefcaseBusiness,
   Building2,
   CheckCircle2,
@@ -11,7 +12,6 @@ import {
   Download,
   Lock,
   MessageSquareText,
-  Play,
   ShieldCheck,
   Sparkles,
   UsersRound,
@@ -117,8 +117,8 @@ const landingFaqItems = [
 
 const previewBullets = [
   'AI-powered project planning',
-  'Matches you with trusted pros',
-  'Escrow-secured payments',
+  'Connect with participating local contractors',
+  'Escrow-supported milestone payments',
   'Real-time updates & messaging',
   'All your project docs in one place',
 ];
@@ -326,7 +326,10 @@ export default function LandingPage() {
               onClick={() => scrollTo('how-it-works')}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/18 bg-white/[0.04] px-6 py-4 text-base font-semibold text-white transition hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
-              <Play className="h-5 w-5 text-amber-300" aria-hidden="true" />
+              <ArrowRight
+                className="h-5 w-5 text-amber-300"
+                aria-hidden="true"
+              />
               How It Works
             </button>
             <button
@@ -825,12 +828,14 @@ function VideoPreview({ navigate }) {
                   <button
                     ref={triggerRef}
                     type="button"
-                    aria-label="See MyHomeBro in action"
+                    aria-label="Explore the interactive MyHomeBro product tour"
                     data-testid="product-overview-trigger"
                     onClick={openOverview}
-                    className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-blue-700 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+                    className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-blue-800 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-amber-300/60 sm:text-base"
                   >
-                    <Play className="ml-1 h-9 w-9" aria-hidden="true" />
+                    <Sparkles className="h-5 w-5" aria-hidden="true" />
+                    Explore Interactive Tour
+                    <ArrowRight className="h-5 w-5" aria-hidden="true" />
                   </button>
                 </div>
                 <div className="pointer-events-none absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-slate-950/62 p-4 backdrop-blur">

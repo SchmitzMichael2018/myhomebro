@@ -5,22 +5,22 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
+  Clapperboard,
   Home,
-  Play,
   Sparkles,
   X,
 } from 'lucide-react';
 
-import { PUBLIC_FAQ_CURATED_ITEMS } from '../lib/publicFaq.js';
+import { PUBLIC_FAQ_ITEMS } from '../lib/publicFaq.js';
 import Modal from './Modal.jsx';
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'watch', label: 'Watch' },
-  { id: 'questions', label: 'Questions' },
+  { id: 'overview', label: 'Tour' },
+  { id: 'watch', label: 'Videos' },
+  { id: 'questions', label: 'Quick Answers' },
 ];
 
-const DEFAULT_AUDIENCE = 'contractor';
+const DEFAULT_AUDIENCE = '';
 
 const AUDIENCE_PATHWAYS = {
   contractor: [
@@ -28,25 +28,54 @@ const AUDIENCE_PATHWAYS = {
       title: 'Capture the customer and job',
       description:
         'Collect the request, property details, photos, and field notes.',
+      userAction:
+        'Add a new lead or customer request, including the location, timing, photos, and known job details.',
+      platformAction:
+        'MyHomeBro keeps the request, contact information, files, and follow-up in one organized record.',
+      result:
+        'You have a project-ready record instead of scattered calls, texts, and notes.',
     },
     {
       title: 'Prepare the estimate',
       description: 'Build scope, pricing, options, and next steps.',
+      userAction:
+        'Review the request, clarify the scope, and enter your pricing, selections, and schedule assumptions.',
+      platformAction:
+        'Project Assistant can organize details and suggest reviewable scope or milestone language.',
+      result:
+        'The customer receives a clearer estimate that you control and approve before sending.',
     },
     {
       title: 'Send the agreement',
       description:
         'Confirm responsibilities, schedule, milestones, and payment terms.',
+      userAction:
+        'Review the agreement, make any necessary edits, sign it, and send it to the customer.',
+      platformAction:
+        'MyHomeBro connects the approved scope to signatures, amendments, milestones, and payment terms.',
+      result: 'Both parties can see what was agreed to and what happens next.',
     },
     {
       title: 'Manage work and payments',
       description:
         'Coordinate customers, team members, progress, approvals, and funding.',
+      userAction:
+        'Assign work, document progress, complete milestones, and submit eligible payment requests.',
+      platformAction:
+        'MyHomeBro tracks work, messages, evidence, approvals, invoices, and payment status together.',
+      result:
+        'The project stays understandable even when several people and payments are involved.',
     },
     {
       title: 'Close out and keep records',
       description:
         'Preserve documents, warranties, receipts, photos, and project history.',
+      userAction:
+        'Finish the closeout, confirm payment status, and retain the final project records.',
+      platformAction:
+        'MyHomeBro keeps the signed documents, photos, receipts, warranties, and activity history connected.',
+      result:
+        'You and the customer retain a traceable record after the job is complete.',
     },
   ],
   homeowner: [
@@ -54,26 +83,56 @@ const AUDIENCE_PATHWAYS = {
       title: 'Start or join a project',
       description:
         'Share what you need or access a contractor-created project.',
+      userAction:
+        'Describe the work, location, timing, budget range, and attach any useful photos.',
+      platformAction:
+        'MyHomeBro organizes the request and routes it through the project path you choose.',
+      result:
+        'A participating contractor can understand the request and follow up without committing you to hire.',
     },
     {
       title: 'Review estimates',
       description:
         'Compare scope, pricing, selections, and project expectations.',
+      userAction:
+        'Read the proposed work, ask questions, and confirm that important details are included.',
+      platformAction:
+        'MyHomeBro keeps the estimate, messages, options, and supporting information together.',
+      result:
+        'You can make a more informed decision before accepting an estimate.',
     },
     {
       title: 'Approve the agreement',
       description:
         'Review responsibilities, milestones, schedule, and payment terms.',
+      userAction:
+        'Review the complete agreement and sign only when the scope, price, schedule, and terms are right.',
+      platformAction:
+        'MyHomeBro preserves signatures and uses documented amendments when signed terms need to change.',
+      result:
+        'The project begins from a shared, traceable set of expectations.',
     },
     {
       title: 'Follow progress and payments',
       description:
         'See updates, communicate, review work, and track payment activity.',
+      userAction:
+        'Follow milestone updates, review completed work, communicate, and respond to payment requests.',
+      platformAction:
+        'MyHomeBro connects project evidence and messages to the applicable work and payment records.',
+      result:
+        'You can understand what is ready, what needs attention, and what has already been approved.',
     },
     {
       title: 'Keep your property records',
       description:
         'Store agreements, receipts, photos, warranties, and project history.',
+      userAction:
+        'Keep the final project information and use the appropriate warranty or support workflow if needed.',
+      platformAction:
+        'MyHomeBro preserves your authorized property, project, payment, and warranty records.',
+      result:
+        'Important home-improvement records remain easier to find after the project ends.',
     },
   ],
   property_manager: [
@@ -81,26 +140,55 @@ const AUDIENCE_PATHWAYS = {
       title: 'Add the property or unit',
       description:
         'Organize properties, units, occupants, vendors, and existing records.',
+      userAction:
+        'Create the property or unit context and add the people and existing information needed for the work.',
+      platformAction:
+        'MyHomeBro keeps authorized property, occupant, vendor, and maintenance information connected.',
+      result:
+        'Each request begins with clearer ownership and location context.',
     },
     {
       title: 'Capture a maintenance need',
       description:
         'Record the issue, photos, urgency, location, and supporting details.',
+      userAction:
+        'Submit or review the maintenance need and document the affected area and urgency.',
+      platformAction:
+        'MyHomeBro organizes the request, attachments, status, and authorized communication.',
+      result:
+        'The person coordinating the repair receives a more actionable record.',
     },
     {
       title: 'Coordinate vendor work',
       description:
         'Review requests, assign work, collect estimates, and approve next steps.',
+      userAction:
+        'Choose the appropriate vendor path, clarify access, and approve the documented work plan.',
+      platformAction:
+        'MyHomeBro keeps the request, estimate, assignments, and approvals tied to the property record.',
+      result:
+        'Vendors and stakeholders can work from the same documented expectations.',
     },
     {
       title: 'Track completion and payment',
       description:
         'Follow updates, documentation, approvals, invoices, and completion.',
+      userAction:
+        'Monitor progress, review completion evidence, and respond to authorized payment activity.',
+      platformAction:
+        'MyHomeBro provides a connected view of work status, messages, documents, and payment records.',
+      result: 'You can see what is complete, pending, or awaiting a decision.',
     },
     {
       title: 'Maintain property history',
       description:
         'Preserve maintenance, warranty, equipment, vendor, and unit records.',
+      userAction:
+        'Close the work and retain the records needed for future maintenance and warranty follow-up.',
+      platformAction:
+        'MyHomeBro maintains the authorized history without making it publicly available.',
+      result:
+        'Future property decisions start with better records and less guesswork.',
     },
   ],
 };
@@ -125,6 +213,93 @@ const AUDIENCES = [
     text: 'Track units, maintenance, vendors, warranties, and property history.',
   },
 ];
+
+const AUDIENCE_CTA = {
+  contractor: {
+    primary: { label: 'Create Contractor Account', path: '/signup' },
+    secondary: { label: 'Contractor Log In', path: '/login' },
+  },
+  homeowner: {
+    primary: { label: 'Start a Project', path: '/start-project' },
+    secondary: { label: 'Create Customer Account', path: '/create-account' },
+  },
+  property_manager: {
+    primary: {
+      label: 'Submit Maintenance Request',
+      path: '/maintenance-request',
+    },
+    secondary: { label: 'Create an Account', path: '/create-account' },
+  },
+};
+
+// Video URLs remain deployment configuration so an approved demo can be enabled
+// without changing the tour. A video is shown only when both its source and
+// captions are configured; posters and transcripts are optional enhancements.
+const AUDIENCE_VIDEOS = {
+  contractor: {
+    title: 'From customer request to paid project',
+    description:
+      'A contractor-focused tour of estimates, agreements, milestones, team coordination, and payments.',
+    duration: 'About 90 seconds',
+    source: import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_VIDEO_URL || '',
+    poster: import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_POSTER_URL || '',
+    captions: import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_CAPTIONS_URL || '',
+    transcript:
+      import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_TRANSCRIPT_URL || '',
+  },
+  homeowner: {
+    title: 'From project idea to organized closeout',
+    description:
+      'A homeowner-focused tour of requests, estimates, agreements, progress reviews, payments, and records.',
+    duration: 'About 90 seconds',
+    source: import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_VIDEO_URL || '',
+    poster: import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_POSTER_URL || '',
+    captions: import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_CAPTIONS_URL || '',
+    transcript:
+      import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_TRANSCRIPT_URL || '',
+  },
+  property_manager: {
+    title: 'From maintenance request to property record',
+    description:
+      'A property-focused tour of maintenance intake, vendor coordination, approvals, completion, and history.',
+    duration: 'About 75 seconds',
+    source: import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_VIDEO_URL || '',
+    poster: import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_POSTER_URL || '',
+    captions:
+      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_CAPTIONS_URL || '',
+    transcript:
+      import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_TRANSCRIPT_URL || '',
+  },
+};
+
+const QUICK_ANSWER_IDS = {
+  contractor: [
+    'contractor-tools',
+    'estimates-agreements',
+    'teams',
+    'contractor-platform-fees',
+    'ai-decisions',
+  ],
+  homeowner: [
+    'after-project-request',
+    'homeowner-cost',
+    'payment-method-differences',
+    'homeowner-refund-request',
+    'dispute-process',
+  ],
+  property_manager: [
+    'who-is-it-for',
+    'property-records',
+    'project-visibility',
+    'warranty-vs-dispute',
+  ],
+};
+
+function itemsById(ids) {
+  return ids
+    .map((id) => PUBLIC_FAQ_ITEMS.find((item) => item.id === id))
+    .filter(Boolean);
+}
 
 function trackProductOverview(event, detail = {}) {
   window.dispatchEvent(
@@ -188,6 +363,87 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
   );
 }
 
+function WorkflowDetail({ step, testId }) {
+  if (!step) return null;
+  return (
+    <div
+      data-testid={testId}
+      className="grid gap-3 rounded-xl border border-sky-500/45 bg-sky-950/35 p-4 sm:grid-cols-3"
+    >
+      {[
+        ['What you do', step.userAction],
+        ['How MyHomeBro helps', step.platformAction],
+        ['What you get', step.result],
+      ].map(([label, text]) => (
+        <div key={label}>
+          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-200">
+            {label}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-slate-200">{text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VideoCard({ audienceId, video }) {
+  const ready = Boolean(video.source && video.captions);
+  return (
+    <article
+      data-testid={`product-video-${audienceId}`}
+      className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900"
+    >
+      {ready ? (
+        <video
+          controls
+          preload="metadata"
+          poster={video.poster || undefined}
+          className="aspect-video w-full bg-slate-950"
+          aria-label={video.title}
+        >
+          <source src={video.source} />
+          <track
+            kind="captions"
+            src={video.captions}
+            srcLang="en"
+            label="English"
+            default
+          />
+        </video>
+      ) : (
+        <div className="flex min-h-32 items-center justify-center bg-[radial-gradient(circle_at_50%_20%,rgba(37,99,235,0.22),transparent_48%),#020617] p-5 text-center">
+          <div>
+            <Clapperboard
+              className="mx-auto h-7 w-7 text-sky-300"
+              aria-hidden="true"
+            />
+            <div className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-200">
+              Video in preparation
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="p-4">
+        <h4 className="font-semibold text-white">{video.title}</h4>
+        <p className="mt-1 text-sm leading-6 text-slate-300">
+          {video.description}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold text-sky-200">
+          <span>{video.duration}</span>
+          {ready && video.transcript ? (
+            <a
+              href={video.transcript}
+              className="underline underline-offset-4 hover:text-white"
+            >
+              Read transcript
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function ProductOverviewModal({
   visible,
   initialTab = 'overview',
@@ -196,6 +452,7 @@ export default function ProductOverviewModal({
 }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [activeAudience, setActiveAudience] = useState(DEFAULT_AUDIENCE);
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [openItemId, setOpenItemId] = useState('');
   const tabListRef = useRef(null);
 
@@ -205,6 +462,7 @@ export default function ProductOverviewModal({
       TABS.some((tab) => tab.id === initialTab) ? initialTab : 'overview'
     );
     setActiveAudience(DEFAULT_AUDIENCE);
+    setActiveStepIndex(0);
     setOpenItemId('');
   }, [initialTab, visible]);
 
@@ -246,6 +504,8 @@ export default function ProductOverviewModal({
 
   const selectAudience = (audience) => {
     setActiveAudience(audience);
+    setActiveStepIndex(0);
+    setOpenItemId('');
     trackProductOverview('product_audience_selected', {
       audience,
       source: 'product_overview',
@@ -258,10 +518,22 @@ export default function ProductOverviewModal({
     navigate(path);
   };
 
+  const activePathway = activeAudience ? AUDIENCE_PATHWAYS[activeAudience] : [];
+  const activeStep = activePathway[activeStepIndex] || null;
+  const quickQuestions = activeAudience
+    ? itemsById(QUICK_ANSWER_IDS[activeAudience])
+    : itemsById([
+        'what-is-myhomebro',
+        'who-is-it-for',
+        'contractor-marketplace',
+        'ai-decisions',
+      ]);
+  const activeCta = activeAudience ? AUDIENCE_CTA[activeAudience] : null;
+
   return (
     <Modal
       visible={visible}
-      title="See MyHomeBro in action"
+      title="Explore MyHomeBro"
       onClose={onClose}
       testId="product-overview-modal"
       hideHeader
@@ -284,7 +556,7 @@ export default function ProductOverviewModal({
                 id="product-overview-title"
                 className="mt-1 text-xl font-semibold text-white sm:text-2xl"
               >
-                See MyHomeBro in action
+                Explore MyHomeBro
               </h2>
             </div>
             <button
@@ -340,19 +612,18 @@ export default function ProductOverviewModal({
             tabIndex={0}
           >
             <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              See how MyHomeBro keeps projects moving
+              Choose your role and follow the workflow
             </h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 sm:text-base">
-              MyHomeBro brings customers, estimates, agreements, payments,
-              project updates, messages, and property records into one guided
-              workspace.
+              See what you do, how MyHomeBro helps, and what each step produces.
+              Nothing is submitted or changed during this tour.
             </p>
             <div className="mt-5 flex items-center justify-between gap-3">
               <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-sky-200">
                 Choose your view
               </h4>
               <span className="text-xs text-slate-400">
-                Pathway updates below
+                {activeAudience ? 'Select any step for details' : 'Start here'}
               </span>
             </div>
             <div
@@ -398,39 +669,96 @@ export default function ProductOverviewModal({
                 );
               })}
             </div>
-            <ol
-              key={activeAudience}
-              data-testid="product-overview-workflow"
-              data-audience={activeAudience}
-              aria-live="polite"
-              className="mt-4 grid gap-3 transition-opacity motion-reduce:transition-none sm:grid-cols-2 lg:grid-cols-5"
-            >
-              {AUDIENCE_PATHWAYS[activeAudience].map((step, index) => (
-                <li
-                  key={step.title}
-                  data-testid={`product-workflow-step-${index + 1}`}
-                  className="relative flex min-h-full gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 lg:block"
+            {activeAudience ? (
+              <>
+                <ol
+                  key={activeAudience}
+                  data-testid="product-overview-workflow"
+                  data-audience={activeAudience}
+                  aria-live="polite"
+                  className="mt-4 grid gap-3 transition-opacity motion-reduce:transition-none sm:grid-cols-2 lg:grid-cols-5"
                 >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-300 text-xs font-bold text-slate-950">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0 lg:mt-3">
-                    <h4 className="text-sm font-semibold leading-5 text-white">
-                      {step.title}
-                    </h4>
-                    <p className="mt-1 text-xs leading-5 text-slate-300">
-                      {step.description}
-                    </p>
-                  </div>
-                  {index < AUDIENCE_PATHWAYS[activeAudience].length - 1 ? (
-                    <ArrowRight
-                      className="absolute -right-2.5 top-1/2 z-[1] hidden h-5 w-5 -translate-y-1/2 rounded-full bg-slate-950 p-0.5 text-sky-300 lg:block"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                </li>
-              ))}
-            </ol>
+                  {activePathway.map((step, index) => {
+                    const selected = activeStepIndex === index;
+                    return (
+                      <li key={step.title} className="relative min-w-0">
+                        <button
+                          type="button"
+                          data-testid={`product-workflow-step-${index + 1}`}
+                          aria-expanded={selected}
+                          onClick={() => {
+                            setActiveStepIndex(index);
+                            trackProductOverview(
+                              'product_workflow_step_opened',
+                              {
+                                audience: activeAudience,
+                                step: index + 1,
+                              }
+                            );
+                          }}
+                          className={`flex min-h-full w-full gap-3 rounded-xl border p-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 lg:block ${
+                            selected
+                              ? 'border-sky-400 bg-sky-950/60'
+                              : 'border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800'
+                          }`}
+                        >
+                          <span
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                              selected
+                                ? 'bg-amber-300 text-slate-950'
+                                : 'bg-slate-700 text-sky-100'
+                            }`}
+                          >
+                            {index + 1}
+                          </span>
+                          <span className="min-w-0 lg:mt-3 lg:block">
+                            <span className="block text-sm font-semibold leading-5 text-white">
+                              {step.title}
+                            </span>
+                            <span className="mt-1 block text-xs leading-5 text-slate-300">
+                              {step.description}
+                            </span>
+                          </span>
+                        </button>
+                        {index < activePathway.length - 1 ? (
+                          <ArrowRight
+                            className="absolute -right-2.5 top-1/2 z-[1] hidden h-5 w-5 -translate-y-1/2 rounded-full bg-slate-950 p-0.5 text-sky-300 lg:block"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {selected ? (
+                          <div className="mt-2 lg:hidden">
+                            <WorkflowDetail
+                              step={step}
+                              testId="product-workflow-detail-mobile"
+                            />
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ol>
+                <div className="mt-3 hidden lg:block">
+                  <WorkflowDetail
+                    step={activeStep}
+                    testId="product-workflow-detail-desktop"
+                  />
+                </div>
+              </>
+            ) : (
+              <div
+                data-testid="product-overview-role-prompt"
+                className="mt-4 rounded-xl border border-dashed border-sky-500/55 bg-sky-950/25 px-4 py-5 text-center"
+              >
+                <div className="font-semibold text-white">
+                  Select the view that best matches you.
+                </div>
+                <p className="mt-1 text-sm text-slate-300">
+                  Your five-step pathway, quick answers, videos, and next action
+                  will update automatically.
+                </p>
+              </div>
+            )}
           </section>
 
           <section
@@ -440,33 +768,32 @@ export default function ProductOverviewModal({
             hidden={activeTab !== 'watch'}
             tabIndex={0}
           >
-            <h3 className="text-2xl font-semibold">
-              Watch the project workflow
-            </h3>
+            <h3 className="text-2xl font-semibold">Workflow videos</h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/74">
-              Watch how a customer request becomes an organized project—from
-              intake and estimating through agreements, milestones, and records.
+              Short, role-specific demonstrations will be added here with
+              captions and transcripts. The interactive tour is available now.
             </p>
             <div
-              data-testid="product-video-fallback"
-              className="mt-5 aspect-video w-full overflow-hidden rounded-2xl border border-white/12 bg-[radial-gradient(circle_at_50%_42%,rgba(37,99,235,0.24),transparent_38%),linear-gradient(135deg,#020617,#071a3a)]"
+              data-testid="product-video-library"
+              className={`mt-5 grid gap-3 ${activeAudience ? 'max-w-2xl' : 'md:grid-cols-3'}`}
             >
-              <div className="flex h-full flex-col items-center justify-center px-5 text-center">
-                <span className="flex h-16 w-16 items-center justify-center rounded-full border border-sky-300/25 bg-blue-500/10">
-                  <Play
-                    className="ml-1 h-7 w-7 text-sky-200"
-                    aria-hidden="true"
-                  />
-                </span>
-                <h4 className="mt-4 text-lg font-semibold text-white">
-                  Demo video coming soon
-                </h4>
-                <p className="mt-2 max-w-md text-sm leading-6 text-sky-50/68">
-                  The product overview and common questions are available now
-                  while the approved demonstration is being prepared.
-                </p>
-              </div>
+              {(activeAudience
+                ? [[activeAudience, AUDIENCE_VIDEOS[activeAudience]]]
+                : Object.entries(AUDIENCE_VIDEOS)
+              ).map(([audienceId, video]) => (
+                <VideoCard
+                  key={audienceId}
+                  audienceId={audienceId}
+                  video={video}
+                />
+              ))}
             </div>
+            {!activeAudience ? (
+              <p className="mt-4 text-sm text-slate-400">
+                Choose a role in the Tour tab to narrow this library to the most
+                relevant demonstration.
+              </p>
+            ) : null}
           </section>
 
           <section
@@ -480,10 +807,11 @@ export default function ProductOverviewModal({
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h3 className="text-2xl font-semibold">Common questions</h3>
+                <h3 className="text-2xl font-semibold">Quick answers</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Clear answers about the platform, payments, AI assistance,
-                  privacy, and records.
+                  {activeAudience
+                    ? 'A short set of answers selected for your current view.'
+                    : 'Choose a role in the Tour for personalized answers, or start with these essentials.'}
                 </p>
               </div>
               <button
@@ -495,12 +823,12 @@ export default function ProductOverviewModal({
                 }}
                 className="min-h-11 self-start rounded-xl border border-amber-400/70 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition-colors hover:border-amber-300 hover:bg-amber-300/15 hover:text-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:self-auto"
               >
-                Open full FAQ
+                Search all FAQs
               </button>
             </div>
             <div className="mt-4 space-y-6">
               <FaqAccordion
-                items={PUBLIC_FAQ_CURATED_ITEMS}
+                items={quickQuestions}
                 openItemId={openItemId}
                 onToggle={toggleQuestion}
                 idPrefix="product-curated"
@@ -509,39 +837,45 @@ export default function ProductOverviewModal({
           </section>
         </div>
 
-        <footer className="sticky bottom-0 border-t border-slate-700 bg-slate-950/96 px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => goTo('start_project', '/start-project')}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-              >
-                <Sparkles className="h-4 w-4" aria-hidden="true" />
-                Start a Project
-              </button>
-              <button
-                type="button"
-                onClick={() => goTo('create_account', '/create-account')}
-                className="min-h-11 rounded-xl border border-sky-500 bg-slate-900 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-slate-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-              >
-                Create Free Account
-              </button>
-            </div>
-            <div className="flex items-center justify-center gap-4 text-sm font-semibold sm:justify-end">
+        <footer className="sticky bottom-0 z-10 border-t border-slate-700 bg-slate-950/96 px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur sm:px-6 sm:py-3">
+          <div className="flex items-center gap-3 sm:justify-between">
+            {activeCta ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    goTo(`${activeAudience}_primary`, activeCta.primary.path)
+                  }
+                  className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:flex-none sm:px-4"
+                >
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  <span className="truncate">{activeCta.primary.label}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    goTo(
+                      `${activeAudience}_secondary`,
+                      activeCta.secondary.path
+                    )
+                  }
+                  className="hidden min-h-11 rounded-xl border border-sky-500 bg-slate-900 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-slate-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:inline-flex sm:items-center"
+                >
+                  {activeCta.secondary.label}
+                </button>
+              </div>
+            ) : (
+              <p className="min-w-0 flex-1 text-xs leading-5 text-slate-300 sm:text-sm">
+                Choose your view to see the right next step.
+              </p>
+            )}
+            <div className="flex shrink-0 items-center text-sm font-semibold">
               <button
                 type="button"
                 onClick={() => goTo('login', '/login')}
                 className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               >
                 Log In
-              </button>
-              <button
-                type="button"
-                onClick={() => goTo('support', '/login')}
-                className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-              >
-                Contact Support
               </button>
             </div>
           </div>
