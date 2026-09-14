@@ -295,6 +295,13 @@ for (const width of [1366, 1920]) {
     const box = await modal.boundingBox();
     expect(box.width).toBeLessThanOrEqual(1024);
     expect(box.height).toBeLessThanOrEqual(900);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(900);
+    const scrollArea = modal.getByTestId("product-overview-scroll-area");
+    expect(
+      await scrollArea.evaluate((element) => getComputedStyle(element).overflowY)
+    ).toBe("auto");
+    await expect(modal.getByTestId("product-overview-footer")).toBeInViewport();
     await expect(modal.getByTestId("product-workflow-step-5")).toBeVisible();
     await expect(modal.getByTestId("product-audience-property_manager")).toBeVisible();
   });
@@ -320,6 +327,28 @@ for (const [audience, label, path] of [
     await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
   });
 }
+
+test("desktop dialog scrolls internally when the viewport is short", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 640 });
+  const modal = await openOverview(page);
+  await modal.getByTestId("product-audience-contractor").click();
+
+  const scrollArea = modal.getByTestId("product-overview-scroll-area");
+  expect(
+    await scrollArea.evaluate(
+      (element) => element.scrollHeight > element.clientHeight
+    )
+  ).toBe(true);
+  await scrollArea.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  expect(await scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(modal.getByTestId("product-overview-footer")).toBeInViewport();
+
+  const box = await modal.boundingBox();
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(640);
+});
 
 test("product overview keeps login available before role selection", async ({ page }) => {
   const modal = await openOverview(page);

@@ -539,14 +539,14 @@ export default function ProductOverviewModal({
       hideHeader
       labelledBy="product-overview-title"
       overlayClassName="bg-slate-950/72 px-0 sm:px-4 sm:py-6"
-      containerClassName="h-[100dvh] max-h-[100dvh] !bg-slate-950 text-white sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:max-w-5xl sm:rounded-3xl sm:border sm:border-slate-700"
-      bodyClassName="h-full max-h-full overflow-y-auto overscroll-contain p-0"
+      containerClassName="flex h-[100dvh] max-h-[100dvh] flex-col !bg-slate-950 text-white sm:h-[calc(100dvh-3rem)] sm:max-h-[calc(100dvh-3rem)] sm:max-w-5xl sm:rounded-3xl sm:border sm:border-slate-700"
+      bodyClassName="min-h-0 flex-1 overflow-hidden p-0"
     >
       <div
         data-testid="product-overview-surface"
-        className="flex min-h-full flex-col bg-slate-950 text-slate-50"
+        className="flex h-full min-h-0 flex-col bg-slate-950 text-slate-50"
       >
-        <header className="sticky top-0 z-10 border-b border-slate-700 bg-slate-950/95 px-[max(1rem,env(safe-area-inset-left))] pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur sm:px-6 sm:pt-4">
+        <header className="z-10 shrink-0 border-b border-slate-700 bg-slate-950/95 px-[max(1rem,env(safe-area-inset-left))] pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur sm:px-6 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
@@ -603,7 +603,10 @@ export default function ProductOverviewModal({
           </div>
         </header>
 
-        <div className="flex-1 bg-slate-950 px-[max(1rem,env(safe-area-inset-left))] py-4 sm:px-6 sm:py-5">
+        <div
+          data-testid="product-overview-scroll-area"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-950 px-[max(1rem,env(safe-area-inset-left))] py-4 sm:px-6 sm:py-5"
+        >
           <section
             id="product-panel-overview"
             role="tabpanel"
@@ -837,7 +840,10 @@ export default function ProductOverviewModal({
           </section>
         </div>
 
-        <footer className="sticky bottom-0 z-10 border-t border-slate-700 bg-slate-950/96 px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur sm:px-6 sm:py-3">
+        <footer
+          data-testid="product-overview-footer"
+          className="z-10 shrink-0 border-t border-slate-700 bg-slate-950/96 px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur sm:px-6 sm:py-3"
+        >
           <div className="flex items-center gap-3 sm:justify-between">
             {activeCta ? (
               <div className="flex min-w-0 flex-1 items-center gap-2">
