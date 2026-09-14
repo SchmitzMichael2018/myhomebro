@@ -96,7 +96,7 @@ from projects.models_dispute import Dispute, DisputeAttachment
 from projects.services.dispute_workflow import active_general_dispute_for_agreement, assess_dispute_qualification, existing_dispute_for_source, initialize_dispute_workflow
 from projects.services.resolution_workspace import index_evidence, uploaded_file_audit_metadata
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
-from projects.models_customer_refund_request import CustomerRefundRequest
+from projects.models_customer_refund_request import CustomerRefundRequest, CustomerRefundTransaction
 from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
 from projects.models_proposals import Proposal, ProposalReviewVersion
@@ -3508,6 +3508,21 @@ def _payments(email: str, request=None) -> list[dict]:
         .filter(Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email))
         .order_by("-created_at", "-id")
     )
+    completed_refunds = list(
+        CustomerRefundRequest.objects.select_related(
+            "agreement",
+            "agreement__project",
+            "agreement__homeowner",
+            "agreement__contractor",
+        )
+        .prefetch_related("transactions")
+        .filter(status=CustomerRefundRequest.Status.REFUNDED)
+        .filter(
+            Q(agreement__homeowner__email__iexact=email)
+            | Q(agreement__project__homeowner__email__iexact=email)
+        )
+        .order_by("-processed_at", "-created_at", "-id")
+    )
 
     for invoice in invoices:
         agreement = getattr(invoice, "agreement", None)
@@ -3671,6 +3686,61 @@ def _payments(email: str, request=None) -> list[dict]:
                 "can_deny": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER, ExpenseRequest.Status.APPROVED, ExpenseRequest.Status.PENDING_RELEASE},
                 "approve_url": f"/api/projects/customer-portal/{{token}}/reimbursements/{reimbursement.id}/approve/",
                 "deny_url": f"/api/projects/customer-portal/{{token}}/reimbursements/{reimbursement.id}/deny/",
+            }
+        )
+
+    for refund_request in completed_refunds:
+        agreement = getattr(refund_request, "agreement", None)
+        refunded_cents = sum(
+            int(transaction.amount_cents or 0)
+            for transaction in refund_request.transactions.all()
+            if transaction.status == CustomerRefundTransaction.Status.SUCCEEDED
+            and transaction.action
+            in {
+                CustomerRefundTransaction.Action.REFUND,
+                CustomerRefundTransaction.Action.EXTERNAL_RECORD,
+            }
+        )
+        if refunded_cents <= 0:
+            continue
+        refunded_amount = (Decimal(refunded_cents) / Decimal("100")).quantize(
+            Decimal("0.01")
+        )
+        rows.append(
+            {
+                "id": f"refund-{refund_request.id}",
+                "record_id": refund_request.id,
+                "record_type": "refund",
+                "record_type_label": "Refund",
+                "project_title": _agreement_title(agreement),
+                "contractor_name": _contractor_name(
+                    getattr(agreement, "contractor", None)
+                ),
+                "payment_mode": _safe_text(refund_request.payment_mode),
+                "payment_mode_label": refund_request.get_payment_mode_display(),
+                "amount": str(-refunded_amount),
+                "amount_label": f"-${refunded_amount:.2f}",
+                "status": "refunded",
+                "status_label": "Refunded",
+                "released_to_contractor": False,
+                "customer_payment_recorded": False,
+                "escrow_funding_record": False,
+                "is_actionable": False,
+                "dispute_status": "No dispute",
+                "dispute_status_label": "No dispute",
+                "date": _safe_dt(
+                    getattr(refund_request, "processed_at", None)
+                    or getattr(refund_request, "updated_at", None)
+                    or getattr(refund_request, "created_at", None)
+                ),
+                "reference": f"Refund #{refund_request.id}",
+                "agreement_id": getattr(agreement, "id", None),
+                "action_target": (
+                    f"?workspace=payments&agreement={getattr(agreement, 'id', '')}"
+                    f"&refund_request={refund_request.id}"
+                ),
+                "receipt_url": "",
+                "notes": _safe_text(refund_request.reason),
             }
         )
 

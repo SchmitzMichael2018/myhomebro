@@ -146,7 +146,7 @@ from projects.models_dispute import Dispute, DisputeWorkOrder, ResolutionProposa
 from projects.models_ai_artifacts import DisputeAIArtifact
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.services.project_activity import create_project_activity_event
-from projects.models_customer_refund_request import CustomerRefundRequest
+from projects.models_customer_refund_request import CustomerRefundRequest, CustomerRefundTransaction
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
 from projects.services.agreement_completion import (
     agreement_archive_blockers,
@@ -26781,6 +26781,67 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(payment_summary["remaining_in_escrow"], "13000.00")
         self.assertEqual(payment_summary["contractor_invoices"], "7000.00")
         self.assertEqual(payment_summary["customer_payments"], "0.00")
+
+    def test_customer_portal_includes_completed_refund_in_payment_history_and_balance(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("50000.00")
+        self.agreement.save(
+            update_fields=["escrow_funded", "escrow_funded_amount", "updated_at"]
+        )
+        baseline_response = self.client.get(f"/api/projects/customer-portal/{token}/")
+        self.assertEqual(baseline_response.status_code, 200, baseline_response.data)
+        baseline_agreement = next(
+            row
+            for row in baseline_response.data["agreements"]
+            if row["id"] == self.agreement.id
+        )
+        baseline_summary = baseline_agreement["payment_summary"]
+        refund_request = CustomerRefundRequest.objects.create(
+            agreement=self.agreement,
+            requested_by=self.contractor_user,
+            initiated_by_role=CustomerRefundRequest.InitiatorRole.CONTRACTOR,
+            source_type=CustomerRefundRequest.SourceType.ESCROW,
+            payment_mode=CustomerRefundRequest.PaymentMode.ESCROW,
+            reason="Returned unused materials allowance.",
+            requested_amount=Decimal("25.00"),
+            approved_amount=Decimal("25.00"),
+            status=CustomerRefundRequest.Status.REFUNDED,
+            processed_at=timezone.now(),
+        )
+        CustomerRefundTransaction.objects.create(
+            refund_request=refund_request,
+            action=CustomerRefundTransaction.Action.REFUND,
+            status=CustomerRefundTransaction.Status.SUCCEEDED,
+            amount_cents=2500,
+            idempotency_key="customer-portal-refund-test",
+            stripe_refund_id="re_customer_portal_test",
+            completed_at=timezone.now(),
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        refund_row = next(
+            row
+            for row in response.data["payments"]
+            if row["id"] == f"refund-{refund_request.id}"
+        )
+        self.assertEqual(refund_row["amount"], "-25.00")
+        self.assertEqual(refund_row["status"], "refunded")
+        agreement_row = next(
+            row
+            for row in response.data["agreements"]
+            if row["id"] == self.agreement.id
+        )
+        self.assertEqual(
+            Decimal(agreement_row["payment_summary"]["refunds_adjustments"]),
+            Decimal(baseline_summary["refunds_adjustments"]) + Decimal("25.00"),
+        )
+        self.assertEqual(
+            Decimal(agreement_row["payment_summary"]["remaining_in_escrow"]),
+            Decimal(baseline_summary["remaining_in_escrow"]) - Decimal("25.00"),
+        )
 
     def test_customer_portal_homeowner_agreement_actions_create_review_records(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
