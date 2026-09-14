@@ -216,8 +216,7 @@ const ThinStat = ({ label, value, sub, onClick, testId }) => {
       disabled={!clickable}
       data-testid={testId}
       className={[
-        "text-left rounded-xl border border-black/10 bg-white/70 p-3 shadow-sm transition",
-        "border-white/10 bg-white/10",
+        "text-left rounded-xl border border-white/10 bg-white/10 p-3 shadow-sm transition",
         clickable ? "hover:bg-white/15 cursor-pointer" : "cursor-default",
       ].join(" ")}
       title={clickable ? "Click to drill down" : undefined}
@@ -415,6 +414,17 @@ export default function AdminDashboard() {
   const { data: whoami, loading: whoamiLoading } = useWhoAmI();
   const role = whoami?.type || whoami?.role || whoami?.user_type || "";
   const isAdmin = ["admin", "platform_admin"].includes(String(role).toLowerCase());
+  const viewLabel = {
+    overview: "Overview",
+    goals: "Goals",
+    contractors: "Contractors",
+    homeowners: "Customers",
+    agreements: "Agreements",
+    disputes: "Resolution",
+    geo: "Geographic Coverage",
+    fee_audit: "Financial Operations",
+    support: "Support",
+  }[view] || titleCase(view);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -858,7 +868,7 @@ export default function AdminDashboard() {
       <header className="mhb-admin-header flex flex-wrap items-center gap-3" data-testid="admin-page-header">
         <div>
           <div className="text-3xl font-extrabold text-white">Admin</div>
-          <div className="mt-1 text-sm font-semibold capitalize text-slate-200">{view}</div>
+          <div className="mt-1 text-sm font-semibold text-slate-200">{viewLabel}</div>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -957,7 +967,7 @@ export default function AdminDashboard() {
               </SectionCard>
 
               <SectionCard
-                title={opsCenter.label || "Platform Operations Center"}
+                title="Platform Operations Center"
                 subtitle="Unified admin attention queue for marketplace health, money risk, resolution pressure, warranty oversight, platform health, and human-approved next steps."
                 testId="admin-marketplace-operations-center"
                 tone={centerAttention.some((item) => item.severity === "high" || item.severity === "critical") ? "warn" : "neutral"}
@@ -1119,7 +1129,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-sky-50">
-                        {centerAudit.status || "Current"}
+                      {centerAudit.status === "foundation" ? "Current" : titleCase(centerAudit.status || "Current")}
                     </span>
                   </div>
                   {Array.isArray(centerAudit.items) && centerAudit.items.length ? (
@@ -2198,11 +2208,11 @@ export default function AdminDashboard() {
               <SoftCard className="p-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <div>
-                    <div className="text-sm font-extrabold text-slate-900">Fee Audit Ledger</div>
-                    <div className="mt-1 text-xs text-slate-700">Use mismatch-only to spot anomalies fast.</div>
+                    <div className="text-sm font-extrabold text-white">Fee Audit Ledger</div>
+                    <div className="mt-1 text-xs text-sky-100/70">Use mismatch-only to spot anomalies fast.</div>
                   </div>
 
-                  <label className="ml-auto flex items-center gap-2 text-xs font-extrabold text-slate-700">
+                  <label className="ml-auto flex items-center gap-2 text-xs font-extrabold text-sky-100/80">
                     <input type="checkbox" checked={feeMismatchOnly} onChange={(e) => setFeeMismatchOnly(e.target.checked)} />
                     Mismatch only
                   </label>
@@ -2227,7 +2237,7 @@ export default function AdminDashboard() {
 
               <TableShell>
                 <table className="min-w-full text-xs">
-                  <thead className="border-b border-black/10 bg-white/60">
+                  <thead className="border-b border-white/10 bg-white/10">
                     <tr><Th>Receipt</Th><Th>Created</Th><Th>Agreement</Th><Th>Invoice</Th><Th>Plan</Th><Th>Promotion</Th><Th>Before waiver</Th><Th>Waived</Th><Th>Charged</Th><Th>Expected</Th><Th>Delta</Th><Th>Mismatch</Th></tr>
                   </thead>
                   <tbody>
