@@ -611,6 +611,34 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
     setError("");
   };
 
+  const updateScheduledDate = (date) => {
+    setForm((prev) => {
+      if (!date) {
+        return {
+          ...prev,
+          scheduled_for: "",
+          status: prev.status === "scheduled" ? "open" : prev.status,
+        };
+      }
+      const time = String(prev.scheduled_for || "").slice(11, 16) || "09:00";
+      return {
+        ...prev,
+        scheduled_for: `${date}T${time}`,
+        status: prev.status === "open" ? "scheduled" : prev.status,
+      };
+    });
+    setError("");
+  };
+
+  const updateScheduledTime = (time) => {
+    setForm((prev) => {
+      const date = String(prev.scheduled_for || "").slice(0, 10);
+      if (!date) return prev;
+      return { ...prev, scheduled_for: `${date}T${time || "09:00"}` };
+    });
+    setError("");
+  };
+
   const recipientKey = (recipient) => `${recipient.source}:${recipient.directory_entry_id || recipient.vendor_id || recipient.business_id || recipient.name}`;
   const recipientFromContractor = (contractor) => ({
     source: "myhomebro_contractor",
@@ -1502,10 +1530,23 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
                       </div>
                     </div>
                   ) : null}
-                  <label className="block text-sm font-medium text-slate-200">
-                    Scheduled Date
-                    <input data-testid="property-work-order-scheduled" type="datetime-local" value={form.scheduled_for} onChange={(event) => update("scheduled_for", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
-                  </label>
+                  <div className="sm:col-span-2">
+                    <div className="text-sm font-medium text-slate-200">Scheduled Visit</div>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">Choose a date and time after coordinating access. Adding a date moves an open work order to Scheduled.</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                      <label className="block text-xs font-semibold text-slate-300">
+                        Date
+                        <input data-testid="property-work-order-scheduled-date" type="date" value={String(form.scheduled_for || "").slice(0, 10)} onChange={(event) => updateScheduledDate(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-300">
+                        Time
+                        <input data-testid="property-work-order-scheduled-time" type="time" value={String(form.scheduled_for || "").slice(11, 16)} disabled={!form.scheduled_for} onChange={(event) => updateScheduledTime(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400 disabled:cursor-not-allowed disabled:opacity-50" />
+                      </label>
+                      <button type="button" data-testid="property-work-order-scheduled-clear" disabled={!form.scheduled_for} onClick={() => updateScheduledDate("")} className="rounded-xl border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+                        Clear schedule
+                      </button>
+                    </div>
+                  </div>
                   <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
                     Internal Notes
                     <textarea data-testid="property-work-order-internal-notes" rows={3} value={form.internal_notes} onChange={(event) => update("internal_notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />

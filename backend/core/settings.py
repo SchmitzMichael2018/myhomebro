@@ -509,7 +509,18 @@ TWILIO_FROM_NUMBER = get_env_var(
     "TWILIO_FROM_NUMBER",
     get_env_var("TWILIO_PHONE_NUMBER", required=False),
 )
-TWILIO_INVITES_ENABLED = get_bool("TWILIO_INVITES_ENABLED", default=False)
+# Invitation SMS is ready by default only in production when the full Twilio
+# credential set is present. Operators can still explicitly disable it with
+# TWILIO_INVITES_ENABLED=false, while development remains safely off.
+TWILIO_INVITES_ENABLED = get_bool(
+    "TWILIO_INVITES_ENABLED",
+    default=bool(
+        DEPLOYMENT_ENVIRONMENT == "production"
+        and TWILIO_ACCOUNT_SID
+        and TWILIO_AUTH_TOKEN
+        and (TWILIO_MESSAGING_SERVICE_SID or TWILIO_PHONE_NUMBER or TWILIO_FROM_NUMBER)
+    ),
+)
 MARKETPLACE_JOIN_INVITE_SMS_ENABLED = get_bool("MARKETPLACE_JOIN_INVITE_SMS_ENABLED", default=False)
 MARKETPLACE_JOIN_INVITE_EXPIRY_DAYS = int(get_env_var("MARKETPLACE_JOIN_INVITE_EXPIRY_DAYS", "30"))
 

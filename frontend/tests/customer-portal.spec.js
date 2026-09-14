@@ -5035,7 +5035,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-continue-finalize").click();
   await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Pipe Pros");
   await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Preferred Vendor");
-  await page.getByTestId("property-work-order-scheduled").fill("2026-06-18T15:30");
+  await page.getByTestId("property-work-order-scheduled-date").fill("2026-06-18");
+  await page.getByTestId("property-work-order-scheduled-time").fill("15:30");
   await expect(page.getByTestId("property-work-order-send-saved-vendor")).toBeEnabled();
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
@@ -5129,13 +5130,13 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-description").fill("Schedule HVAC service for the rental unit.");
   await page.getByTestId("property-work-order-category").selectOption("hvac");
   await page.getByTestId("property-work-order-priority").selectOption("normal");
-  await page.getByTestId("property-work-order-status").selectOption("scheduled");
   await page.getByTestId("property-work-order-unit").selectOption("601");
   await page.getByTestId("property-work-order-tenant").selectOption("801");
   await page.getByTestId("property-work-order-continue-contractors").click();
   await expect(page.getByTestId("property-work-order-staff")).toBeVisible();
   await page.getByTestId("property-work-order-staff").selectOption("502");
-  await page.getByTestId("property-work-order-scheduled").fill("2026-06-20T10:30");
+  await page.getByTestId("property-work-order-scheduled-date").fill("2026-06-20");
+  await page.getByTestId("property-work-order-scheduled-time").fill("10:30");
   await page.getByTestId("property-work-order-internal-notes").fill("Use tenant text thread for scheduling.");
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
@@ -6658,7 +6659,11 @@ test("property manager portal presents a role-aware operations command center", 
   await page.getByTestId("property-work-order-vendor").selectOption("1");
   await page.getByTestId("property-work-order-continue-finalize").click();
   await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Preferred Plumbing");
+  await page.getByTestId("property-work-order-scheduled-date").fill("2026-09-16");
+  await page.getByTestId("property-work-order-scheduled-time").fill("15:30");
   await expect(page.getByTestId("property-work-order-send-saved-vendor")).toBeEnabled();
+  await page.getByTestId("property-work-order-step-1").click();
+  await expect(page.getByTestId("property-work-order-status")).toHaveValue("scheduled");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-summary-rental-badge")).toHaveCount(0);
