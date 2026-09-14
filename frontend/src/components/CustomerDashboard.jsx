@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FolderKanban, Home, LayoutDashboard, LogOut, Pencil, UserRound, Users, Wrench } from "lucide-react";
+import { Bell, Building2, CheckCircle2, Circle, CreditCard, ExternalLink, FolderKanban, Home, LayoutDashboard, LogOut, Pencil, Route, UserRound, Users, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -17,6 +17,15 @@ const PRIMARY_TABS = [
   ["projects", "Projects", FolderKanban],
   ["payments", "Payments", CreditCard],
   ["property", "Property", Home],
+  ["notifications", "Updates", Bell],
+];
+
+const PROPERTY_MANAGER_PRIMARY_TABS = [
+  ["overview", "Operations", LayoutDashboard],
+  ["maintenance", "Maintenance", Wrench],
+  ["property", "Properties", Building2],
+  ["projects", "Projects", FolderKanban],
+  ["payments", "Payments", CreditCard],
   ["notifications", "Updates", Bell],
 ];
 
@@ -84,18 +93,23 @@ const DEFAULT_NOTIFICATION_FREQUENCY_OPTIONS = [
   { value: "off", label: "Off" },
 ];
 
-function primaryTabFor(tab) {
+function primaryTabFor(tab, isPropertyManagementAccount = false) {
+  if (isPropertyManagementAccount && tab === "maintenance") return "maintenance";
   if (["requests", "estimates", "diy-planner", "maintenance"].includes(tab)) return "projects";
   if (["documents"].includes(tab)) return "property";
   if (tab === "account") return "overview";
   return tab;
 }
 
-function contextualTabs(activeTab, showMaintenanceTab) {
-  if (primaryTabFor(activeTab) === "projects") {
+function contextualTabs(activeTab, showMaintenanceTab, isPropertyManagementAccount = false) {
+  if (isPropertyManagementAccount && activeTab === "maintenance") {
+    return [["maintenance", "Requests & Work Orders"], ["requests", "Project Requests"]];
+  }
+  if (primaryTabFor(activeTab, isPropertyManagementAccount) === "projects") {
+    if (isPropertyManagementAccount) return PROJECT_TABS;
     return showMaintenanceTab ? [...PROJECT_TABS, [MAINTENANCE_TAB[0], MAINTENANCE_TAB[1]]] : PROJECT_TABS;
   }
-  if (primaryTabFor(activeTab) === "property") return PROPERTY_TABS;
+  if (primaryTabFor(activeTab, isPropertyManagementAccount) === "property") return PROPERTY_TABS;
   return [];
 }
 
@@ -1348,7 +1362,80 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
   );
 }
 
-function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead }) {
+function PropertyManagementCommandCenter({ portal, onOpenTab }) {
+  const properties = Array.isArray(portal?.property_profiles) ? portal.property_profiles : portal?.property_profile?.id ? [portal.property_profile] : [];
+  const requests = Array.isArray(portal?.tenant_maintenance_requests) ? portal.tenant_maintenance_requests : [];
+  const workOrders = Array.isArray(portal?.property_work_orders) ? portal.property_work_orders : [];
+  const teamMembers = Array.isArray(portal?.account?.team_members) ? portal.account.team_members : [];
+  const vendors = Array.isArray(portal?.account?.vendors) ? portal.account.vendors : [];
+  const openRequestStatuses = new Set(["submitted", "under_review", "more_info_requested", "approved"]);
+  const terminalWorkOrderStatuses = new Set(["completed", "closed", "cancelled", "canceled"]);
+  const openRequests = requests.filter((row) => openRequestStatuses.has(String(row?.status || "").toLowerCase()));
+  const activeWorkOrders = workOrders.filter((row) => !terminalWorkOrderStatuses.has(String(row?.status || "").toLowerCase()));
+  const unitCount = properties.reduce((total, property) => total + Number(property?.unit_count ?? property?.units?.length ?? 0), 0);
+  const tenantCount = properties.reduce((total, property) => total + Number(property?.tenant_count ?? (property?.tenants || []).filter((tenant) => !["former", "inactive"].includes(String(tenant?.status || "active").toLowerCase())).length), 0);
+  const routing = activeWorkOrders.reduce(
+    (counts, row) => {
+      const assignment = String(row?.assignment_type || "").toLowerCase();
+      const marketplace = String(row?.marketplace_status || "").toLowerCase();
+      if (assignment === "marketplace_contractor" || (marketplace && !["not_sent", "withdrawn", "closed"].includes(marketplace))) counts.marketplace += 1;
+      else if (assignment === "vendor") counts.vendor += 1;
+      else if (assignment === "internal_staff") counts.internal += 1;
+      else counts.unassigned += 1;
+      return counts;
+    },
+    { internal: 0, vendor: 0, marketplace: 0, unassigned: 0 },
+  );
+  const operationStatus = openRequests.length
+    ? `${openRequests.length} maintenance request${openRequests.length === 1 ? "" : "s"} awaiting action`
+    : activeWorkOrders.length
+      ? `${activeWorkOrders.length} active work order${activeWorkOrders.length === 1 ? "" : "s"} in progress`
+      : "No property operations need attention";
+
+  return (
+    <section data-testid="property-management-command-center" className="rounded-3xl border border-sky-300/30 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.2),transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(8,47,73,0.78))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-sky-200"><Building2 size={15} /> Property Operations</div>
+          <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Portfolio command center</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Review resident needs, coordinate responsible people, and keep every decision connected to the correct property and unit.</p>
+        </div>
+        <div data-testid="property-management-operation-status" className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${openRequests.length ? "border-amber-300/45 bg-amber-300/10 text-amber-100" : "border-emerald-300/35 bg-emerald-400/10 text-emerald-100"}`}>
+          {operationStatus}
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="property-management-summary">
+        <StatCard label="Open Requests" value={openRequests.length} testId="pm-summary-open-requests" onClick={() => onOpenTab?.("maintenance")} />
+        <StatCard label="Active Work Orders" value={activeWorkOrders.length} testId="pm-summary-work-orders" onClick={() => onOpenTab?.("maintenance")} />
+        <StatCard label="Properties" value={properties.length} testId="pm-summary-properties" onClick={() => onOpenTab?.("property")} />
+        <StatCard label="Units" value={unitCount} testId="pm-summary-units" onClick={() => onOpenTab?.("property")} />
+        <StatCard label="Active Tenants" value={tenantCount} testId="pm-summary-tenants" onClick={() => onOpenTab?.("property")} />
+        <StatCard label="Vendors" value={vendors.filter((vendor) => String(vendor?.status || "active").toLowerCase() !== "inactive").length} testId="pm-summary-vendors" onClick={() => onOpenTab?.("account")} />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div data-testid="property-management-routing-summary" className="rounded-2xl border border-slate-700 bg-slate-950/55 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-white"><Route size={16} className="text-sky-300" /> Active work routing</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge>Internal staff: {routing.internal}</Badge>
+            <Badge>Preferred vendors: {routing.vendor}</Badge>
+            <Badge>Marketplace: {routing.marketplace}</Badge>
+            {routing.unassigned ? <Badge tone="gold">Unassigned: {routing.unassigned}</Badge> : null}
+          </div>
+          <p className="mt-3 text-xs leading-5 text-slate-400">Open Maintenance to see the responsible party, schedule, response state, and activity history for each work order.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
+          <button type="button" onClick={() => onOpenTab?.("maintenance")} className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-amber-200">Review Maintenance</button>
+          <button type="button" onClick={() => onOpenTab?.("property")} className="rounded-xl border border-sky-300/40 bg-sky-400/10 px-4 py-3 text-sm font-bold text-sky-100 hover:bg-sky-400/20">Open Properties</button>
+        </div>
+      </div>
+      {teamMembers.length === 0 ? <p className="mt-4 text-xs text-amber-100">No property-management team members are active yet. Add staff in Account when you are ready to assign internal work.</p> : null}
+    </section>
+  );
+}
+
+function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", isPropertyManagementAccount = false, markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead }) {
   const summary = portal?.summary || {};
   const latestRequests = (portal?.requests || []).slice(0, 3);
   const allProjects = Array.isArray(portal?.projects) ? portal.projects : [];
@@ -1407,12 +1494,13 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
 
   return (
     <div data-testid="customer-dashboard-overview" className="space-y-5">
+      {isPropertyManagementAccount ? <PropertyManagementCommandCenter portal={portal} onOpenTab={onOpenTab} /> : null}
       <section data-testid="customer-overview-needs-attention" className="rounded-2xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_34%),rgba(15,23,42,0.86)] p-5 shadow-xl shadow-slate-950/25">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Needs Attention</div>
             <h2 className="mt-1 text-2xl font-semibold text-white">What needs my attention?</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Homeowner-resolvable actions only: signatures, escrow funding, payment reviews, contractor responses, disputes, and maintenance due.</p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">{isPropertyManagementAccount ? "Manager-resolvable actions: resident requests, routing decisions, work-order updates, approvals, payments, and maintenance due." : "Homeowner-resolvable actions only: signatures, escrow funding, payment reviews, contractor responses, disputes, and maintenance due."}</p>
           </div>
           <Badge tone={needsAttention.length ? "gold" : "slate"}>{needsAttention.length || "No"} open</Badge>
         </div>
@@ -1461,8 +1549,8 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Property Records</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Your home history, organized</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Keep documents, photos, warranties, project records, and maintenance history connected to the right property.</p>
+            <h2 className="mt-1 text-xl font-semibold text-white">{isPropertyManagementAccount ? "Portfolio records and maintenance history" : "Your home history, organized"}</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">{isPropertyManagementAccount ? "Keep units, tenants, work orders, documents, warranties, and completed service connected to each managed property." : "Keep documents, photos, warranties, project records, and maintenance history connected to the right property."}</p>
           </div>
           <button type="button" onClick={() => onOpenTab?.("property")} className="rounded-xl border border-sky-300/40 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
             Open Property Records
@@ -1486,8 +1574,8 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
       <section className="rounded-2xl border border-slate-700 bg-slate-950/45 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-semibold text-white">Home Profile Setup</div>
-            <p className="mt-1 text-sm text-slate-400">Your setup checklist is tucked here so projects and actions stay first.</p>
+            <div className="text-sm font-semibold text-white">{isPropertyManagementAccount ? "Property Operations Setup" : "Home Profile Setup"}</div>
+            <p className="mt-1 text-sm text-slate-400">{isPropertyManagementAccount ? "Company, team, vendor, and property configuration stays secondary to daily operations." : "Your setup checklist is tucked here so projects and actions stay first."}</p>
           </div>
           <div data-testid="customer-portal-summary" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <StatCard label="Projects" value={summary.active_projects ?? 0} testId="customer-portal-summary-projects" onClick={() => onOpenTab?.("projects")} />
@@ -1497,7 +1585,13 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
           </div>
         </div>
         <div className="mt-4">
-          <CustomerActivationChecklist portal={portal} onOpenTab={onOpenTab} />
+          {isPropertyManagementAccount ? (
+            <div data-testid="property-management-setup-actions" className="grid gap-3 md:grid-cols-3">
+              <InfoCard eyebrow="Company" title="Team and permissions" body="Maintain the people who coordinate properties, tenant requests, and internal work." actionLabel="Manage team" onClick={() => onOpenTab?.("account")} />
+              <InfoCard eyebrow="Service network" title="Preferred vendors" body="Keep recurring vendor contacts available for assignments and invitations." actionLabel="Manage vendors" onClick={() => onOpenTab?.("account")} />
+              <InfoCard eyebrow="Portfolio" title="Properties, units, and tenants" body="Keep the operating context for maintenance requests and historical records current." actionLabel="Manage properties" onClick={() => onOpenTab?.("property")} />
+            </div>
+          ) : <CustomerActivationChecklist portal={portal} onOpenTab={onOpenTab} />}
         </div>
       </section>
     </div>
@@ -2487,6 +2581,7 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
   const [editingTeamMember, setEditingTeamMember] = useState(null);
   const [vendorModalMode, setVendorModalMode] = useState("");
   const [editingVendor, setEditingVendor] = useState(null);
+  const [accountSection, setAccountSection] = useState("profile");
 
   useEffect(() => {
     setForm(profileForm);
@@ -2497,6 +2592,15 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
   const canManageVendors = Boolean(isCompanyAccount || account.has_rental_properties || linkedProperties.some((property) => property?.is_rental_property));
   const teamMembers = Array.isArray(account.team_members) ? account.team_members : [];
   const vendors = Array.isArray(account.vendors) ? account.vendors : [];
+  useEffect(() => {
+    if (!isCompanyAccount && accountSection !== "profile") setAccountSection("profile");
+  }, [isCompanyAccount, accountSection]);
+  const accountSectionCopy = {
+    profile: ["My Profile", "Keep your contact details current so project updates, payment notices, and property records stay connected to you."],
+    company: ["Company Profile", "Maintain the business identity used across your managed portfolio."],
+    team: ["Team Members", "Manage the people who coordinate tenants, properties, approvals, and internal work."],
+    vendors: ["Preferred Vendors", "Build a reusable service network for recurring maintenance and repairs."],
+  };
 
   return (
     <section data-testid="customer-account-panel" className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -2542,6 +2646,15 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
           onImportVendor={onImportVendor}
         />
       ) : null}
+      {isCompanyAccount ? (
+        <nav data-testid="property-management-account-sections" aria-label="Property management account sections" className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-700 bg-slate-950/60 p-2 lg:col-span-2">
+          {[["profile", "Profile"], ["company", "Company"], ["team", "Team"], ["vendors", "Vendors"]].map(([key, label]) => (
+            <button key={key} type="button" data-testid={`property-management-account-section-${key}`} onClick={() => setAccountSection(key)} className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${accountSection === key ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-300/40" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      ) : null}
       <form
         data-testid="customer-profile-form"
         onSubmit={(event) => {
@@ -2551,10 +2664,10 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
         className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5"
       >
         <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Account</div>
-        <h2 className="mt-1 text-xl font-semibold text-white">My Profile</h2>
-        <p className="mt-1 text-sm leading-6 text-slate-300">Keep your contact details current so project updates, payment notices, and property records stay connected to you.</p>
+        <h2 className="mt-1 text-xl font-semibold text-white">{accountSectionCopy[accountSection]?.[0] || "My Profile"}</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-300">{accountSectionCopy[accountSection]?.[1] || accountSectionCopy.profile[1]}</p>
 
-        <div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/70 p-3" data-testid="customer-account-type-section">
+        {!isCompanyAccount || accountSection === "profile" ? <><div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/70 p-3" data-testid="customer-account-type-section">
           <div className="text-sm font-semibold text-white">Account Type</div>
           <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Account Type">
             {[
@@ -2625,11 +2738,11 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
             ZIP
             <input value={form.postal_code} onChange={(event) => update("postal_code", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
-        </div>
+        </div></> : null}
 
         {canManageVendors ? (
           <div className="mt-4 space-y-4">
-            {isCompanyAccount ? (
+            {isCompanyAccount && accountSection === "company" ? (
               <>
                 <div data-testid="customer-company-profile-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
                   <h3 className="text-base font-semibold text-white">Company Profile</h3>
@@ -2705,6 +2818,9 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
                   </div>
                 </div>
 
+              </>
+            ) : null}
+            {isCompanyAccount && accountSection === "team" ? (
                 <div data-testid="pm-team-members-section" className="rounded-xl border border-sky-300/25 bg-slate-900/55 p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -2769,10 +2885,9 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
                     )}
                   </div>
                 </div>
-              </>
             ) : null}
 
-            <div data-testid="pm-vendors-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
+            {accountSection === "vendors" ? <div data-testid="pm-vendors-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h3 className="text-base font-semibold text-white">Vendors</h3>
@@ -2836,13 +2951,13 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
                   </div>
                 )}
               </div>
-            </div>
+            </div> : null}
           </div>
         ) : null}
 
-        <button type="submit" disabled={saving} className="mt-5 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
+        {(!isCompanyAccount || ["profile", "company"].includes(accountSection)) ? <button type="submit" disabled={saving} className="mt-5 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
           {saving ? "Saving..." : "Save profile"}
-        </button>
+        </button> : null}
       </form>
 
       <aside className="space-y-4">
@@ -2941,8 +3056,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     rental_operations_locked: Boolean(portal?.account?.rental_operations_locked),
     checkout_endpoint: "",
   };
-  const visibleTabs = PRIMARY_TABS;
-  const secondaryTabs = useMemo(() => contextualTabs(activeTab, showMaintenanceTab), [activeTab, showMaintenanceTab]);
+  const visibleTabs = isPropertyManagementAccount ? PROPERTY_MANAGER_PRIMARY_TABS : PRIMARY_TABS;
+  const secondaryTabs = useMemo(() => contextualTabs(activeTab, showMaintenanceTab, isPropertyManagementAccount), [activeTab, showMaintenanceTab, isPropertyManagementAccount]);
   useEffect(() => {
     if (!VALID_PORTAL_TABS.has(activeTab)) {
       setActiveTab("overview");
@@ -3622,7 +3737,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") {
-      return <OverviewPanel portal={{ ...portal, notifications }} onOpenTab={setActiveTab} tenantMaintenanceTab={showMaintenanceTab ? "maintenance" : "requests"} markingId={markingNotificationId} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} />;
+      return <OverviewPanel portal={{ ...portal, notifications }} onOpenTab={setActiveTab} tenantMaintenanceTab={showMaintenanceTab ? "maintenance" : "requests"} isPropertyManagementAccount={isPropertyManagementAccount} markingId={markingNotificationId} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} />;
     }
     if (activeTab === "projects") {
       return (
@@ -3925,11 +4040,11 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
                   <div className="text-xl font-bold tracking-tight text-white">
                     MyHome<span className="text-amber-300">Bro</span>
                   </div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Customer Portal</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">{isPropertyManagementAccount ? "Property Manager Portal" : "Customer Portal"}</div>
                 </div>
               </div>
-              <h1 className="mt-5 text-2xl font-bold tracking-tight text-white sm:text-3xl">Customer Portal</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{customerName ? `${customerName}, ` : ""}track projects, payments, documents, warranties, and property records in one place.</p>
+              <h1 className="mt-5 text-2xl font-bold tracking-tight text-white sm:text-3xl">{isPropertyManagementAccount ? "Property Manager Portal" : "Customer Portal"}</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{customerName ? `${customerName}, ` : ""}{isPropertyManagementAccount ? "coordinate properties, tenants, maintenance, vendors, approvals, payments, and history in one place." : "track projects, payments, documents, warranties, and property records in one place."}</p>
             </div>
             <div className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300 lg:w-auto">
               <div>
@@ -3970,18 +4085,18 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             </div>
           </div>
 
-          <nav className="mt-6 flex gap-2 overflow-x-auto pb-1" aria-label="Customer workspace tabs">
+          <nav className="mt-6 flex gap-2 overflow-x-auto pb-1" aria-label={isPropertyManagementAccount ? "Property management workspace tabs" : "Customer workspace tabs"}>
             {visibleTabs.map(([key, label, Icon]) => (
-              <button key={key} type="button" data-testid={`customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${primaryTabFor(activeTab) === key ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"}`}>
+              <button key={key} type="button" data-testid={`customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${primaryTabFor(activeTab, isPropertyManagementAccount) === key ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"}`}>
                 <Icon size={16} />
                 {label}
               </button>
             ))}
           </nav>
           {secondaryTabs.length ? (
-            <nav className="mt-3 flex gap-2 overflow-x-auto border-t border-slate-700/70 pt-3" aria-label={`${primaryTabFor(activeTab)} sections`} data-testid="customer-dashboard-context-tabs">
+            <nav className="mt-3 flex gap-2 overflow-x-auto border-t border-slate-700/70 pt-3" aria-label={`${primaryTabFor(activeTab, isPropertyManagementAccount)} sections`} data-testid="customer-dashboard-context-tabs">
               {secondaryTabs.map(([key, label]) => (
-                <button key={key} type="button" data-testid={key === "projects" || key === "property" ? `customer-dashboard-section-${key}` : `customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeTab === key ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-300/40" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                <button key={key} type="button" data-testid={key === "projects" || key === "property" || (isPropertyManagementAccount && key === "maintenance") ? `customer-dashboard-section-${key}` : `customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeTab === key ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-300/40" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                   {label}
                 </button>
               ))}
@@ -3995,7 +4110,14 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-semibold text-white">{rentalOperations.rental_operations_locked ? "Internal maintenance tools require Rental Operations." : rentalOperations.trial_active ? `Rental Operations trial: ${rentalOperations.trial_days_remaining} day${rentalOperations.trial_days_remaining === 1 ? "" : "s"} remaining` : "Rental Operations active"}</div>
-                  <p className="mt-1 text-xs leading-5 opacity-85">Marketplace contractor routing and vendor invitations stay free. Internal staff assignment and self-performed completion workflows use Rental Operations.</p>
+                  <p className="mt-1 text-xs leading-5 opacity-85">Marketplace contractor routing and vendor invitations stay free. Rental Operations adds internal staff assignment and self-performed completion workflows.</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                    <span className="rounded-full border border-emerald-200/35 bg-emerald-300/10 px-2.5 py-1">Included: tenant intake</span>
+                    <span className="rounded-full border border-emerald-200/35 bg-emerald-300/10 px-2.5 py-1">Included: vendor invitations</span>
+                    <span className="rounded-full border border-emerald-200/35 bg-emerald-300/10 px-2.5 py-1">Included: marketplace routing</span>
+                    <span className="rounded-full border border-sky-200/35 bg-sky-300/10 px-2.5 py-1">Rental Operations: internal assignments</span>
+                    <span className="rounded-full border border-sky-200/35 bg-sky-300/10 px-2.5 py-1">Rental Operations: self-performed work</span>
+                  </div>
                 </div>
                 {rentalOperations.rental_operations_locked ? (
                   <button type="button" data-testid="rental-operations-checkout-button" disabled={startingRentalOperationsCheckout} onClick={startRentalOperationsCheckout} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-60">

@@ -4627,12 +4627,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Lake House");
   await expect(page.getByTestId("customer-account-logout")).toContainText("Log out");
   await page.getByTestId("customer-account-type-property_management_company").check();
+  await expect(page.getByTestId("property-management-account-sections")).toBeVisible();
+  await page.getByTestId("property-management-account-section-company").click();
   await expect(page.getByTestId("customer-company-profile-section")).toContainText("Company Profile");
+  await page.getByTestId("property-management-account-section-team").click();
   await expect(page.getByTestId("pm-team-members-section")).toContainText("Team Members");
   await expect(page.getByTestId("pm-team-members-section")).toContainText("Team members help manage properties, maintenance requests, tenants, vendors, and operations.");
   await expect(page.getByTestId("pm-team-members-empty")).toContainText("Add team members");
+  await page.getByTestId("property-management-account-section-vendors").click();
   await expect(page.getByTestId("pm-vendors-section")).toContainText("Vendors");
   await expect(page.getByTestId("pm-vendors-empty")).toContainText("Add preferred vendors");
+  await page.getByTestId("property-management-account-section-company").click();
   await page.getByTestId("customer-company-name").fill("Austin Rentals Group");
   await page.getByTestId("customer-company-phone").fill("512-555-3434");
   await page.getByTestId("customer-company-email").fill("ops@austinrentals.example");
@@ -4640,6 +4645,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-company-street").fill("700 Leasing Ave");
   await page.getByTestId("customer-company-license-number").fill("PM-12345");
   await page.getByTestId("customer-company-notes").fill("Portfolio onboarding account.");
+  await page.getByTestId("property-management-account-section-profile").click();
   await page.getByTestId("customer-profile-name").fill("Pat Updated");
   await page.getByTestId("customer-profile-phone").fill("512-555-1212");
   await page.getByTestId("customer-profile-address-line1").fill("700 Customer Ln");
@@ -4649,6 +4655,7 @@ test("customer portal is reachable from the landing page and loads secure record
   const profileSavePayload = profileSaveRequest.postDataJSON();
   await expect(page.getByText("Profile saved.", { exact: true })).toBeVisible();
   await expect(page.getByTestId("customer-profile-phone")).toHaveValue("512-555-1212");
+  await page.getByTestId("property-management-account-section-company").click();
   await expect(page.getByTestId("customer-company-name")).toHaveValue("Austin Rentals Group");
   expect(profileSavePayload).toMatchObject({
     account_type: "property_management_company",
@@ -4661,13 +4668,24 @@ test("customer portal is reachable from the landing page and loads secure record
     company_notes: "Portfolio onboarding account.",
   });
   expect(savedProfilePayload).toMatchObject(profileSavePayload);
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText(["Home", "Projects", "Payments", "Property", "Updates"]);
+  await expect(page.getByRole("heading", { name: "Property Manager Portal" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates"]);
+  await page.getByTestId("customer-dashboard-tab-overview").click();
+  await expect(page.getByTestId("property-management-command-center")).toBeVisible();
+  await expect(page.getByTestId("property-management-summary")).toContainText("Open Requests");
+  await expect(page.getByTestId("property-management-summary")).toContainText("Active Work Orders");
+  await expect(page.getByTestId("property-management-routing-summary")).toContainText("Active work routing");
+  await expect(page.getByTestId("property-management-setup-actions")).toContainText("Preferred vendors");
+  await page.getByTestId("customer-dashboard-tab-account").click();
+  await page.getByTestId("property-management-account-section-profile").click();
   await page.getByTestId("customer-account-type-individual").check();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
   await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
   await expect(page.getByTestId("pm-vendors-section")).toHaveCount(0);
   await page.getByTestId("customer-account-type-property_management_company").check();
+  await page.getByTestId("property-management-account-section-company").click();
   await expect(page.getByTestId("customer-company-name")).toHaveValue("Austin Rentals Group");
+  await page.getByTestId("property-management-account-section-team").click();
   await page.getByTestId("pm-team-add-button").click();
   await expect(page.getByTestId("pm-team-add-modal")).toBeVisible();
   await page.getByTestId("pm-team-member-name").fill("Morgan Manager");
@@ -4698,6 +4716,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("pm-team-disable-501").click();
   await expect(page.getByTestId("pm-team-member-501")).toContainText("Disabled");
   await expect(page.getByTestId("pm-team-disable-501")).toHaveCount(0);
+  await page.getByTestId("property-management-account-section-vendors").click();
   await page.getByTestId("pm-vendor-add-button").click();
   await expect(page.getByTestId("pm-vendor-add-modal")).toBeVisible();
   await expect(page.getByTestId("pm-vendor-source-myhomebro_contractor")).toBeVisible();
@@ -4881,7 +4900,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Review maintenance request");
   await expect(page.getByTestId("home-records-timeline")).toContainText("Old dishwasher leak");
   await page.getByTestId("home-records-timeline-action-tenant-maintenance-801").click();
-  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/bg-sky/);
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Kitchen sink leak");
@@ -6558,6 +6577,74 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
 });
 
+test("property manager portal presents a role-aware operations command center", async ({ page }) => {
+  const propertyManagerPortal = clonePortal({
+    ...portalPayload,
+    customer: { ...portalPayload.customer, name: "Morgan Manager", account_type: "property_management_company" },
+    account: {
+      ...portalPayload.account,
+      account_type: "property_management_company",
+      is_property_management_company: true,
+      has_rental_properties: true,
+      team_members: [{ id: 1, name: "Alex Coordinator", status: "active" }],
+      vendors: [{ id: 1, name: "Preferred Plumbing", status: "active" }],
+      rental_operations: { subscription_active: true, rental_operations_locked: false },
+    },
+    property_profiles: [
+      {
+        ...portalPayload.property_profiles[0],
+        unit_count: 2,
+        tenant_count: 1,
+        units: [{ id: 1 }, { id: 2 }],
+        tenants: [{ id: 1, status: "active" }, { id: 2, status: "former" }],
+        rental_tools_enabled: true,
+        is_rental_property: true,
+      },
+    ],
+    tenant_maintenance_requests: [{ id: 71, title: "Kitchen leak", status: "submitted", status_label: "Submitted" }],
+    property_work_orders: [
+      { id: 81, title: "Repair kitchen leak", status: "scheduled", assignment_type: "vendor" },
+      { id: 82, title: "Replace smoke detector", status: "completed", assignment_type: "internal_staff" },
+    ],
+  });
+
+  await page.addInitScript(() => window.localStorage.setItem("access", "customer-portal-token"));
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    if (route.request().method() === "GET" && route.request().url().includes("/customer-portal/customer-token/")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(propertyManagerPortal) });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Property Manager Portal" })).toBeVisible();
+  await expect(page.getByText("coordinate properties, tenants, maintenance, vendors, approvals, payments, and history in one place.")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates"]);
+  await expect(page.getByTestId("pm-summary-open-requests")).toContainText("1");
+  await expect(page.getByTestId("pm-summary-work-orders")).toContainText("1");
+  await expect(page.getByTestId("pm-summary-properties")).toContainText("1");
+  await expect(page.getByTestId("pm-summary-units")).toContainText("2");
+  await expect(page.getByTestId("pm-summary-tenants")).toContainText("1");
+  await expect(page.getByTestId("pm-summary-vendors")).toContainText("1");
+  await expect(page.getByTestId("property-management-routing-summary")).toContainText("Preferred vendors: 1");
+  await expect(page.getByTestId("rental-operations-subscription-banner")).toContainText("Included: tenant intake");
+  await expect(page.getByTestId("rental-operations-subscription-banner")).toContainText("Rental Operations: internal assignments");
+  await page.getByTestId("customer-dashboard-tab-maintenance").click();
+  await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-context-tabs")).toContainText("Project Requests");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("customer-dashboard-tab-overview").click();
+  await expect(page.getByTestId("property-management-command-center")).toBeVisible();
+  const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(mobileOverflow).toBeLessThanOrEqual(2);
+  await page.getByTestId("customer-dashboard-tab-account").click();
+  await expect(page.getByRole("navigation", { name: "Property management account sections" }).locator("button")).toHaveText(["Profile", "Company", "Team", "Vendors"]);
+  await page.getByTestId("property-management-account-section-vendors").click();
+  await expect(page.getByTestId("pm-vendors-section")).toContainText("Preferred Plumbing");
+  await expect(page.getByTestId("customer-profile-form")).not.toContainText("Account Type");
+});
+
 test("tenant maintenance notification opens the Maintenance tab", async ({ page }) => {
   let currentPortalPayload = clonePortal({
     ...portalPayload,
@@ -6627,7 +6714,7 @@ test("tenant maintenance notification opens the Maintenance tab", async ({ page 
     .getByTestId("customer-notifications-center-item-901")
     .getByRole("link", { name: /Open related item/ })
     .click();
-  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/bg-sky/);
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
 });
 
