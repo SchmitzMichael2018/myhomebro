@@ -50,6 +50,9 @@ const TenantMaintenanceRequestPage = lazy(
 const TenantMaintenanceStatusPage = lazy(
   () => import('../pages/TenantMaintenanceStatusPage.jsx')
 );
+const PropertyWorkOrderInvitationPage = lazy(
+  () => import('../pages/PropertyWorkOrderInvitationPage.jsx')
+);
 const CustomerAccountOnboardingPage = lazy(
   () => import('../pages/CustomerAccountOnboardingPage.jsx')
 );
@@ -143,6 +146,10 @@ export default function PublicRoutes() {
         <Route
           path="/maintenance-request/:token"
           element={<TenantMaintenanceRequestPage />}
+        />
+        <Route
+          path="/work-order-invitations/:token"
+          element={<PropertyWorkOrderInvitationPage />}
         />
 
         {/* Public intake */}

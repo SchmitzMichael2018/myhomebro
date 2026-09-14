@@ -25258,6 +25258,18 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(send_response.status_code, 200, send_response.data)
         invitation = PropertyWorkOrderRecipientInvitation.objects.get(work_order=row)
 
+        details_response = self.client.get(f"/api/projects/work-order-invitations/{invitation.token}/details/")
+        self.assertEqual(details_response.status_code, 200, details_response.data)
+        self.assertEqual(details_response.data["work_order"]["title"], "Repair sink leak")
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, PropertyWorkOrderRecipientInvitation.STATUS_SENT)
+
+        legacy_get_response = self.client.get(f"/api/projects/work-order-invitations/{invitation.token}/accept/")
+        self.assertEqual(legacy_get_response.status_code, 302)
+        self.assertEqual(legacy_get_response.url, f"/work-order-invitations/{invitation.token}")
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, PropertyWorkOrderRecipientInvitation.STATUS_SENT)
+
         accept_response = self.client.post(f"/api/projects/work-order-invitations/{invitation.token}/accept/")
 
         self.assertEqual(accept_response.status_code, 200, accept_response.data)
@@ -25874,11 +25886,22 @@ class CustomerPortalAccessTests(TestCase):
     def test_property_work_order_execution_creates_activity_timeline(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
+        source_request = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            submitted_by_name="QA Resident",
+            submitted_by_email="resident@example.com",
+            title="Repair sink leak",
+            description="Sink is leaking.",
+            status=TenantMaintenanceRequest.STATUS_APPROVED,
+        )
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
             unit=unit,
             tenant=tenant,
+            source_tenant_request=source_request,
             title="Repair sink leak",
             description="Inspect and repair sink.",
         )
@@ -25932,6 +25955,8 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIsNotNone(row.started_at)
         self.assertIsNotNone(row.completed_at)
         self.assertIsNotNone(row.closed_at)
+        source_request.refresh_from_db()
+        self.assertEqual(source_request.status, TenantMaintenanceRequest.STATUS_CLOSED)
         self.assertEqual(PropertyWorkOrderAttachment.objects.count(), 1)
         attachment = PropertyWorkOrderAttachment.objects.get()
         self.assertEqual(attachment.original_filename, "completed.jpg")

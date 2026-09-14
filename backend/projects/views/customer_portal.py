@@ -17,7 +17,7 @@ from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Case, Count, IntegerField, Q, Value, When
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -820,6 +820,42 @@ def _tenant_maintenance_status_timeline(row: TenantMaintenanceRequest) -> list[d
                 "created_at": _safe_dt(work_order.created_at),
             }
         )
+        if work_order.scheduled_for:
+            timeline.append(
+                {
+                    "label": "Visit scheduled",
+                    "status": PropertyWorkOrder.STATUS_SCHEDULED,
+                    "description": "The service visit has been scheduled.",
+                    "created_at": _safe_dt(work_order.scheduled_for),
+                }
+            )
+        if work_order.started_at:
+            timeline.append(
+                {
+                    "label": "Work started",
+                    "status": PropertyWorkOrder.STATUS_IN_PROGRESS,
+                    "description": "Work on this maintenance request has started.",
+                    "created_at": _safe_dt(work_order.started_at),
+                }
+            )
+        if work_order.completed_at:
+            timeline.append(
+                {
+                    "label": "Work completed",
+                    "status": PropertyWorkOrder.STATUS_COMPLETED,
+                    "description": "The vendor marked the maintenance work complete for manager review.",
+                    "created_at": _safe_dt(work_order.completed_at),
+                }
+            )
+        if work_order.closed_at:
+            timeline.append(
+                {
+                    "label": "Request closed",
+                    "status": PropertyWorkOrder.STATUS_CLOSED,
+                    "description": "The property manager reviewed and closed the work order.",
+                    "created_at": _safe_dt(work_order.closed_at),
+                }
+            )
     return timeline
 
 
@@ -8081,6 +8117,13 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             activity_messages.append((PropertyWorkOrderActivity.TYPE_NOTE_ADDED, "Work order notes updated."))
         if update_fields:
             row.save(update_fields=[*update_fields, "updated_at"])
+        if row.status == PropertyWorkOrder.STATUS_CLOSED and row.source_tenant_request_id:
+            source_request = row.source_tenant_request
+            if source_request.status != TenantMaintenanceRequest.STATUS_CLOSED:
+                source_request.status = TenantMaintenanceRequest.STATUS_CLOSED
+                source_request.reviewed_at = now
+                source_request.reviewed_by = email.lower().strip()
+                source_request.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
         self._save_completion_attachments(row, files, data, email.lower().strip())
         for activity_type, message in activity_messages:
             _property_work_order_add_activity(row, activity_type, message, email)
@@ -8315,18 +8358,16 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                     return [], True, Response({"detail": "Manual vendor email or phone is required."}, status=status.HTTP_400_BAD_REQUEST)
         return recipients, explicit, None
 
-    def _invite_url(self, request, invitation: PropertyWorkOrderRecipientInvitation, action: str) -> str:
-        return request.build_absolute_uri(f"/api/projects/work-order-invitations/{invitation.token}/{action}/")
+    def _invite_url(self, request, invitation: PropertyWorkOrderRecipientInvitation) -> str:
+        return request.build_absolute_uri(f"/work-order-invitations/{invitation.token}")
 
     def _deliver_work_order_invitation(self, request, invitation: PropertyWorkOrderRecipientInvitation) -> dict:
-        accept_url = self._invite_url(request, invitation, "accept")
-        decline_url = self._invite_url(request, invitation, "decline")
+        response_url = self._invite_url(request, invitation)
         subject = f"MyHomeBro work order invitation - {invitation.work_order.work_order_number or 'Work Order'}"
         body = (
             f"{invitation.property_management_company.name or 'A property manager'} sent you a work order invitation.\n\n"
             f"Work order: {invitation.work_order.title}\n"
-            f"Accept: {accept_url}\n"
-            f"Decline: {decline_url}\n"
+            f"Review and respond: {response_url}\n"
         )
         results = {
             "email": {"attempted": False, "ok": False, "message": ""},
@@ -8342,15 +8383,14 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                     "<div style='font-family:Arial'>"
                     "<h2>New MyHomeBro work order invitation</h2>"
                     f"<p>{invitation.work_order.title}</p>"
-                    f"<p><a href='{accept_url}'>Accept Work Order</a></p>"
-                    f"<p><a href='{decline_url}'>Decline</a></p>"
+                    f"<p><a href='{response_url}'>Review and Respond</a></p>"
                     "</div>"
                 ),
             )
             results["email"].update({"ok": ok, "message": message})
         if invitation.phone:
             results["sms"]["attempted"] = True
-            ok, message = send_twilio_sms(to_phone=invitation.phone, body=f"MyHomeBro work order: {accept_url}")
+            ok, message = send_twilio_sms(to_phone=invitation.phone, body=f"MyHomeBro work order: {response_url}")
             results["sms"].update({"ok": ok, "message": message})
         return results
 
@@ -8638,20 +8678,36 @@ class CustomerPortalPropertyWorkOrderContractorMatchView(CustomerPortalPropertyW
 class PropertyWorkOrderRecipientInvitationResponseView(APIView):
     permission_classes = [AllowAny]
 
+    def _invitation(self, token: str):
+        return get_object_or_404(
+            PropertyWorkOrderRecipientInvitation.objects.select_related(
+                "work_order",
+                "work_order__property_profile",
+                "work_order__unit",
+                "linked_vendor",
+                "property_management_company",
+            ),
+            token=token,
+        )
+
+    def _response_payload(self, invitation: PropertyWorkOrderRecipientInvitation) -> dict:
+        return {
+            "invitation": _property_work_order_invitation_payload(invitation),
+            "work_order": _property_work_order_payload(invitation.work_order),
+            "company": {"name": _safe_text(invitation.property_management_company.name)},
+        }
+
     def post(self, request, token: str, action: str):
         if action not in {"accept", "decline"}:
             return Response({"detail": "Unknown invitation response."}, status=status.HTTP_404_NOT_FOUND)
-        invitation = get_object_or_404(
-            PropertyWorkOrderRecipientInvitation.objects.select_related("work_order", "linked_vendor", "property_management_company"),
-            token=token,
-        )
+        invitation = self._invitation(token)
         row = invitation.work_order
         now = timezone.now()
         if invitation.status in {
             PropertyWorkOrderRecipientInvitation.STATUS_ACCEPTED,
             PropertyWorkOrderRecipientInvitation.STATUS_DECLINED,
         }:
-            return Response({"invitation": _property_work_order_invitation_payload(invitation), "work_order": _property_work_order_payload(row)})
+            return Response(self._response_payload(invitation))
         if action == "accept":
             invitation.status = PropertyWorkOrderRecipientInvitation.STATUS_ACCEPTED
             invitation.response_at = now
@@ -8708,10 +8764,14 @@ class PropertyWorkOrderRecipientInvitationResponseView(APIView):
         invitation.save(update_fields=["status", "response_at", "updated_at"])
         if hasattr(row, "_prefetched_objects_cache"):
             row._prefetched_objects_cache.clear()
-        return Response({"invitation": _property_work_order_invitation_payload(invitation), "work_order": _property_work_order_payload(row)})
+        return Response(self._response_payload(invitation))
 
     def get(self, request, token: str, action: str):
-        return self.post(request, token, action)
+        if action == "details":
+            return Response(self._response_payload(self._invitation(token)))
+        if action in {"accept", "decline"}:
+            return HttpResponseRedirect(f"/work-order-invitations/{token}")
+        return Response({"detail": "Unknown invitation response."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class CustomerPortalPropertyWorkOrderAgreementDraftView(CustomerPortalPropertyWorkOrderMarketplaceView):
