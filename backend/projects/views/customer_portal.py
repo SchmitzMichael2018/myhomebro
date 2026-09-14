@@ -168,6 +168,15 @@ from projects.services.dispute_notifications import notify_homeowner_qualificati
 from projects.services.warranty_management import active_warranty_queryset
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
 from projects.services.project_activity import create_project_activity_event, serialize_project_activity_events
+from projects.services.refund_workflow import (
+    ACTIVE_REFUND_STATUSES,
+    create_refund_request,
+    execute_refund_request,
+    notify_contractor_refund_update,
+    record_refund_event,
+    refund_source_options,
+    serialize_refund_request,
+)
 from projects.services.ai.project_understanding import understand_project_request
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
@@ -3977,15 +3986,21 @@ def _active_amendment_request(agreement):
     )
 
 
-def _active_refund_request(agreement):
+def _active_refund_requests(agreement):
     if not agreement:
-        return None
-    return (
+        return []
+    return list(
         CustomerRefundRequest.objects.filter(agreement=agreement)
-        .exclude(status__in=[CustomerRefundRequest.Status.DENIED, CustomerRefundRequest.Status.REFUNDED])
+        .exclude(status__in=[CustomerRefundRequest.Status.DENIED, CustomerRefundRequest.Status.REFUNDED, CustomerRefundRequest.Status.CANCELLED])
+        .select_related("invoice", "draw_request", "milestone", "external_payment")
+        .prefetch_related("events", "transactions")
         .order_by("-created_at", "-id")
-        .first()
     )
+
+
+def _active_refund_request(agreement):
+    rows = _active_refund_requests(agreement)
+    return rows[0] if rows else None
 
 
 def _active_dispute(agreement):
@@ -4063,15 +4078,9 @@ def _serialize_case(kind: str, obj) -> dict | None:
             "activity_events": serialize_project_activity_events(obj.agreement, object_type="amendment_request", object_id=obj.id, limit=12),
         }
     if kind == "refund":
-        return {
-            "id": obj.id,
-            "type": kind,
-            "label": "Refund Pending",
-            "status": obj.status,
-            "status_label": obj.get_status_display(),
-            "created_at": _safe_dt(obj.created_at),
-            "summary": _safe_text(obj.reason),
-        }
+        payload = serialize_refund_request(obj)
+        payload.update({"type": kind, "label": "Refund Request", "summary": _safe_text(obj.reason)})
+        return payload
     if kind == "dispute":
         return {
             "id": obj.id,
@@ -4090,8 +4099,11 @@ def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: d
     if not agreement_id:
         return {"actions": {}, "active_cases": []}
     agreement = Agreement.objects.filter(id=agreement_id).first()
+    if agreement is None:
+        return {"actions": {}, "active_cases": []}
     amendment = _active_amendment_request(agreement)
-    refund = _active_refund_request(agreement)
+    refunds = _active_refund_requests(agreement)
+    refund = refunds[0] if refunds else None
     disputes = _active_disputes(agreement)
     dispute = disputes[0] if disputes else None
     amendment_allowed = status_key in {
@@ -4102,7 +4114,8 @@ def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: d
         "awaiting_review",
         "payment_pending",
     }
-    refund_allowed = Decimal(str((payment_summary or {}).get("remaining_in_escrow") or "0")) > Decimal("0.00")
+    refund_options = refund_source_options(agreement)
+    refund_allowed = bool(refund_options)
     dispute_allowed = status_key in {"funded", "in_progress", "awaiting_review", "payment_pending", "completed", "disputed"}
     actions = {
         "amendment": {
@@ -4111,9 +4124,10 @@ def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: d
             "label": "View Amendment Request" if amendment else "Request Amendment",
         },
         "refund": {
-            "available": bool(refund_allowed and not refund),
+            "available": bool(refund_allowed),
             "active": bool(refund),
-            "label": "View Refund Request" if refund else "Request Refund",
+            "label": "Request Another Refund" if refund else "Request Refund",
+            "source_options": refund_options,
         },
         "dispute": {
             "available": bool(dispute_allowed),
@@ -4127,7 +4141,7 @@ def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: d
             row
             for row in [
                 _serialize_case("amendment", amendment),
-                _serialize_case("refund", refund),
+                *[_serialize_case("refund", row) for row in refunds],
                 *[_serialize_case("dispute", row) for row in disputes],
             ]
             if row
@@ -9782,8 +9796,13 @@ class CustomerPortalAgreementAmendmentSerializer(serializers.Serializer):
 
 
 class CustomerPortalAgreementRefundSerializer(serializers.Serializer):
+    source_type = serializers.ChoiceField(choices=CustomerRefundRequest.SourceType.choices, default=CustomerRefundRequest.SourceType.ESCROW)
+    invoice_id = serializers.IntegerField(required=False, allow_null=True)
+    draw_request_id = serializers.IntegerField(required=False, allow_null=True)
+    milestone_id = serializers.IntegerField(required=False, allow_null=True)
+    external_payment_id = serializers.IntegerField(required=False, allow_null=True)
     reason = serializers.CharField()
-    requested_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    requested_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True, min_value=Decimal("0.01"))
     evidence_note = serializers.CharField(required=False, allow_blank=True)
 
 
@@ -10106,42 +10125,96 @@ class CustomerPortalAgreementRefundRequestView(APIView):
 
         serializer = CustomerPortalAgreementRefundSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        ledger = serialize_ledger(escrow_ledger(agreement)) if agreement else {}
-        remaining = Decimal(str(ledger.get("available") or "0"))
-        if remaining <= Decimal("0.00"):
-            return Response({"detail": "No escrow balance is available for a refund request."}, status=status.HTTP_400_BAD_REQUEST)
-        requested_amount = serializer.validated_data.get("requested_amount")
-        if requested_amount and requested_amount > remaining:
-            return Response({"detail": "Requested refund exceeds the remaining escrow balance."}, status=status.HTTP_400_BAD_REQUEST)
-
-        existing = _active_refund_request(agreement)
-        if existing:
-            return Response(
-                {
-                    "detail": "A refund request is already open.",
-                    "refund_request_id": existing.id,
-                    "portal": _build_customer_portal_payload(email, request=request),
-                },
-                status=status.HTTP_200_OK,
-            )
-
+        data = serializer.validated_data
         user = User.objects.filter(email__iexact=email).first()
-        refund = CustomerRefundRequest.objects.create(
-            agreement=agreement,
-            requested_by=user,
-            reason=serializer.validated_data["reason"],
-            evidence_note=serializer.validated_data.get("evidence_note", ""),
-            requested_amount=requested_amount,
-            status=CustomerRefundRequest.Status.REFUND_REQUESTED,
-        )
+        invoice = Invoice.objects.filter(pk=data.get("invoice_id"), agreement=agreement).first() if data.get("invoice_id") else None
+        draw = DrawRequest.objects.filter(pk=data.get("draw_request_id"), agreement=agreement).first() if data.get("draw_request_id") else None
+        milestone = Milestone.objects.filter(pk=data.get("milestone_id"), agreement=agreement).first() if data.get("milestone_id") else None
+        external = ExternalPaymentRecord.objects.filter(pk=data.get("external_payment_id"), agreement=agreement).first() if data.get("external_payment_id") else None
+        try:
+            refund = create_refund_request(
+                agreement=agreement,
+                actor=user,
+                initiated_by_role=CustomerRefundRequest.InitiatorRole.HOMEOWNER,
+                source_type=data["source_type"],
+                reason=data["reason"],
+                evidence_note=data.get("evidence_note", ""),
+                requested_amount=data.get("requested_amount"),
+                invoice=invoice,
+                draw_request=draw,
+                milestone=milestone,
+                external_payment=external,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
                 "ok": True,
-                "refund_request": {"id": refund.id, "status": refund.status, "status_label": refund.get_status_display()},
+                "refund_request": serialize_refund_request(refund),
                 "portal": _build_customer_portal_payload(email, request=request),
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class CustomerPortalRefundRequestResponseView(APIView):
+    permission_classes = [AllowAny]
+
+    class InputSerializer(serializers.Serializer):
+        action = serializers.ChoiceField(choices=["accept_counter", "cancel"])
+        note = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+        confirm = serializers.CharField(required=False, allow_blank=True)
+
+    def post(self, request, token: str, request_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+        refund = get_object_or_404(
+            CustomerRefundRequest.objects.select_related(
+                "agreement__homeowner", "agreement__project", "agreement__contractor", "invoice", "draw_request", "milestone", "external_payment"
+            ).prefetch_related("events", "transactions"),
+            pk=request_id,
+        )
+        if _agreement_customer_email(refund.agreement) != email.lower().strip():
+            return Response({"detail": "Refund request not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        user = User.objects.filter(email__iexact=email).first()
+        if data["action"] == "cancel":
+            if refund.status not in ACTIVE_REFUND_STATUSES - {CustomerRefundRequest.Status.PROCESSING}:
+                return Response({"detail": "This refund request can no longer be cancelled."}, status=status.HTTP_400_BAD_REQUEST)
+            before = refund.status
+            refund.status = CustomerRefundRequest.Status.CANCELLED
+            refund.response_note = data.get("note", "")
+            refund.responded_at = timezone.now()
+            refund.save(update_fields=["status", "response_note", "responded_at", "updated_at"])
+            record_refund_event(refund, event_type="cancel", actor=user, actor_role="homeowner", from_status=before, note=refund.response_note)
+            notify_contractor_refund_update(
+                refund,
+                title="Customer cancelled refund request",
+                body=f"Refund request #{refund.id} for Agreement #{refund.agreement_id} was cancelled by the customer.",
+                suffix="customer-cancelled",
+            )
+        else:
+            if refund.status != CustomerRefundRequest.Status.COUNTERED:
+                return Response({"detail": "This refund does not have a contractor proposal to accept."}, status=status.HTTP_400_BAD_REQUEST)
+            if str(data.get("confirm") or "").strip().upper() != "REFUND":
+                return Response({"detail": "Type REFUND to accept and authorize the proposed refund."}, status=status.HTTP_400_BAD_REQUEST)
+            before = refund.status
+            refund.status = CustomerRefundRequest.Status.APPROVED
+            refund.response_note = data.get("note", "") or refund.response_note
+            refund.responded_at = timezone.now()
+            refund.save(update_fields=["status", "response_note", "responded_at", "updated_at"])
+            record_refund_event(refund, event_type="counter_accepted", actor=user, actor_role="homeowner", from_status=before, note=refund.response_note)
+            try:
+                refund = execute_refund_request(refund, actor=refund.responded_by)
+            except ValueError as exc:
+                return Response({"detail": str(exc), "refund_request": serialize_refund_request(refund)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ok": True, "refund_request": serialize_refund_request(refund), "portal": _build_customer_portal_payload(email, request=request)})
 
 
 class CustomerPortalAgreementDisputeView(APIView):

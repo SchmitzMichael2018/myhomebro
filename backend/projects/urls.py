@@ -213,6 +213,7 @@ from .views.template_views import (
 from .views.agreements_amend import create_amendment
 from .views.amendment_requests import ContractorAgreementAmendmentImproveView, ContractorAgreementAmendmentRequestView, ContractorAmendmentNotifyView, AmendmentRequestResponseView, ContractorAmendmentApplyView, AmendmentRequestViewedView
 from .views.refund import AgreementRefundCompatView
+from .views.refund_requests import ContractorAgreementRefundRequestView, ContractorRefundRequestResponseView
 
 from .views.employee_assignments import (
     assign_agreement,
@@ -411,6 +412,7 @@ from .views.customer_portal import (
     CustomerPortalAgreementAmendmentRequestView,
     CustomerPortalAgreementDisputeView,
     CustomerPortalAgreementRefundRequestView,
+    CustomerPortalRefundRequestResponseView,
     CustomerPortalCreatePasswordView,
     CustomerPortalDrawDisputeView,
     CustomerPortalNotificationArchiveView,
@@ -780,9 +782,12 @@ urlpatterns = [
     path("customer-portal/<str:token>/agreements/<int:agreement_id>/amendments/improve/", CustomerPortalAgreementAmendmentImproveView.as_view(), name="customer-portal-agreement-amendment-improve"),
     path("customer-portal/<str:token>/agreements/<int:agreement_id>/amendments/", CustomerPortalAgreementAmendmentRequestView.as_view(), name="customer-portal-agreement-amendment-request"),
     path("customer-portal/<str:token>/agreements/<int:agreement_id>/refunds/", CustomerPortalAgreementRefundRequestView.as_view(), name="customer-portal-agreement-refund-request"),
+    path("customer-portal/<str:token>/refund-requests/<int:request_id>/respond/", CustomerPortalRefundRequestResponseView.as_view(), name="customer-portal-refund-request-respond"),
     path("customer-portal/<str:token>/agreements/<int:agreement_id>/disputes/", CustomerPortalAgreementDisputeView.as_view(), name="customer-portal-agreement-dispute"),
     path("customer-portal/<str:token>/agreements/<int:agreement_id>/review/", CustomerPortalReviewSubmitView.as_view(), name="customer-portal-review-submit"),
     path("agreements/<int:agreement_id>/amendment-requests/", ContractorAgreementAmendmentRequestView.as_view(), name="contractor-agreement-amendment-request"),
+    path("agreements/<int:agreement_id>/refund-requests/", ContractorAgreementRefundRequestView.as_view(), name="contractor-agreement-refund-request"),
+    path("refund-requests/<int:request_id>/respond/", ContractorRefundRequestResponseView.as_view(), name="contractor-refund-request-respond"),
     path("agreements/<int:agreement_id>/amendment-requests/improve/", ContractorAgreementAmendmentImproveView.as_view(), name="contractor-agreement-amendment-improve"),
     path("amendment-requests/<int:request_id>/respond/", AmendmentRequestResponseView.as_view(), name="amendment-request-respond"),
     path("amendment-requests/<int:request_id>/apply/", ContractorAmendmentApplyView.as_view(), name="amendment-request-apply"),

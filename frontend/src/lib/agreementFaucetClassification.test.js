@@ -22,7 +22,7 @@ describe("faucet agreement drafting", () => {
     expect(classifyLimitedFixtureScope("Replace a damaged garage door")).toBeNull();
   });
 
-  it("builds faucet milestones instead of a kitchen remodel plan", () => {
+  it("keeps a small faucet job in one clear milestone", () => {
     const rows = buildClarificationAwareMilestoneDraft({
       projectType: "Plumbing",
       projectSubtype: "Fixture Installation",
@@ -30,11 +30,8 @@ describe("faucet agreement drafting", () => {
       totalBudget: 425,
     });
 
-    expect(rows.map((row) => row.title)).toEqual([
-      "Inspection & Removal",
-      "Faucet Installation",
-      "Leak Test, Cleanup & Walkthrough",
-    ]);
+    expect(rows.map((row) => row.title)).toEqual(["Faucet Repair or Replacement"]);
+    expect(rows[0].description).toContain("faucet");
     expect(rows.reduce((sum, row) => sum + Number(row.amount), 0)).toBe(425);
   });
 });

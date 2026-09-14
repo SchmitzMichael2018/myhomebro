@@ -19,11 +19,11 @@ const base = {
 };
 
 describe('buildMarketingAssistantContext', () => {
-  it('builds isolated compact Brand Kit context', () => {
+  it('builds isolated compact Design context', () => {
     const context = buildMarketingAssistantContext({ ...base, activeStep: 'brand', brand: { missingPreferences: ['logo direction'] } });
     expect(context.workspace).toBe('marketing');
     expect(context.active_step).toBe('brand');
-    expect(context.active_step_label).toBe('Brand Kit');
+    expect(context.active_step_label).toBe('Design');
     expect(context.current_route).toBe('/app/marketing?tab=brand');
     expect(context.current_step_data.logo_state).toBe('missing');
     expect(context.current_step_data.incomplete_preferences).toEqual(['logo direction']);

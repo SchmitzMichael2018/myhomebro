@@ -769,6 +769,8 @@ export default function CustomerProjectWorkspace({
   const [denyReimbursementError, setDenyReimbursementError] = useState("");
   const [actionModal, setActionModal] = useState("");
   const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [refundDecision, setRefundDecision] = useState({});
+  const [refundDecisionBusy, setRefundDecisionBusy] = useState(false);
   const [amendmentAiBusy, setAmendmentAiBusy] = useState(false);
   const [amendmentAiError, setAmendmentAiError] = useState("");
   const [amendmentSuggestion, setAmendmentSuggestion] = useState(null);
@@ -786,6 +788,7 @@ export default function CustomerProjectWorkspace({
     revised_project_value: "",
     affected_milestone_ids: [],
     requested_amount: "",
+    refund_source_key: "",
     desired_resolution: "",
     description: "",
     expected_result: "",
@@ -1232,6 +1235,8 @@ export default function CustomerProjectWorkspace({
   ).length;
   const milestoneCount = (selected?.milestones || []).length;
   const homeownerActions = selected?.homeowner_actions || selectedAgreement?.homeowner_actions || {};
+  const refundSourceOptions = homeownerActions.refund?.source_options || [];
+  const selectedRefundSource = refundSourceOptions.find((item) => item.key === actionForm.refund_source_key) || refundSourceOptions[0] || null;
   const activeCases = selected?.active_cases || selectedAgreement?.active_cases || [];
   const reviewAmendment = activeCases.find((row) => String(row.id) === String(reviewAmendmentId) && row.type === "amendment") || null;
   const reviewAmendmentNeedsResponse = String(reviewAmendment?.response_state || "pending").toLowerCase() === "pending";
@@ -1401,6 +1406,7 @@ export default function CustomerProjectWorkspace({
       revised_project_value: "",
       affected_milestone_ids: [],
       requested_amount: "",
+      refund_source_key: kind === "refund" ? (homeownerActions.refund?.source_options?.[0]?.key || "") : "",
       desired_resolution: "",
       description: "",
       expected_result: "",
@@ -1482,6 +1488,11 @@ export default function CustomerProjectWorkspace({
         payload = {
           reason: actionForm.reason,
           evidence_note: actionForm.attachment_note,
+          source_type: selectedRefundSource?.source_type || "escrow",
+          ...(selectedRefundSource?.invoice_id ? { invoice_id: selectedRefundSource.invoice_id } : {}),
+          ...(selectedRefundSource?.draw_request_id ? { draw_request_id: selectedRefundSource.draw_request_id } : {}),
+          ...(selectedRefundSource?.milestone_id ? { milestone_id: selectedRefundSource.milestone_id } : {}),
+          ...(selectedRefundSource?.external_payment_id ? { external_payment_id: selectedRefundSource.external_payment_id } : {}),
           ...(actionForm.requested_amount ? { requested_amount: actionForm.requested_amount } : {}),
         };
       } else if (actionModal === "dispute") {
@@ -1527,6 +1538,28 @@ export default function CustomerProjectWorkspace({
   const openProject = (project) => {
     setSelectedId(project.id);
     window.setTimeout(() => document.getElementById("customer-project-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  const respondToRefundRequest = async (refundRequest, action) => {
+    if (!token || !refundRequest?.id) return;
+    const decision = refundDecision[refundRequest.id] || {};
+    setRefundDecisionBusy(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/refund-requests/${encodeURIComponent(refundRequest.id)}/respond/`,
+        {
+          action,
+          note: decision.note || "",
+          confirm: action === "accept_counter" ? decision.confirm || "" : "",
+        }
+      );
+      if (data?.portal) onRefresh?.(data.portal);
+      toast.success(action === "accept_counter" ? "Refund proposal accepted" : "Refund request cancelled");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update the refund request.");
+    } finally {
+      setRefundDecisionBusy(false);
+    }
   };
 
   const resetListWindow = () => setVisibleCount(10);
@@ -1949,6 +1982,32 @@ export default function CustomerProjectWorkspace({
                             Review Amendment Request
                           </button>
                         ) : null}
+                        {caseRow.type === "refund" && caseRow.status === "countered" ? (
+                          <div className="mt-3 rounded-xl border border-emerald-300/25 bg-emerald-300/10 p-3">
+                            <div className="text-sm font-semibold text-emerald-100">Contractor proposal: {money(numericValue(caseRow.approved_amount))}</div>
+                            <p className="mt-1 text-xs leading-5 text-emerald-50/80">Accepting processes this refund to the recorded payment source. Type REFUND to authorize it.</p>
+                            <input
+                              value={refundDecision[caseRow.id]?.confirm || ""}
+                              onChange={(event) => setRefundDecision((current) => ({ ...current, [caseRow.id]: { ...(current[caseRow.id] || {}), confirm: event.target.value } }))}
+                              placeholder="Type REFUND"
+                              className="mt-2 w-full rounded-lg border border-emerald-200/30 bg-slate-950 px-3 py-2 text-white"
+                            />
+                            <button
+                              type="button"
+                              disabled={refundDecisionBusy || refundDecision[caseRow.id]?.confirm?.trim().toUpperCase() !== "REFUND"}
+                              onClick={() => respondToRefundRequest(caseRow, "accept_counter")}
+                              className="mt-2 rounded-lg bg-emerald-300 px-3 py-2 text-sm font-bold text-emerald-950 disabled:opacity-40"
+                            >Accept & Receive Refund</button>
+                          </div>
+                        ) : null}
+                        {caseRow.type === "refund" && !["refunded", "denied", "cancelled", "processing"].includes(caseRow.status) ? (
+                          <button
+                            type="button"
+                            disabled={refundDecisionBusy}
+                            onClick={() => respondToRefundRequest(caseRow, "cancel")}
+                            className="mt-3 ml-2 inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-500 px-3 py-2 text-sm font-semibold text-slate-200"
+                          >Cancel Request</button>
+                        ) : null}
                         {caseRow.estimated_refundable_escrow_surplus && Number(caseRow.estimated_refundable_escrow_surplus) > 0 ? (
                           <div className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-200">
                             Estimated surplus: <span className="font-semibold text-white">{money(numericValue(caseRow.estimated_refundable_escrow_surplus))}</span>
@@ -1991,6 +2050,7 @@ export default function CustomerProjectWorkspace({
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {[
                     ["amendment", "Request Amendment", "Ask the contractor to review a scope, timeline, price, milestone, material, or warranty change."],
+                    ["refund", "Request Refund", "Ask the contractor to return all or part of a specific escrow, invoice, draw, or externally recorded payment."],
                     ["dispute", "Open Dispute", "Open an issue for review when something about the agreement, milestone, or payment needs formal attention."],
                   ].map(([key, label, description]) => {
                     const action = homeownerActions[key] || {};
@@ -2554,16 +2614,37 @@ The price should be adjusted because we removed part of the work.`}
               ) : null}
 
               {actionModal === "refund" ? (
-                <label className="block text-sm font-semibold text-slate-200">
-                  Requested amount, optional
-                  <input
-                    data-testid="customer-action-requested-amount"
-                    value={actionForm.requested_amount}
-                    onChange={(event) => setActionForm((current) => ({ ...current, requested_amount: event.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none focus:border-amber-300"
-                    placeholder="Leave blank if you want the reviewer to determine the amount"
-                  />
-                </label>
+                <div className="space-y-3 rounded-xl border border-amber-300/25 bg-amber-300/10 p-4">
+                  <p className="text-sm leading-6 text-amber-50">Choose the exact payment you want reviewed. A request does not move money until the contractor approves it. If you disagree with the response, you can use the dispute process.</p>
+                  <label className="block text-sm font-semibold text-slate-100">
+                    Payment to refund
+                    <select
+                      data-testid="customer-action-refund-source"
+                      value={actionForm.refund_source_key || selectedRefundSource?.key || ""}
+                      onChange={(event) => setActionForm((current) => ({ ...current, refund_source_key: event.target.value }))}
+                      className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-white"
+                    >
+                      {refundSourceOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  {selectedRefundSource ? (
+                    <div className="grid gap-2 text-xs sm:grid-cols-2">
+                      <div className="rounded-lg bg-slate-950/60 p-3"><span className="text-slate-400">Maximum available</span><div className="mt-1 font-bold text-white">{money(numericValue(selectedRefundSource.maximum_refundable_amount))}</div></div>
+                      <div className="rounded-lg bg-slate-950/60 p-3"><span className="text-slate-400">How it is handled</span><div className="mt-1 font-bold text-white">{selectedRefundSource.record_only ? "Recorded only — contractor returns funds outside MyHomeBro" : `${selectedRefundSource.payment_mode === "direct" ? "Direct Pay" : "Escrow"} return to the original payment method`}</div></div>
+                    </div>
+                  ) : null}
+                  <label className="block text-sm font-semibold text-slate-100">
+                    Requested amount, optional
+                    <input
+                      data-testid="customer-action-requested-amount"
+                      inputMode="decimal"
+                      value={actionForm.requested_amount}
+                      onChange={(event) => setActionForm((current) => ({ ...current, requested_amount: event.target.value }))}
+                      className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none focus:border-amber-300"
+                      placeholder="Leave blank for the contractor to propose an amount"
+                    />
+                  </label>
+                </div>
               ) : null}
 
               {actionModal === "amendment" && actionForm.change_type === "descope_remove_work" ? (

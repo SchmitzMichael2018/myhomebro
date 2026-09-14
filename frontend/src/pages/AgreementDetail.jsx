@@ -29,23 +29,19 @@ import api, {
   submitDrawRequest,
 } from '../api';
 import SignatureModal from '../components/SignatureModal';
-import EscrowPromptModal from '../components/EscrowPromptModal';
 import AttachmentManager from '../components/AttachmentManager';
 import SendFundingLinkButton from '../components/SendFundingLinkButton';
 import { useAuth } from '../context/AuthContext';
 import PdfPreviewModal from '../components/PdfPreviewModal';
-import RefundEscrowModal from '../components/RefundEscrowModal';
 import AssignSubcontractorInline from '../components/AssignSubcontractorInline';
 import AssignReviewerInline from '../components/AssignReviewerInline';
 import MilestoneCollaboratorsInline from '../components/MilestoneCollaboratorsInline';
 import SupportRequestModal from '../components/SupportRequestModal';
+import RefundWorkflowPanel from '../components/RefundWorkflowPanel';
 
 // Assignment UI
 import AssignEmployeeInline from '../components/AssignEmployeeInline';
-import { WorkflowHint } from '../components/WorkflowHint.jsx';
 import ContractorPageSurface from '../components/dashboard/ContractorPageSurface.jsx';
-import { normalizeProjectClass } from '../utils/projectClass.js';
-import { getAgreementDetailHint } from '../lib/workflowHints.js';
 import { isDisputeTerminal } from '../lib/disputeStatus.js';
 import {
   ProjectModeBadge,
@@ -66,10 +62,8 @@ import {
 import {
   getMilestoneDisplay,
   isMilestoneCompleted,
-  milestoneDisplayPaymentStatus,
   milestoneDisplayProgressPercent,
   milestoneDisplayStatus,
-  milestoneStatusKey as getMilestoneStatusKey,
   milestoneStatusTone,
 } from '../utils/milestoneDisplay.js';
 
@@ -157,14 +151,8 @@ function isMilestoneComplete(m) {
   return isMilestoneCompleted(m);
 }
 
-const milestoneStatusKey = (m) => getMilestoneStatusKey(m);
-
 function milestoneProgressPercent(m) {
   return milestoneDisplayProgressPercent(m);
-}
-
-function milestonePaymentStatus(m) {
-  return milestoneDisplayPaymentStatus(m);
 }
 
 function statusBadgeTone(label) {
@@ -191,12 +179,6 @@ function normalizePaymentStructure(val) {
   return s === 'progress' ? 'progress' : 'simple';
 }
 
-function projectClassLabel(val) {
-  return normalizeProjectClass(val) === 'commercial'
-    ? 'Commercial'
-    : 'Residential';
-}
-
 function paymentModeLabel(mode) {
   const m = normalizePaymentMode(mode);
   return m === 'direct' ? 'Direct Pay' : 'Escrow (Milestone Hold)';
@@ -217,27 +199,6 @@ function paymentProtectionTone(value) {
   if (normalized.includes('recommended'))
     return 'border-amber-200 bg-amber-50 text-amber-800';
   return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-}
-
-function agreementTimelineState(norm) {
-  const status = String(norm?.status || '')
-    .trim()
-    .toLowerCase();
-  const signed =
-    !!norm?.isSigned ||
-    ['signed', 'funded', 'in_progress', 'active'].includes(status);
-  const escrowRequired =
-    String(norm?.payment_mode || '')
-      .trim()
-      .toLowerCase() !== 'direct';
-  const escrowFunded = !!norm?.escrowFunded;
-  return signed && (!escrowRequired || escrowFunded) ? 'active' : 'planned';
-}
-
-function agreementTimelineLabel(norm) {
-  return agreementTimelineState(norm) === 'active'
-    ? 'Active Schedule'
-    : 'Planned Timeline';
 }
 
 function milestoneLifecycleLabel(state) {
@@ -326,12 +287,6 @@ function fmtDateTime(val) {
   }
 }
 
-function shortSha(sha) {
-  const s = String(sha || '').trim();
-  if (!s) return '';
-  return s.length > 12 ? `${s.slice(0, 12)}...` : s;
-}
-
 function formatInviteDate(value) {
   if (!value) return '-';
   try {
@@ -405,7 +360,7 @@ function normalizeWorkspaceTab(tab) {
   const normalized = String(tab || '')
     .trim()
     .toLowerCase();
-  if (normalized === 'payments') return 'funding';
+  if (normalized === 'payments' || normalized === 'money') return 'funding';
   if (normalized === 'pdf' || normalized === 'signatures-pdf')
     return 'documents';
   if (normalized === 'signatures') return 'documents';
@@ -1691,9 +1646,6 @@ export default function AgreementDetail({
   const [agreement, setAgreement] = useState(initialAgreement || null);
   const [loading, setLoading] = useState(!initialAgreement);
   const [sigOpen, setSigOpen] = useState(false);
-  const [escrowOpen, setEscrowOpen] = useState(false);
-  const [clientSecret, setClientSecret] = useState('');
-
   const [fundingPreview, setFundingPreview] = useState(null);
   const [fundingLoading, setFundingLoading] = useState(false);
   const [fundingError, setFundingError] = useState('');
@@ -1711,8 +1663,6 @@ export default function AgreementDetail({
   const [pdfOpen, setPdfOpen] = useState(false);
   const [pdfPreviewError, setPdfPreviewError] = useState('');
 
-  // Refund modal state
-  const [refundOpen, setRefundOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [drawRows, setDrawRows] = useState([]);
   const [drawLoading, setDrawLoading] = useState(false);
@@ -1733,7 +1683,7 @@ export default function AgreementDetail({
     useState(false);
   const [workspaceMilestonesError, setWorkspaceMilestonesError] = useState('');
   const [agreementOpsMsg, setAgreementOpsMsg] = useState('');
-  const [agreementOpBusy, setAgreementOpBusy] = useState('');
+  const [, setAgreementOpBusy] = useState('');
   const [adminAiContext, setAdminAiContext] = useState(null);
   const [adminAiLoading, setAdminAiLoading] = useState(false);
   const [drawForm, setDrawForm] = useState({
@@ -1842,6 +1792,9 @@ export default function AgreementDetail({
   const pendingContractorAmendments = homeownerAmendmentRequests.filter(
     isOpenContractorAmendment
   );
+  const pendingContractorAmendmentIds = pendingContractorAmendments
+    .map((row) => row.id)
+    .join(',');
 
   const openAmendmentRequest = () => {
     const placementMilestone = currentMilestone || milestones.find((row) => !isMilestoneComplete(row));
@@ -2421,28 +2374,25 @@ export default function AgreementDetail({
     };
 
     fetchFundingPreview();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, norm.isDirectPay, ready, isAuthed]);
 
-  const fetchContingencyRefundStatus = async () => {
-    if (!id || !ready || !isAuthed || norm.isDirectPay) return;
-    setContingencyRefundLoading(true);
-    try {
-      const { data } = await api.get(
-        `/projects/agreements/${id}/contingency-refund-status/`
-      );
-      setContingencyRefund(data);
-    } catch (err) {
-      console.error(err);
-      setContingencyRefund(null);
-    } finally {
-      setContingencyRefundLoading(false);
-    }
-  };
-
   useEffect(() => {
+    if (!id || !ready || !isAuthed || norm.isDirectPay) return;
+    const fetchContingencyRefundStatus = async () => {
+      setContingencyRefundLoading(true);
+      try {
+        const { data } = await api.get(
+          `/projects/agreements/${id}/contingency-refund-status/`
+        );
+        setContingencyRefund(data);
+      } catch (err) {
+        console.error(err);
+        setContingencyRefund(null);
+      } finally {
+        setContingencyRefundLoading(false);
+      }
+    };
     fetchContingencyRefundStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, norm.isDirectPay, ready, isAuthed]);
 
   const returnUnusedContingency = async () => {
@@ -2498,28 +2448,6 @@ export default function AgreementDetail({
 
   const handleSigned = async () => {
     await fetchAgreement();
-  };
-
-  const startEscrow = async () => {
-    if (norm.isDirectPay) {
-      toast('This agreement is Direct Pay (no escrow funding).');
-      return;
-    }
-
-    try {
-      const { data } = await api.post(
-        `/projects/agreements/${id}/fund_escrow/`
-      );
-      if (data?.client_secret) {
-        setClientSecret(data.client_secret);
-        setEscrowOpen(true);
-      } else {
-        toast.error('Unable to start escrow funding.');
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to start escrow funding.');
-    }
   };
 
   const downloadPDF = async () => {
@@ -2845,11 +2773,10 @@ export default function AgreementDetail({
     pendingContractorAmendments.forEach((amendment) => {
       markAmendmentViewed(amendment);
     });
+    // markAmendmentViewed intentionally remains outside the dependency list;
+    // the stable ID signature prevents repeat writes after data refreshes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isContractor,
-    pendingContractorAmendments.map((row) => row.id).join(','),
-  ]);
+  }, [isContractor, pendingContractorAmendmentIds]);
 
   useEffect(() => {
     const routeWorkspaceStatus = String(
@@ -3168,33 +3095,6 @@ export default function AgreementDetail({
     }
   };
 
-  const executeMilestonePayout = async (milestoneId) => {
-    try {
-      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
-      const { data } = await api.post(
-        `/projects/milestones/${milestoneId}/execute-subcontractor-payout/`,
-        {}
-      );
-      setAgreement((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          milestones: (prev.milestones || []).map((milestone) =>
-            milestone.id === milestoneId ? { ...milestone, ...data } : milestone
-          ),
-        };
-      });
-      toast.success('Subcontractor payout executed.');
-    } catch (err) {
-      console.error(err);
-      toast.error(
-        err?.response?.data?.detail || 'Failed to execute subcontractor payout.'
-      );
-    } finally {
-      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
-    }
-  };
-
   const retryMilestonePayout = async (milestoneId) => {
     try {
       setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
@@ -3368,7 +3268,7 @@ export default function AgreementDetail({
   }).length;
   const paymentProgressLabel = paymentProgressInvoiceRows.length
     ? `${paidInvoiceCount} of ${paymentProgressInvoiceRows.length} invoices paid`
-    : workspaceInvoicesLoading
+    : !workspaceInvoicesLoaded
       ? 'Loading invoices...'
       : 'No invoices yet';
   const milestoneDisplaySource = (milestone) => {
@@ -3531,11 +3431,6 @@ export default function AgreementDetail({
     : milestoneDataKnown
       ? 'No active milestone'
       : 'Milestone data not loaded';
-  const nextPaymentStatus = openInvoiceRows.length
-    ? `${openInvoiceRows.length} open invoice${openInvoiceRows.length === 1 ? '' : 's'}`
-    : activeDrawRows.length
-      ? `${activeDrawRows.length} active draw${activeDrawRows.length === 1 ? '' : 's'}`
-      : 'No payment action loaded';
   const milestonePreviewRows = milestones.slice(0, 5);
   const hasLoadedIncompleteMilestones =
     milestoneDataKnown &&
@@ -3559,12 +3454,6 @@ export default function AgreementDetail({
   const isCompletedAgreement =
     completedStatuses.has(workspaceStatus) || hasLoadedAllMilestonesComplete;
   const isFundedOrDirectPay = norm.isDirectPay || norm.escrowFunded;
-  const timelineState = agreementTimelineState(norm);
-  const agreementHint = getAgreementDetailHint({
-    agreement,
-    norm,
-    milestones,
-  });
   const nextAction = pendingContractorAmendments.length
     ? {
         label: 'Review Amendment',
@@ -3717,21 +3606,12 @@ export default function AgreementDetail({
                             secondaryCta: 'Review PDF',
                             secondaryTab: 'signatures',
                           };
-  const nextActionLabel = nextAction.label;
   const backUrl = isAdminMode
     ? '/app/admin?view=agreements'
     : '/app/agreements';
   const customerId = agreementCustomerId(agreement);
   const customerWorkspaceUrl = customerId ? `/app/customers/${customerId}` : '';
   const recordsUrl = '/app/customers/records';
-  const paymentsUrl = '/app/payments';
-  const hasPaymentNavigation =
-    !isAdminMode &&
-    (openInvoiceRows.length > 0 ||
-      activeDrawRows.length > 0 ||
-      norm.isSigned ||
-      norm.escrowFunded ||
-      norm.isDirectPay);
   const activeDrawTotal = activeDrawRows.reduce(
     (sum, draw) =>
       sum +
@@ -4542,7 +4422,7 @@ export default function AgreementDetail({
               </div>
             </section>
 
-            {false && hasPlanningAssumptions ? (
+            {SHOW_LEGACY_AGREEMENT_DETAIL_PANEL && hasPlanningAssumptions ? (
               <section
                 data-testid="agreement-planning-assumptions"
                 className="rounded-2xl border border-blue-300/20 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
@@ -6636,10 +6516,7 @@ export default function AgreementDetail({
                   const canCompleteInMilestones =
                     display.canComplete && !amendmentBlocked;
                   const canRefundMilestone = display.canRefund;
-                  const refundUrl =
-                    m?.refund_url ||
-                    m?.refundUrl ||
-                    `${milestoneCompletionPath}&action=refund`;
+                  const refundUrl = `/app/agreements/${id}/workspace?tab=funding&refund_milestone=${m.id}`;
                   const lifecycleState = String(
                     m.milestone_lifecycle_state ||
                       m.lifecycle_state ||
@@ -7304,6 +7181,8 @@ export default function AgreementDetail({
             : 'hidden'
         }
       >
+        <RefundWorkflowPanel agreementId={id} />
+
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div
             data-testid="agreement-funding-status"
@@ -8303,30 +8182,6 @@ export default function AgreementDetail({
       />
 
       {/* Escrow-only modals */}
-      {!norm.isDirectPay && (
-        <>
-          <EscrowPromptModal
-            visible={escrowOpen}
-            onClose={() => setEscrowOpen(false)}
-            stripeClientSecret={clientSecret}
-            onSuccess={() => {
-              setEscrowOpen(false);
-              fetchAgreement();
-            }}
-          />
-
-          <RefundEscrowModal
-            open={refundOpen}
-            onClose={() => setRefundOpen(false)}
-            agreementId={norm.id}
-            agreementLabel={norm.title}
-            onRefunded={() => {
-              fetchAgreement();
-            }}
-          />
-        </>
-      )}
-
       <PdfPreviewModal
         open={pdfOpen}
         onClose={() => {

@@ -26787,6 +26787,14 @@ class CustomerPortalAccessTests(TestCase):
         self.agreement.escrow_funded = True
         self.agreement.escrow_funded_amount = Decimal("50000.00")
         self.agreement.save(update_fields=["escrow_funded", "escrow_funded_amount", "updated_at"])
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_customer_refund_request",
+            stripe_charge_id="ch_customer_refund_request",
+            amount_cents=5_000_000,
+            currency="usd",
+            status="succeeded",
+        )
 
         amendment = self.client.post(
             f"/api/projects/customer-portal/{token}/agreements/{self.agreement.id}/amendments/",
@@ -26812,7 +26820,7 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.assertEqual(refund.status_code, 201, refund.data)
         refund_request = CustomerRefundRequest.objects.get(agreement=self.agreement)
-        self.assertEqual(refund_request.status, CustomerRefundRequest.Status.REFUND_REQUESTED)
+        self.assertEqual(refund_request.status, CustomerRefundRequest.Status.CONTRACTOR_RESPONSE_NEEDED)
 
         dispute = self.client.post(
             f"/api/projects/customer-portal/{token}/agreements/{self.agreement.id}/disputes/",
@@ -26826,7 +26834,9 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(dispute.status_code, 201, dispute.data)
         dispute_row = Dispute.objects.get(agreement=self.agreement, reason="Work quality concern")
         self.assertEqual(dispute_row.initiator, "homeowner")
-        self.assertTrue(dispute_row.escrow_frozen)
+        # A general concern does not freeze escrow until a specific payment
+        # milestone is identified by the refined dispute workflow.
+        self.assertFalse(dispute_row.escrow_frozen)
 
     def test_customer_portal_descope_amendment_estimates_surplus_without_refund(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

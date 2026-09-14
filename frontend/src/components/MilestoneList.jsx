@@ -20,7 +20,6 @@ import { getAgreementCompletionState } from "../utils/agreementCompletionState.j
 
 import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
-import RefundEscrowModal from "./RefundEscrowModal";
 import SendInvoiceButton from "./SendInvoiceButton";
 import MilestoneAssignmentDialog from "./MilestoneAssignmentDialog";
 
@@ -275,11 +274,6 @@ export default function MilestoneList() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
   const [assignmentItem, setAssignmentItem] = useState(null);
-
-  const [refundOpen, setRefundOpen] = useState(false);
-  const [refundAgreementId, setRefundAgreementId] = useState(null);
-  const [refundAgreementLabel, setRefundAgreementLabel] = useState("");
-  const [refundPreselected, setRefundPreselected] = useState([]);
 
   const allowedFilters = useMemo(
     () => new Set(["all", "late", "incomplete", "complete_not_invoiced", "invoiced", "paid", "rework"]),
@@ -795,10 +789,7 @@ export default function MilestoneList() {
       toast.error("Missing agreement id for this milestone.");
       return;
     }
-    setRefundAgreementId(agId);
-    setRefundAgreementLabel(m._projectTitle || `Agreement #${agId}`);
-    setRefundPreselected([m.id]);
-    setRefundOpen(true);
+    navigate(`/app/agreements/${agId}/workspace?tab=funding&refund_milestone=${m.id}`);
   };
 
   const toggleAgreement = (agId) => {
@@ -1793,14 +1784,6 @@ export default function MilestoneList() {
         />
       ) : null}
 
-      <RefundEscrowModal
-        open={refundOpen}
-        onClose={() => setRefundOpen(false)}
-        agreementId={refundAgreementId}
-        agreementLabel={refundAgreementLabel}
-        preselectedMilestoneIds={refundPreselected}
-        onRefunded={() => reload()}
-      />
     </ContractorPageSurface>
   );
 }

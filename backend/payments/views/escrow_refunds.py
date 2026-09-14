@@ -265,6 +265,39 @@ class AgreementEscrowRefundView(APIView):
         reason = (request.data.get("reason") or "").strip()
         note = (request.data.get("note") or "").strip()
         milestone_ids = request.data.get("milestone_ids") or []
+        if not isinstance(milestone_ids, list) or not milestone_ids:
+            return Response(
+                {"detail": "Select at least one refundable milestone. For paid invoices or draws, use the agreement Refunds panel."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        Milestone = _get_model("projects", "Milestone")
+        try:
+            wanted_ids = {int(value) for value in milestone_ids}
+        except (TypeError, ValueError):
+            return Response({"detail": "milestone_ids must contain valid milestone IDs."}, status=status.HTTP_400_BAD_REQUEST)
+        selected_milestones = list(Milestone.objects.filter(agreement=agreement, id__in=wanted_ids)) if Milestone else []
+        if len(selected_milestones) != len(wanted_ids):
+            return Response({"detail": "One or more milestones do not belong to this agreement."}, status=status.HTTP_400_BAD_REQUEST)
+        blocked = [
+            milestone.id
+            for milestone in selected_milestones
+            if bool(getattr(milestone, "completed", False))
+            or str(getattr(milestone, "status", "") or "").lower() in {"in_progress", "started", "refunded", "descoped_refunded"}
+        ]
+        if blocked:
+            return Response(
+                {"detail": "Started, completed, or already-refunded milestones cannot use the unreleased escrow endpoint.", "blocked_milestone_ids": blocked},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        selected_total_cents = sum(int(round(float(getattr(row, "amount", 0) or 0) * 100)) for row in selected_milestones)
+        if selected_total_cents != requested_amount_cents:
+            return Response(
+                {
+                    "detail": "Refund amount must exactly equal the selected milestone total.",
+                    "selected_milestone_total_cents": selected_total_cents,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         stripe.api_key = settings.STRIPE_SECRET_KEY
 

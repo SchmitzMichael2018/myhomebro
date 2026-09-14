@@ -25,6 +25,7 @@ ACTION_NEEDED_CATEGORIES = {
     Notification.EVENT_ESTIMATE_CUSTOMER_MESSAGE,
     Notification.EVENT_AGREEMENT_CUSTOMER_MESSAGE,
     Notification.EVENT_PROJECT_CUSTOMER_MESSAGE,
+    Notification.EVENT_REFUND_REQUESTED,
 }
 
 
@@ -62,6 +63,8 @@ ACTION_LABELS = {
     Notification.EVENT_ESTIMATE_CUSTOMER_MESSAGE: "Reply",
     Notification.EVENT_AGREEMENT_CUSTOMER_MESSAGE: "Reply",
     Notification.EVENT_PROJECT_CUSTOMER_MESSAGE: "Reply",
+    Notification.EVENT_REFUND_REQUESTED: "Review Refund",
+    Notification.EVENT_REFUND_UPDATED: "View Refund",
 }
 
 
@@ -85,6 +88,8 @@ ACTION_URLS = {
     Notification.EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED: lambda notification: f"/app/agreements/{notification.agreement_id}/wizard?step=2" if notification.agreement_id else "/app/agreements",
     Notification.EVENT_MAINTENANCE_WORK_ORDER_COMPLETED: lambda notification: f"/app/agreements/{notification.agreement_id}/wizard?step=2" if notification.agreement_id else "/app/agreements",
     Notification.EVENT_MAINTENANCE_CONTRACT_CANCELLED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/agreements",
+    Notification.EVENT_REFUND_REQUESTED: lambda notification: f"/app/agreements/{notification.agreement_id}/workspace?tab=funding" if notification.agreement_id else "/app/agreements",
+    Notification.EVENT_REFUND_UPDATED: lambda notification: f"/app/agreements/{notification.agreement_id}/workspace?tab=funding" if notification.agreement_id else "/app/agreements",
 }
 
 

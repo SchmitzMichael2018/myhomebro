@@ -10,7 +10,6 @@ import { clearAuth, getAgreementClosureStatus, closeAndArchiveAgreement } from "
 import { PwaInstallButton } from "./PwaInstallAccess.jsx";
 import toast from "react-hot-toast";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
-import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
 import {
   CalendarDays,
@@ -173,7 +172,6 @@ export default function Sidebar({ variant = "desktop" }) {
   const location = useLocation();
   const { data, isContractor, isEmployee, isSubcontractor } = useWhoAmI();
 
-  const [refundOpen, setRefundOpen] = useState(false);
 
   // Global close-out modal state
   const [showCloseoutModal, setShowCloseoutModal] = useState(false);
@@ -215,22 +213,6 @@ export default function Sidebar({ variant = "desktop" }) {
     const teamRole = String(data?.team_role || data?.role || "").toLowerCase();
     return teamRole === "employee_supervisor" || Number(reviewQueueCount || 0) > 0;
   }, [data, isContractorOwner, isEmployee, reviewQueueCount]);
-
-  const activeAgreementId = useMemo(() => {
-    const p = location.pathname || "";
-    const m = p.match(/^\/app\/agreements\/(\d+)(\/|$)/);
-    return m ? Number(m[1]) : null;
-  }, [location.pathname]);
-
-  const activeAgreementLabel = useMemo(() => {
-    try {
-      return localStorage.getItem("activeAgreementTitle") || "";
-    } catch {
-      return "";
-    }
-  }, [location.pathname]);
-
-  const showRefundContext = Boolean(isContractorOwner && activeAgreementId);
 
   const consoleLabel = useMemo(() => {
     if (isAdmin) return "Admin Console";
@@ -601,15 +583,6 @@ export default function Sidebar({ variant = "desktop" }) {
       </div>
 
       <nav className="mhb-sidebar-nav min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar" data-testid="authenticated-sidebar-navigation">
-        {showRefundContext && !isEmployee && (
-          <RefundEscrowModal
-            open={refundOpen}
-            onClose={() => setRefundOpen(false)}
-            agreementId={activeAgreementId}
-            agreementLabel={activeAgreementLabel}
-          />
-        )}
-
         {isContractorOwner ? (
           <>
             <NavGroup label="Main">

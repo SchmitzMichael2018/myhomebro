@@ -178,6 +178,7 @@ class InvoiceStatus(models.TextChoices):
     DISPUTED = "disputed", "Disputed"
     PAID = "paid", "Paid"
     SETTLED = "settled", "Resolved Allocation"
+    REFUNDED = "refunded", "Refunded"
 
 
 class ExpenseStatus(models.TextChoices):
@@ -239,6 +240,7 @@ class DrawRequestStatus(models.TextChoices):
     REJECTED = "rejected", "Rejected"
     CHANGES_REQUESTED = "changes_requested", "Changes Requested"
     PAID = "paid", "Paid"
+    REFUNDED = "refunded", "Refunded"
 
 
 class ExternalPaymentStatus(models.TextChoices):
@@ -246,6 +248,7 @@ class ExternalPaymentStatus(models.TextChoices):
     VERIFIED = "verified", "Verified"
     DISPUTED = "disputed", "Disputed"
     VOIDED = "voided", "Voided"
+    REFUNDED = "refunded", "Refunded"
 
 
 class Skill(models.Model):
@@ -2530,6 +2533,8 @@ class Notification(models.Model):
     EVENT_ESTIMATE_CUSTOMER_MESSAGE = "estimate_customer_message"
     EVENT_AGREEMENT_CUSTOMER_MESSAGE = "agreement_customer_message"
     EVENT_PROJECT_CUSTOMER_MESSAGE = "project_customer_message"
+    EVENT_REFUND_REQUESTED = "refund_requested"
+    EVENT_REFUND_UPDATED = "refund_updated"
     EVENT_ESTIMATE_REVISION_REQUESTED = "estimate_revision_requested"
     EVENT_ESTIMATE_ACCEPTED = "estimate_accepted"
     EVENT_ESTIMATE_DECLINED = "estimate_declined"
@@ -2569,6 +2574,8 @@ class Notification(models.Model):
         (EVENT_ESTIMATE_CUSTOMER_MESSAGE, "Estimate Customer Message"),
         (EVENT_AGREEMENT_CUSTOMER_MESSAGE, "Agreement Customer Message"),
         (EVENT_PROJECT_CUSTOMER_MESSAGE, "Project Customer Message"),
+        (EVENT_REFUND_REQUESTED, "Refund Requested"),
+        (EVENT_REFUND_UPDATED, "Refund Updated"),
         (EVENT_ESTIMATE_REVISION_REQUESTED, "Estimate Revision Requested"),
         (EVENT_ESTIMATE_ACCEPTED, "Estimate Accepted"),
         (EVENT_ESTIMATE_DECLINED, "Estimate Declined"),
@@ -3352,7 +3359,11 @@ from .models_customer_portal import (  # noqa: E402,F401
     Tenancy,
 )
 from .models_amendment_request import AmendmentRequest, AmendmentRequestAttachment  # noqa: E402,F401
-from .models_customer_refund_request import CustomerRefundRequest  # noqa: E402,F401
+from .models_customer_refund_request import (  # noqa: E402,F401
+    CustomerRefundRequest,
+    CustomerRefundRequestEvent,
+    CustomerRefundTransaction,
+)
 from .models_project_activity import ProjectActivityEvent  # noqa: E402,F401
 from .models_learning import (
     AgreementDraftIntelligenceSnapshot,
