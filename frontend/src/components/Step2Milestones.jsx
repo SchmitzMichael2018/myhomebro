@@ -1470,6 +1470,7 @@ export default function Step2Milestones({
   const [projectStartDateDraft, setProjectStartDateDraft] = useState("");
   const [projectStartDateBusy, setProjectStartDateBusy] = useState(false);
   const [projectStartDatePrompt, setProjectStartDatePrompt] = useState(null);
+  const projectStartDateInputRef = useRef(null);
   const [fallbackMilestones, setFallbackMilestones] = useState(null);
   const [stagedSuggestedMilestoneIds, setStagedSuggestedMilestoneIds] = useState([]);
   const [stagedSuggestedTimelineIds, setStagedSuggestedTimelineIds] = useState([]);
@@ -3210,13 +3211,15 @@ export default function Step2Milestones({
   const planningValidationRequiresAcknowledgement =
     planningValidationStatus === "needs_review" || planningValidationStatus === "hard_conflict";
 
-  async function validatePlanningTimeline({ acknowledge = false } = {}) {
+  async function validatePlanningTimeline({ acknowledge = false, persistPlanning = true } = {}) {
     if (!agreementId) return null;
     setPlanningValidationLoading(true);
     setPlanningValidationError("");
     try {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      await persistAnswersToAgreement(null, { source: "user" });
+      if (persistPlanning) {
+        await persistAnswersToAgreement(null, { source: "user" });
+      }
       const endpoint = acknowledge
         ? `/projects/agreements/${agreementId}/acknowledge-planning-validation/`
         : `/projects/agreements/${agreementId}/planning-validation/`;
@@ -3244,6 +3247,22 @@ export default function Step2Milestones({
     } finally {
       setPlanningValidationLoading(false);
     }
+  }
+
+  async function applyRecommendedPlanningStart() {
+    const recommendedStart = toDateOnly(currentPlanningValidation?.summary?.recommended_timeline?.start_date);
+    if (!recommendedStart) return;
+    setProjectStartDateDraft(recommendedStart);
+    const saved = await persistProjectStartDate(recommendedStart, { updateTimeline: true });
+    if (saved) {
+      await validatePlanningTimeline({ persistPlanning: false });
+      toast.success("Project and milestone dates moved to the next open window.");
+    }
+  }
+
+  function focusProjectStartDate() {
+    projectStartDateInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => projectStartDateInputRef.current?.focus(), 350);
   }
 
   const clarificationsAgreementMeta = useMemo(() => {
@@ -5922,22 +5941,57 @@ export default function Step2Milestones({
       ) : null}
 
       {planningValidationRequiresAcknowledgement ? (
-        <section className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-950" data-testid="step2-schedule-conflict-warning">
-          <div className="text-sm font-semibold">Potential scheduling conflict</div>
-          <p className="mt-1 text-sm">
+        <section className="rounded-xl border border-amber-300/45 bg-amber-400/10 px-4 py-4 text-amber-50" data-testid="step2-schedule-conflict-warning">
+          <div className="text-base font-black" data-testid="step2-schedule-conflict-title">
+            {planningValidationStatus === "hard_conflict" ? "Crew conflict found" : "Schedule review needed"}
+          </div>
+          <p className="mt-1 text-sm font-semibold leading-6 text-amber-50">
             {currentPlanningValidation?.summary?.reason || "The proposed broad dates overlap existing scheduled work. Review availability before committing to these dates."}
           </p>
-          <p className="mt-1 text-xs font-semibold text-amber-900/80">
-            This check uses committed projects and recorded assignments. Review Team Schedule for detailed availability.
-          </p>
+          {currentPlanningValidation?.summary?.overlapping_commitments?.length ? (
+            <div className="mt-3 space-y-2" data-testid="step2-schedule-overlaps">
+              <div className="text-xs font-black uppercase tracking-wide text-amber-100/80">
+                {currentPlanningValidation.summary.overlapping_commitments.length} committed project{currentPlanningValidation.summary.overlapping_commitments.length === 1 ? "" : "s"} overlap
+              </div>
+              {currentPlanningValidation.summary.overlapping_commitments.map((row) => (
+                <div key={row.agreement_id || row.title} className="rounded-lg border border-amber-200/25 bg-black/15 px-3 py-2 text-sm text-amber-50">
+                  <div className="font-bold">{row.title || `Agreement #${row.agreement_id}`}</div>
+                  <div className="mt-0.5 text-xs text-amber-100/80">
+                    {friendly(row.start_date)} to {friendly(row.finish_date)} · Agreement #{row.agreement_id} · {String(row.status || "committed").replaceAll("_", " ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {currentPlanningValidation?.summary?.warnings?.filter((row) => row?.type === "capability_data_missing").length ? (
+            <p className="mt-3 text-xs font-semibold leading-5 text-amber-100/85" data-testid="step2-schedule-capability-note">
+              Team skills are not fully recorded, so this is a review warning—not proof that the crew is unavailable.
+            </p>
+          ) : null}
+          {currentPlanningValidation?.summary?.recommended_timeline?.start_date ? (
+            <p className="mt-3 text-sm font-bold text-white" data-testid="step2-schedule-recommended-date">
+              Next open window: {friendly(currentPlanningValidation.summary.recommended_timeline.start_date)} to {friendly(currentPlanningValidation.summary.recommended_timeline.finish_date)}
+            </p>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => window.open("/app/team/schedule", "_blank", "noopener,noreferrer")} className="rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-semibold">
-              Review schedule
+            {currentPlanningValidation?.summary?.recommended_timeline?.start_date ? (
+              <button type="button" onClick={applyRecommendedPlanningStart} disabled={projectStartDateBusy || planningValidationLoading || milestonesLocked} className="rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 hover:bg-amber-200 disabled:opacity-60" data-testid="step2-schedule-use-recommended">
+                {projectStartDateBusy ? "Moving dates…" : `Move project to ${friendly(currentPlanningValidation.summary.recommended_timeline.start_date)}`}
+              </button>
+            ) : null}
+            <button type="button" onClick={focusProjectStartDate} className="rounded-lg border border-amber-200/40 bg-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/15">
+              Choose another date
             </button>
-            <button type="button" onClick={() => validatePlanningTimeline({ acknowledge: true })} disabled={planningValidationLoading} className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">
-              {planningValidationLoading ? "Saving…" : "Continue anyway"}
+            <button type="button" onClick={() => window.open("/app/team/schedule", "_blank", "noopener,noreferrer")} className="rounded-lg border border-amber-200/40 bg-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/15">
+              Open team schedule
+            </button>
+            <button type="button" onClick={() => validatePlanningTimeline({ acknowledge: true })} disabled={planningValidationLoading || planningValidationAcknowledged} className="rounded-lg border border-amber-200/30 bg-amber-950/35 px-3 py-2 text-sm font-bold text-amber-50 disabled:opacity-60">
+              {planningValidationLoading ? "Saving…" : planningValidationAcknowledged ? "Dates kept · acknowledged" : "Keep dates and acknowledge"}
             </button>
           </div>
+          <p className="mt-2 text-xs leading-5 text-amber-100/75">
+            Moving the project updates its milestone dates. Keeping the dates records your acknowledgement but does not assign staff.
+          </p>
         </section>
       ) : null}
 
@@ -7319,6 +7373,7 @@ export default function Step2Milestones({
                 Project Start Date
               </label>
               <input id="mhb-step2milestones-7274"
+                ref={projectStartDateInputRef}
                 type="date"
                 value={projectStartDateDraft || ""}
                 onChange={(e) => setProjectStartDateDraft(e.target.value)}

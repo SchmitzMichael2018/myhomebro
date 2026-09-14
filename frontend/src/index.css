@@ -544,7 +544,7 @@
     color: rgba(224, 242, 254, 0.92) !important;
   }
 
-  .mhb-agreement-wizard :is(.text-amber-900, .text-amber-800, .text-amber-700) {
+  .mhb-agreement-wizard :is(.text-amber-950, .text-amber-900, .text-amber-800, .text-amber-700) {
     color: rgba(254, 243, 199, 0.92) !important;
   }
 

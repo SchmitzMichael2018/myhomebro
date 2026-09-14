@@ -383,6 +383,11 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
     planning_validation_summary: {
       status: "needs_review",
       reason: "The proposed dates overlap with existing scheduled work.",
+      date_range: { start_date: "2026-08-10", finish_date: "2026-08-14" },
+      recommended_timeline: { start_date: "2026-08-16", finish_date: "2026-08-20" },
+      overlapping_commitments: [
+        { agreement_id: 99, title: "Committed Kitchen", start_date: "2026-08-11", finish_date: "2026-08-15", status: "funded" },
+      ],
     },
     accepted_estimate_basis: {
       proposal_id: 42,
@@ -461,14 +466,17 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
     await expect(page.getByText(amount, { exact: true }).first()).toBeVisible();
   }
   const draftUrl = page.url();
+  await expect(page.getByTestId("step2-schedule-conflict-title")).toHaveText("Schedule review needed");
+  await expect(page.getByTestId("step2-schedule-overlaps")).toContainText("1 committed project overlap");
+  await expect(page.getByTestId("step2-schedule-recommended-date")).toContainText("Next open window");
   const [schedulePage] = await Promise.all([
     page.waitForEvent("popup"),
-    page.getByRole("button", { name: "Review schedule" }).click(),
+    page.getByRole("button", { name: "Open team schedule" }).click(),
   ]);
   await expect(schedulePage).toHaveURL(/\/app\/team\/schedule/);
   await schedulePage.close();
   await expect(page).toHaveURL(draftUrl);
-  await page.getByRole("button", { name: "Continue anyway" }).click();
+  await page.getByRole("button", { name: "Keep dates and acknowledge" }).click();
   await expect.poll(() => acknowledgmentCount).toBe(1);
   for (const amount of ["$1,000.00", "$1,950.00", "$4,950.00"]) {
     await expect(page.getByText(amount, { exact: true }).first()).toBeVisible();

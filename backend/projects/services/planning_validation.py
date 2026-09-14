@@ -291,10 +291,23 @@ def build_planning_validation_summary(agreement: Agreement) -> dict:
     for need in required:
         key = need["capability"].strip().lower()
         bucket = capability_counts.get(key, {"total": 0, "subaccount_ids": set(), "capability": need["capability"]})
+        recorded = int(bucket["total"])
         occupied_for_skill = len(bucket["subaccount_ids"].intersection(occupied_ids))
-        available = max(int(bucket["total"]) - occupied_for_skill, 0)
+        available = max(recorded - occupied_for_skill, 0)
         need["available"] = available
+        need["recorded"] = recorded
         need["occupied_by_committed_work"] = occupied_for_skill
+        if recorded <= 0:
+            need["status"] = "unrecorded"
+            warnings.append(
+                {
+                    "type": "capability_data_missing",
+                    "capability": need["capability"],
+                    "message": f"No active {need['capability']} capability is recorded, so available capacity cannot be confirmed.",
+                }
+            )
+            continue
+
         need["status"] = "ready" if available >= need["needed"] else "gap"
         if available < need["needed"]:
             blockers.append(
@@ -345,14 +358,19 @@ def build_planning_validation_summary(agreement: Agreement) -> dict:
     needs_review = bool(warnings or overlapping_commitments)
     if hard_conflict:
         validation_status = STATUS_HARD_CONFLICT
-        reason = "Authoritative assignments or capability availability show a crew-capacity conflict during the proposed dates."
+        reason = (
+            "One or more selected team members are already assigned to overlapping committed work."
+            if conflicts
+            else "Recorded active team capacity is insufficient for the proposed dates."
+        )
     elif needs_review:
         validation_status = STATUS_NEEDS_REVIEW
-        reason = (
-            "The proposed dates overlap with existing scheduled work."
-            if overlapping_commitments
-            else "Planning information is incomplete and should be reviewed before sending."
-        )
+        if overlapping_commitments and any(row.get("type") == "capability_data_missing" for row in warnings):
+            reason = "The proposed dates overlap committed work, but team capability records are incomplete."
+        elif overlapping_commitments:
+            reason = "The proposed dates overlap with existing scheduled work."
+        else:
+            reason = "Planning information is incomplete and should be reviewed before sending."
     else:
         validation_status = STATUS_VALIDATED
         reason = "No blocking timeline or workforce conflicts were detected."

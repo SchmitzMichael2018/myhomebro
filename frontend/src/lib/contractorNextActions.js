@@ -433,7 +433,7 @@ export function getContractorNextActions({
         key: `planning-validation:${agreement?.id || title}:${validationStatus}`,
         dedupeKey: `planning-validation:${agreement?.id || title}`,
         title: hardConflict
-          ? `${title} has a hard labor conflict`
+          ? `${title} has a confirmed crew conflict`
           : `${title} timeline needs review`,
         description:
           agreement?.planning_validation_summary?.reason ||
@@ -447,7 +447,7 @@ export function getContractorNextActions({
         source: "planning_validation",
         actionType: "review_agreement_timeline",
         summary: hardConflict
-          ? `${title} has a hard labor conflict.`
+          ? `${title} has a confirmed crew conflict.`
           : `${title} timeline needs review.`,
         reason:
           agreement?.planning_validation_summary?.reason ||

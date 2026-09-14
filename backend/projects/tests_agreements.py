@@ -411,6 +411,21 @@ class AgreementPlanningValidationTests(TestCase):
         )
         self.assertEqual(response.data["summary"]["conflicts"], [])
 
+    def test_missing_capability_records_are_review_warning_not_hard_conflict(self):
+        EmployeeCapability.objects.all().delete()
+        self._agreement(title="Signed Kitchen", committed=True)
+        draft = self._agreement(title="Unsigned Bathroom")
+
+        response = self.client.post(f"/api/projects/agreements/{draft.id}/planning-validation/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        summary = response.data["summary"]
+        self.assertEqual(summary["status"], STATUS_NEEDS_REVIEW)
+        self.assertIn("team capability records are incomplete", summary["reason"])
+        self.assertEqual(summary["blockers"], [])
+        self.assertTrue(any(row["type"] == "capability_data_missing" for row in summary["warnings"]))
+        self.assertTrue(all(row["status"] == "unrecorded" for row in summary["required_capabilities"]))
+
     def test_completed_work_and_other_contractors_are_excluded(self):
         completed = self._agreement(title="Completed Work", committed=True)
         completed.status = "completed"
