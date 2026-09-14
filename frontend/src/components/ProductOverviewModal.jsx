@@ -252,11 +252,19 @@ const AUDIENCE_VIDEOS = {
     description:
       'A homeowner-focused tour of requests, estimates, agreements, progress reviews, payments, and records.',
     duration: 'About 90 seconds',
-    source: import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_VIDEO_URL || '',
-    poster: import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_POSTER_URL || '',
-    captions: import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_CAPTIONS_URL || '',
+    source:
+      import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_VIDEO_URL ||
+      '/videos/product-overview/myhomebro-homeowner-walkthrough.mp4',
+    poster:
+      import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_POSTER_URL ||
+      '/videos/product-overview/myhomebro-homeowner-walkthrough-poster.jpg',
+    captions:
+      import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_CAPTIONS_URL ||
+      '/videos/product-overview/myhomebro-homeowner-walkthrough.vtt',
     transcript:
-      import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_TRANSCRIPT_URL || '',
+      import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_TRANSCRIPT_URL ||
+      '/videos/product-overview/myhomebro-homeowner-walkthrough.txt',
+    aiNarration: true,
   },
   property_manager: {
     title: 'From maintenance request to property record',
@@ -397,11 +405,12 @@ function VideoCard({ audienceId, video }) {
         <video
           controls
           preload="metadata"
+          playsInline
           poster={video.poster || undefined}
           className="aspect-video w-full bg-slate-950"
           aria-label={video.title}
         >
-          <source src={video.source} />
+          <source src={video.source} type="video/mp4" />
           <track
             kind="captions"
             src={video.captions}
@@ -439,6 +448,11 @@ function VideoCard({ audienceId, video }) {
             </a>
           ) : null}
         </div>
+        {ready && video.aiNarration ? (
+          <p className="mt-3 text-xs leading-5 text-slate-400">
+            This walkthrough uses AI-generated narration.
+          </p>
+        ) : null}
       </div>
     </article>
   );
@@ -773,8 +787,8 @@ export default function ProductOverviewModal({
           >
             <h3 className="text-2xl font-semibold">Workflow videos</h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/74">
-              Short, role-specific demonstrations will be added here with
-              captions and transcripts. The interactive tour is available now.
+              Watch available role-specific demonstrations with captions and
+              transcripts. Videos still in preparation are clearly identified.
             </p>
             <div
               data-testid="product-video-library"

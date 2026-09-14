@@ -129,7 +129,31 @@ test("audience selectors personalize all five steps and persist across tabs", as
   );
 
   await modal.getByRole("tab", { name: "Videos" }).click();
-  await expect(modal.getByTestId("product-video-homeowner")).toBeVisible();
+  const homeownerVideo = modal.getByTestId("product-video-homeowner");
+  await expect(homeownerVideo).toBeVisible();
+  await expect(homeownerVideo.locator("video")).toHaveAttribute(
+    "poster",
+    "/videos/product-overview/myhomebro-homeowner-walkthrough-poster.jpg"
+  );
+  await expect(homeownerVideo.locator("source")).toHaveAttribute(
+    "src",
+    "/videos/product-overview/myhomebro-homeowner-walkthrough.mp4"
+  );
+  await expect
+    .poll(() => homeownerVideo.locator("video").evaluate((media) => media.readyState))
+    .toBeGreaterThanOrEqual(1);
+  const videoDuration = await homeownerVideo.locator("video").evaluate((media) => media.duration);
+  expect(videoDuration).toBeGreaterThan(93);
+  expect(videoDuration).toBeLessThan(94);
+  await expect(homeownerVideo.locator('track[kind="captions"]')).toHaveAttribute(
+    "src",
+    "/videos/product-overview/myhomebro-homeowner-walkthrough.vtt"
+  );
+  await expect(homeownerVideo.getByText("AI-generated narration", { exact: false })).toBeVisible();
+  await expect(homeownerVideo.getByRole("link", { name: "Read transcript" })).toHaveAttribute(
+    "href",
+    "/videos/product-overview/myhomebro-homeowner-walkthrough.txt"
+  );
   await modal.getByRole("tab", { name: "Quick Answers" }).click();
   await expect(modal.getByRole("button", { name: "What happens after I submit a project request?" })).toBeVisible();
   await modal.getByRole("tab", { name: "Tour" }).click();
@@ -180,14 +204,14 @@ test("audience transition respects reduced-motion preference", async ({ page }) 
   await expect(workflow).toHaveAttribute("data-audience", "homeowner");
 });
 
-test("Videos provide honest role-aware placeholders and Quick Answers links to the full FAQ", async ({ page }) => {
+test("Videos show the homeowner walkthrough, honest role-aware placeholders, and Quick Answers", async ({ page }) => {
   const modal = await openOverview(page);
 
   await modal.getByRole("tab", { name: "Videos" }).click();
   await expect(modal.getByTestId("product-video-library")).toBeVisible();
   await expect(modal.locator('[data-testid^="product-video-"]')).toHaveCount(4);
-  await expect(modal.getByText("Video in preparation")).toHaveCount(3);
-  await expect(modal.locator("video")).toHaveCount(0);
+  await expect(modal.getByText("Video in preparation")).toHaveCount(2);
+  await expect(modal.locator("video")).toHaveCount(1);
 
   await modal.getByRole("tab", { name: "Tour" }).click();
   await modal.getByTestId("product-audience-contractor").click();
