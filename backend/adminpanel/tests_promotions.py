@@ -2,7 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -10,6 +10,7 @@ from payments.fees import calculate_platform_fee, compute_fee_summary
 from projects.models import Contractor, PlatformFeePromotionAuditEvent, PlatformFeePromotionGrant
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class PlatformFeePromotionTests(TestCase):
     def setUp(self):
         User = get_user_model()
@@ -114,4 +115,3 @@ class PlatformFeePromotionTests(TestCase):
         )
         self.assertGreater(result.platform_fee_cents, 0)
         self.assertEqual(result.promotion_code, "")
-
