@@ -8,7 +8,6 @@ from projects.models import Contractor, Homeowner, Project
 class ContractorProfileDeleteTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
-            username="disposable-qa-contractor",
             email="qa-contractor@example.com",
             password="pass12345",
         )
@@ -21,7 +20,7 @@ class ContractorProfileDeleteTests(TestCase):
 
     def test_hard_delete_removes_only_contractor_role(self):
         customer_owner = get_user_model().objects.create_user(
-            username="customer-record-owner",
+            email="customer-record-owner@example.com",
             password="pass12345",
         )
         other_contractor = Contractor.objects.create(
@@ -64,7 +63,48 @@ class ContractorProfileDeleteTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["related_counts"]["customers"], 1)
         self.assertEqual(response.json()["related_counts"]["projects"], 1)
+        self.assertTrue(response.json()["deactivation_available"])
         self.assertTrue(Contractor.objects.filter(pk=self.contractor.pk).exists())
+
+    def test_deactivate_preserves_records_login_and_routes_to_customer_workspace(self):
+        customer = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Retained Customer",
+            email="retained@example.com",
+        )
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=customer,
+            title="Retained Project",
+        )
+
+        response = self.client.post("/api/projects/contractors/me/deactivate/")
+
+        self.assertEqual(response.status_code, 200)
+        self.contractor.refresh_from_db()
+        self.user.refresh_from_db()
+        self.assertFalse(self.contractor.is_active)
+        self.assertIsNotNone(self.contractor.deactivated_at)
+        self.assertTrue(self.user.is_active)
+        self.assertTrue(Homeowner.objects.filter(pk=customer.pk).exists())
+        self.assertTrue(Project.objects.filter(pk=project.pk).exists())
+
+        identity = self.client.get("/api/projects/whoami/")
+        self.assertEqual(identity.status_code, 200)
+        self.assertEqual(identity.json()["type"], "homeowner")
+        self.assertEqual(identity.json()["available_workspaces"], ["customer"])
+
+        portal = self.client.get("/api/projects/customer-portal/account/")
+        self.assertEqual(portal.status_code, 200)
+        self.assertFalse(portal.json()["account"]["can_access_contractor_workspace"])
+
+    def test_deactivate_is_idempotent(self):
+        first = self.client.post("/api/projects/contractors/me/deactivate/")
+        second = self.client.post("/api/projects/contractors/me/deactivate/")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertFalse(Contractor.objects.get(pk=self.contractor.pk).is_active)
 
     def test_delete_returns_not_found_without_contractor_role(self):
         self.contractor.delete()

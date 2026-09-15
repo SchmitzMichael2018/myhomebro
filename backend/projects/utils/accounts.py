@@ -39,14 +39,14 @@ def get_contractor_for_user(user: User) -> Optional[Contractor]:
 
     # Primary Contractor?
     try:
-        contractor = Contractor.objects.get(user=user)
+        contractor = Contractor.objects.get(user=user, is_active=True)
         return contractor
     except Contractor.DoesNotExist:
         pass
 
     # Sub-account?
     sub = get_subaccount_for_user(user)
-    if sub is not None:
+    if sub is not None and sub.parent_contractor.is_active:
         return sub.parent_contractor
 
     return None

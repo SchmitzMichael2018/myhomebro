@@ -4330,7 +4330,7 @@ def _customer_account_payload(email: str, request=None) -> dict:
         request_user
         and getattr(request_user, "is_authenticated", False)
         and authenticated_email == email.lower().strip()
-        and Contractor.objects.filter(user=request_user).exists()
+        and Contractor.objects.filter(user=request_user, is_active=True).exists()
     )
     return {
         "email": email,

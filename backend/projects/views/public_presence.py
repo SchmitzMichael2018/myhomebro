@@ -126,7 +126,9 @@ def _get_or_create_profile(contractor):
 
 
 def _public_profile_qs():
-    return ContractorPublicProfile.objects.select_related("contractor", "contractor__user")
+    return ContractorPublicProfile.objects.filter(contractor__is_active=True).select_related(
+        "contractor", "contractor__user"
+    )
 
 
 def _public_profile_or_404(slug: str):

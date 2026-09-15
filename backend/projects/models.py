@@ -299,6 +299,11 @@ class Contractor(models.Model):
         on_delete=models.CASCADE,
         related_name="contractor_profile",
     )
+    # Role-specific lifecycle state. Deactivating a contractor must preserve the
+    # shared login and its customer/property-manager access as well as all
+    # historical business records.
+    is_active = models.BooleanField(default=True, db_index=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
     business_name = models.CharField(max_length=255, blank=True)
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)

@@ -37,7 +37,18 @@ INTRO_DAYS_TOTAL = INTRO_DAYS
 
 
 def _contractor_for_user(user):
-    return getattr(user, "contractor", None) or getattr(user, "contractor_profile", None)
+    if not user or not user.is_authenticated:
+        return None
+    # Query instead of reading the reverse-relation cache so a profile deleted
+    # during the current session cannot be mistaken for a live contractor role.
+    return Contractor.objects.filter(user=user, is_active=True).first()
+
+
+def _contractor_role_for_user(user):
+    """Resolve the contractor record even when its workspace is inactive."""
+    if not user or not user.is_authenticated:
+        return None
+    return Contractor.objects.filter(user=user).first()
 
 
 def _safe_url(f):
@@ -451,6 +462,7 @@ class ContractorMeView(APIView):
                         "records exist."
                     ),
                     "related_counts": related_counts,
+                    "deactivation_available": True,
                 },
                 status=409,
             )
@@ -459,6 +471,42 @@ class ContractorMeView(APIView):
             contractor.delete()
 
         return Response(status=204)
+
+
+class ContractorDeactivateView(APIView):
+    """Deactivate only the contractor workspace while retaining its records."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        contractor = _contractor_role_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+
+        if contractor.is_active:
+            with transaction.atomic():
+                contractor.is_active = False
+                contractor.deactivated_at = timezone.now()
+                contractor.save(update_fields=["is_active", "deactivated_at", "updated_at"])
+
+                # A deactivated business must not continue accepting public
+                # traffic. Keep the profile itself for audit/history and make
+                # reactivation recoverable by support.
+                public_profile = getattr(contractor, "public_profile", None)
+                if public_profile is not None and public_profile.is_public:
+                    public_profile.is_public = False
+                    public_profile.save(update_fields=["is_public", "updated_at"])
+
+        return Response(
+            {
+                "detail": (
+                    "Contractor profile deactivated. Your records and other workspace "
+                    "access remain available."
+                ),
+                "contractor_active": False,
+            },
+            status=200,
+        )
 
 
 ContractorMe = ContractorMeView

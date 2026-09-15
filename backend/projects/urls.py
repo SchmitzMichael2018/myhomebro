@@ -119,7 +119,7 @@ from .views.contractor_activation import (
 from .views.public_intake_start import PublicIntakeStartView
 from .views.project_intake import ProjectIntakeViewSet
 
-from .views.contractor_me import ContractorMeView
+from .views.contractor_me import ContractorDeactivateView, ContractorMeView
 from .views.activity_feed import ContractorActivityEventStateView, ContractorActivityFeedView
 from .views.contractor_bids import ContractorBidsView, OpportunityEstimateAppointmentCreateView, OpportunityEstimateAppointmentTransitionView
 from .views.estimate_availability import (
@@ -1293,6 +1293,7 @@ urlpatterns = [
     path("notifications/<int:pk>/read/", NotificationMarkReadView.as_view()),
     path("notifications/mark-all-read/", NotificationMarkAllReadView.as_view()),
     path("contractors/me/", ContractorMeView.as_view()),
+    path("contractors/me/deactivate/", ContractorDeactivateView.as_view()),
     path("contractors/generate-profile/", ContractorPublicProfileGenerateView.as_view()),
     path("contractors/onboarding/setup/", ContractorOnboardingSetupView.as_view()),
     path("workspace-context/", WorkspaceContextView.as_view(), name="workspace-context"),

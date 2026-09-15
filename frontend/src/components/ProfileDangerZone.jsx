@@ -9,6 +9,8 @@ export default function ProfileDangerZone() {
   const [confirmText, setConfirmText] = useState("");
   const [hardDelete, setHardDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [blockedCounts, setBlockedCounts] = useState(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   const navigate = useNavigate();
   const { logout } = useAuth();
@@ -35,6 +37,7 @@ export default function ProfileDangerZone() {
       const status = err?.response?.status;
       const data = err?.response?.data;
       if (status === 409 && data?.related_counts) {
+        setBlockedCounts(data.related_counts);
         toast.error(
           `Deletion blocked (customers: ${data.related_counts.customers}, projects: ${data.related_counts.projects}, agreements: ${data.related_counts.agreements}, invoices: ${data.related_counts.invoices}).`
         );
@@ -44,6 +47,26 @@ export default function ProfileDangerZone() {
       console.error("Delete profile error:", err);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleDeactivate = async () => {
+    const confirmed = window.confirm(
+      "Deactivate this contractor profile? Your business records will be retained, and your login and other workspace access will remain available."
+    );
+    if (!confirmed) return;
+
+    setDeactivating(true);
+    try {
+      await api.post("/projects/contractors/me/deactivate/");
+      toast.success("Contractor profile deactivated. Your records were retained.");
+      await logout?.();
+      navigate("/signin", { replace: true });
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Deactivation failed. Please try again.");
+      console.error("Deactivate contractor profile error:", err);
+    } finally {
+      setDeactivating(false);
     }
   };
 
@@ -100,6 +123,32 @@ export default function ProfileDangerZone() {
       >
         {busy ? "Deleting…" : "Delete my profile"}
       </button>
+
+      {blockedCounts ? (
+        <div
+          className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950"
+          role="status"
+          data-testid="profile-deactivation-fallback"
+        >
+          <h3 className="font-semibold">Permanent deletion isn’t available</h3>
+          <p className="mt-1 text-sm leading-6">
+            This profile has {blockedCounts.customers} customer{blockedCounts.customers === 1 ? "" : "s"},{" "}
+            {blockedCounts.projects} project{blockedCounts.projects === 1 ? "" : "s"},{" "}
+            {blockedCounts.agreements} agreement{blockedCounts.agreements === 1 ? "" : "s"}, and{" "}
+            {blockedCounts.invoices} invoice{blockedCounts.invoices === 1 ? "" : "s"}. You can deactivate the
+            contractor workspace instead. Its records will be retained, while your login and other workspace access
+            remain available.
+          </p>
+          <button
+            type="button"
+            onClick={handleDeactivate}
+            disabled={deactivating || busy}
+            className="mt-3 rounded bg-amber-700 px-4 py-2 font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {deactivating ? "Deactivating…" : "Deactivate contractor profile"}
+          </button>
+        </div>
+      ) : null}
       </section>
     </details>
   );

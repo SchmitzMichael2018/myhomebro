@@ -223,6 +223,7 @@ if Contractor is not None:
         list_display = (
             "id",
             "business_name",
+            "is_active",
             "name",
             "email",
             "phone",
@@ -241,8 +242,8 @@ if Contractor is not None:
             "license_number",
             "stripe_account_id",
         )
-        list_filter = ("charges_enabled", "payouts_enabled", "details_submitted")
-        readonly_fields = ("created_at", "updated_at")
+        list_filter = ("is_active", "charges_enabled", "payouts_enabled", "details_submitted")
+        readonly_fields = ("created_at", "updated_at", "deactivated_at")
 
         def get_city(self, obj):
             return getattr(obj, "city", "")
