@@ -87,7 +87,7 @@ export default function AgreementFullTextView({ agreement, onOpenLegal, onUpdate
                         </button>
                     </li>
                     <li>
-                        <a href="/static/legal/Full_terms_of_service.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center">
+                        <a href="/static/legal/terms_of_service.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center">
                             Download Full Binding Terms PDF
                         </a>
                     </li>
@@ -97,7 +97,7 @@ export default function AgreementFullTextView({ agreement, onOpenLegal, onUpdate
                         </button>
                     </li>
                     <li>
-                        <a href="/static/legal/Full_privacy_policy.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center">
+                        <a href="/static/legal/privacy_policy.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center">
                             Download Full Binding Privacy Policy PDF
                         </a>
                     </li>
