@@ -29,7 +29,7 @@ class EmbeddedStripeOnboardingTests(TestCase):
     @override_settings(STRIPE_ENABLED=True, STRIPE_API_KEY="sk_test_embedded")
     @patch("payments.views.onboarding.stripe.AccountSession.create")
     @patch("payments.views.onboarding.stripe.Account.create")
-    def test_account_session_creates_custom_account_and_syncs_contractor(
+    def test_account_session_creates_contractor_owned_account_and_syncs_contractor(
         self,
         mock_account_create,
         mock_account_session_create,
@@ -57,8 +57,17 @@ class EmbeddedStripeOnboardingTests(TestCase):
 
         mock_account_create.assert_called_once()
         account_kwargs = mock_account_create.call_args.kwargs
-        self.assertEqual(account_kwargs["type"], "custom")
+        self.assertNotIn("type", account_kwargs)
         self.assertEqual(account_kwargs["country"], "US")
+        self.assertEqual(
+            account_kwargs["controller"],
+            {
+                "fees": {"payer": "account"},
+                "losses": {"payments": "stripe"},
+                "requirement_collection": "stripe",
+                "stripe_dashboard": {"type": "full"},
+            },
+        )
         self.assertEqual(
             account_kwargs["capabilities"],
             {"card_payments": {"requested": True}, "transfers": {"requested": True}},
@@ -224,6 +233,12 @@ class EmbeddedStripeOnboardingTests(TestCase):
             "charges_enabled": True,
             "payouts_enabled": True,
             "details_submitted": True,
+            "type": "standard",
+            "controller": {
+                "fees": {"payer": "account"},
+                "losses": {"payments": "stripe"},
+                "stripe_dashboard": {"type": "full"},
+            },
             "requirements": {
                 "currently_due": [],
                 "eventually_due": [],
@@ -238,6 +253,9 @@ class EmbeddedStripeOnboardingTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["onboarding_status"], "completed")
         self.assertTrue(payload["connected"])
+        self.assertTrue(payload["direct_pay_ready"])
+        self.assertEqual(payload["payment_loss_responsibility"], "stripe")
+        self.assertEqual(payload["stripe_fee_payer"], "contractor")
         self.assertEqual(payload["onboarding"]["stripe_onboarding_status"], "complete")
         self.assertTrue(payload["onboarding"]["stripe_ready"])
 

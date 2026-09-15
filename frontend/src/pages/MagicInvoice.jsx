@@ -380,7 +380,7 @@ function DirectPayPanel({ invoice }) {
     <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <div className="text-sm font-extrabold text-slate-800">Direct Pay</div>
       <div className="mt-2 text-sm text-slate-600">
-        This invoice is paid using a secure Stripe Checkout link.
+        This invoice is paid to the contractor&apos;s connected Stripe account using secure Stripe Checkout. It is not held or released by MyHomeBro.
       </div>
 
       {paidAt ? (

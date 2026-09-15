@@ -106,6 +106,16 @@ class ExpenseRequest(models.Model):
     stripe_checkout_session_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     stripe_checkout_url = models.URLField(blank=True, default="")
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    direct_pay_charge_type = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        choices=[
+            ("direct", "Connected-account direct charge"),
+            ("destination", "Legacy platform destination charge"),
+        ],
+    )
+    direct_pay_connected_account_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     platform_fee_cents = models.PositiveIntegerField(default=0)
     payout_cents = models.PositiveIntegerField(default=0)
 

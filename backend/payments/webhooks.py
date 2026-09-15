@@ -44,11 +44,14 @@ from projects.services.rental_operations_billing import (
 log = logging.getLogger(__name__)
 
 
-def _webhook_secret() -> str:
-    return (
-        (getattr(settings, "STRIPE_WEBHOOK_SECRET", None) or os.environ.get("STRIPE_WEBHOOK_SECRET", ""))
-        .strip()
+def _webhook_secrets() -> list[str]:
+    """Return each configured signing secret without duplicating values."""
+    configured = (
+        getattr(settings, "STRIPE_WEBHOOK_SECRET", None) or os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        getattr(settings, "STRIPE_CONNECT_WEBHOOK_SECRET", None)
+        or os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", ""),
     )
+    return list(dict.fromkeys(str(value or "").strip() for value in configured if str(value or "").strip()))
 
 
 def _stripe_api_key() -> str:
@@ -415,7 +418,7 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
             log.info("Invoice already paid/released invoice=%s pi=%s", inv.id, pi_id)
 
 
-def _handle_direct_pay_checkout_completed(session: dict) -> None:
+def _handle_direct_pay_checkout_completed(session: dict, *, connected_account_id: str = "") -> None:
     meta = session.get("metadata") or {}
 
     payment_mode = str(meta.get("payment_mode") or "").strip()
@@ -436,6 +439,7 @@ def _handle_direct_pay_checkout_completed(session: dict) -> None:
         invoice_id=inv_id,
         checkout_session_id=session_id or None,
         payment_intent_id=payment_intent or None,
+        connected_account_id=connected_account_id or None,
     )
     log.info(
         "Direct Pay invoice checkout completed; awaiting Stripe payment confirmation invoice=%s session=%s pi=%s",
@@ -445,7 +449,7 @@ def _handle_direct_pay_checkout_completed(session: dict) -> None:
     )
 
 
-def _handle_draw_direct_checkout_completed(session: dict) -> None:
+def _handle_draw_direct_checkout_completed(session: dict, *, connected_account_id: str = "") -> None:
     meta = session.get("metadata") or {}
     if str(meta.get("kind") or "").strip().lower() != "draw_direct_checkout":
         return
@@ -464,7 +468,7 @@ def _handle_draw_direct_checkout_completed(session: dict) -> None:
     )
 
 
-def _handle_payment_intent_processing(intent: dict) -> None:
+def _handle_payment_intent_processing(intent: dict, *, connected_account_id: str = "") -> None:
     metadata = intent.get("metadata") or {}
     payment_intent_id = intent.get("id") or ""
     issue_ref = payment_intent_id or None
@@ -474,11 +478,12 @@ def _handle_payment_intent_processing(intent: dict) -> None:
         mark_direct_pay_invoice_payment_pending(
             invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
             payment_intent_id=issue_ref,
+            connected_account_id=connected_account_id or None,
         )
         return
 
 
-def _handle_payment_intent_failed(intent: dict) -> None:
+def _handle_payment_intent_failed(intent: dict, *, connected_account_id: str = "") -> None:
     metadata = intent.get("metadata") or {}
     payment_intent_id = intent.get("id") or ""
     last_error = intent.get("last_payment_error") or {}
@@ -494,6 +499,7 @@ def _handle_payment_intent_failed(intent: dict) -> None:
         mark_direct_pay_invoice_payment_issue(
             invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
             payment_intent_id=payment_intent_id or None if is_direct_invoice_checkout else None,
+            connected_account_id=connected_account_id or None if is_direct_invoice_checkout else None,
             issue_message=str(issue_message),
         )
         return
@@ -503,10 +509,11 @@ def _handle_payment_intent_failed(intent: dict) -> None:
             draw_request_id=_safe_int(metadata.get("draw_request_id"), default=0) or None,
             payment_intent_id=payment_intent_id or None,
             issue_message=str(issue_message),
+            connected_account_id=connected_account_id or None,
         )
 
 
-def _handle_checkout_session_async_payment_failed(session: dict) -> None:
+def _handle_checkout_session_async_payment_failed(session: dict, *, connected_account_id: str = "") -> None:
     metadata = session.get("metadata") or {}
     session_id = session.get("id") or ""
     payment_intent = session.get("payment_intent") or ""
@@ -517,6 +524,7 @@ def _handle_checkout_session_async_payment_failed(session: dict) -> None:
             invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
             checkout_session_id=session_id or None,
             payment_intent_id=payment_intent or None,
+            connected_account_id=connected_account_id or None,
             issue_message=issue_message,
         )
         return
@@ -527,10 +535,11 @@ def _handle_checkout_session_async_payment_failed(session: dict) -> None:
             checkout_session_id=session_id or None,
             payment_intent_id=payment_intent or None,
             issue_message=issue_message,
+            connected_account_id=connected_account_id or None,
         )
 
 
-def _handle_charge_dispute_created(charge: dict) -> None:
+def _handle_charge_dispute_created(charge: dict, *, connected_account_id: str = "") -> None:
     payment_intent_id = charge.get("payment_intent") or ""
     if not payment_intent_id:
         return
@@ -540,9 +549,19 @@ def _handle_charge_dispute_created(charge: dict) -> None:
     try:
         mark_direct_pay_invoice_payment_issue(
             payment_intent_id=payment_intent_id,
+            connected_account_id=connected_account_id or None,
             issue_message=issue_message,
         )
         return
+    except Exception:
+        pass
+
+    try:
+        mark_draw_payment_issue(
+            payment_intent_id=payment_intent_id,
+            connected_account_id=connected_account_id or None,
+            issue_message=issue_message,
+        )
     except Exception:
         pass
 
@@ -622,7 +641,15 @@ def _handle_draw_transfer_failed(transfer_obj: dict) -> None:
         log.exception("Failed to sync failed transfer onto draw=%s: %s", draw_request_id, exc)
 
 
-def _handle_expense_checkout_completed(session: dict) -> None:
+def _validate_expense_connected_account(expense, connected_account_id: str) -> None:
+    if str(getattr(expense, "direct_pay_charge_type", "") or "") != "direct":
+        return
+    expected = str(getattr(expense, "direct_pay_connected_account_id", "") or "").strip()
+    if not expected or expected != str(connected_account_id or "").strip():
+        raise ValueError("Direct Pay event connected account does not match the expense payment owner.")
+
+
+def _handle_expense_checkout_completed(session: dict, *, connected_account_id: str = "") -> None:
     meta = session.get("metadata") or {}
     expense_id = meta.get("expense_request_id") or meta.get("expense_id")
     if not expense_id:
@@ -644,6 +671,10 @@ def _handle_expense_checkout_completed(session: dict) -> None:
             exp = ExpenseRequest.objects.select_for_update().get(id=exp_id)
         except Exception:
             log.warning("Expense checkout handler: expense not found id=%s (session=%s)", expense_id, session_id)
+            return
+
+        _validate_expense_connected_account(exp, connected_account_id)
+        if str(getattr(exp, "direct_pay_charge_type", "") or "") == "direct" and str(session.get("payment_status") or "") != "paid":
             return
 
         current_status = str(getattr(exp, "status", "") or "").lower()
@@ -670,7 +701,7 @@ def _handle_expense_checkout_completed(session: dict) -> None:
                     amount_cents=amount_cents,
                     contractor=contractor,
                     project_id=project_id,
-                    context="expense_checkout",
+                    context="direct_pay" if str(getattr(exp, "direct_pay_charge_type", "") or "") == "direct" else "expense_checkout",
                 )
                 platform_fee_cents = int(fee_result.platform_fee_cents)
                 payout_cents = int(fee_result.payout_cents)
@@ -715,7 +746,7 @@ def _handle_expense_checkout_completed(session: dict) -> None:
         log.info("ExpenseRequest marked PAID expense=%s session=%s pi=%s", exp_id, session_id, payment_intent)
 
 
-def _handle_expense_payment_intent_succeeded(intent: dict) -> None:
+def _handle_expense_payment_intent_succeeded(intent: dict, *, connected_account_id: str = "") -> None:
     meta = intent.get("metadata") or {}
     expense_id = meta.get("expense_request_id") or meta.get("expense_id")
     if not expense_id:
@@ -737,6 +768,8 @@ def _handle_expense_payment_intent_succeeded(intent: dict) -> None:
         except Exception:
             log.warning("Expense PI handler: expense not found id=%s (pi=%s)", expense_id, pi_id)
             return
+
+        _validate_expense_connected_account(exp, connected_account_id)
 
         current_status = str(getattr(exp, "status", "") or "").lower()
         if current_status == "paid":
@@ -761,7 +794,7 @@ def _handle_expense_payment_intent_succeeded(intent: dict) -> None:
                     amount_cents=amount_cents,
                     contractor=contractor,
                     project_id=project_id,
-                    context="expense_payment_intent",
+                    context="direct_pay" if str(getattr(exp, "direct_pay_charge_type", "") or "") == "direct" else "expense_payment_intent",
                 )
                 if hasattr(exp, "platform_fee_cents"):
                     exp.platform_fee_cents = int(fee_result.platform_fee_cents)
@@ -1118,9 +1151,9 @@ def stripe_webhook(request):
         if request.method != "POST":
             return HttpResponseBadRequest("Invalid method")
 
-        secret = _webhook_secret()
-        if not secret:
-            log.error("STRIPE_WEBHOOK_SECRET not configured.")
+        secrets = _webhook_secrets()
+        if not secrets:
+            log.error("Stripe webhook signing secret not configured.")
             return HttpResponseBadRequest("Webhook secret not configured")
 
         try:
@@ -1132,14 +1165,21 @@ def stripe_webhook(request):
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE", "")
 
-        try:
-            event = stripe.Webhook.construct_event(payload=payload, sig_header=sig_header, secret=secret)
-        except Exception as exc:
-            log.warning("Stripe webhook signature verification failed: %s", exc)
+        event = None
+        verification_error = None
+        for secret in secrets:
+            try:
+                event = stripe.Webhook.construct_event(payload=payload, sig_header=sig_header, secret=secret)
+                break
+            except Exception as exc:
+                verification_error = exc
+        if event is None:
+            log.warning("Stripe webhook signature verification failed: %s", verification_error)
             return HttpResponseBadRequest("Invalid signature")
 
         event_type = event.get("type")
         data_obj = (event.get("data") or {}).get("object") or {}
+        connected_account_id = str(event.get("account") or "").strip()
 
         if event_type == "account.updated":
             _update_contractor_from_account_obj(data_obj)
@@ -1165,16 +1205,16 @@ def stripe_webhook(request):
             except Exception:
                 log.exception("Rental Operations checkout handler failed (session=%s).", data_obj.get("id"))
             try:
-                _handle_direct_pay_checkout_completed(data_obj)
+                _handle_direct_pay_checkout_completed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Direct Pay checkout handler failed (session=%s).", data_obj.get("id"))
             try:
-                _handle_draw_direct_checkout_completed(data_obj)
+                _handle_draw_direct_checkout_completed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Draw checkout handler failed (session=%s).", data_obj.get("id"))
 
             try:
-                _handle_expense_checkout_completed(data_obj)
+                _handle_expense_checkout_completed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Expense checkout handler failed (session=%s).", data_obj.get("id"))
 
@@ -1196,7 +1236,7 @@ def stripe_webhook(request):
 
         if event_type == "checkout.session.async_payment_failed":
             try:
-                _handle_checkout_session_async_payment_failed(data_obj)
+                _handle_checkout_session_async_payment_failed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Async checkout failure handler failed (session=%s).", data_obj.get("id"))
             return HttpResponse(status=200)
@@ -1220,7 +1260,7 @@ def stripe_webhook(request):
 
         if event_type == "charge.dispute.created":
             try:
-                _handle_charge_dispute_created(data_obj)
+                _handle_charge_dispute_created(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Charge dispute handler failed for charge=%s", data_obj.get("id"))
             return HttpResponse(status=200)
@@ -1241,14 +1281,14 @@ def stripe_webhook(request):
 
         if event_type == "payment_intent.processing":
             try:
-                _handle_payment_intent_processing(data_obj)
+                _handle_payment_intent_processing(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Payment intent processing handler failed (pi=%s).", data_obj.get("id"))
             return HttpResponse(status=200)
 
         if event_type == "payment_intent.payment_failed":
             try:
-                _handle_payment_intent_failed(data_obj)
+                _handle_payment_intent_failed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Payment intent failure handler failed (pi=%s).", data_obj.get("id"))
             return HttpResponse(status=200)
@@ -1267,6 +1307,7 @@ def stripe_webhook(request):
                     finalize_direct_pay_invoice_paid(
                         invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
                         payment_intent_id=intent.get("id") or None,
+                        connected_account_id=connected_account_id or None,
                     )
                 _handle_invoice_payment_succeeded(intent)
             except Exception:
@@ -1276,7 +1317,7 @@ def stripe_webhook(request):
         # ✅ Expense payments (PI)
         if metadata.get("expense_request_id") or metadata.get("expense_id"):
             try:
-                _handle_expense_payment_intent_succeeded(intent)
+                _handle_expense_payment_intent_succeeded(intent, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Expense PI handler failed (pi=%s).", intent.get("id"))
             return HttpResponse(status=200)
@@ -1287,6 +1328,7 @@ def stripe_webhook(request):
                     draw_request_id=_safe_int(metadata.get("draw_request_id"), default=0),
                     payment_intent_id=intent.get("id") or "",
                     payment_method="stripe_checkout",
+                    connected_account_id=connected_account_id or None,
                 )
             except Exception:
                 log.exception("Draw PI handler failed (pi=%s).", intent.get("id"))

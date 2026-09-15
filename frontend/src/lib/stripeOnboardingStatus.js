@@ -24,6 +24,7 @@ export function getStripeOnboardingState(payload) {
   const connected = Boolean(next.connected) || status === "complete";
   const accountId = safeString(next.account_id || next.stripe_account_id);
   const resumeUrl = safeString(next.resume_url) || "/app/onboarding/stripe";
+  const hasDirectPayReadiness = Object.prototype.hasOwnProperty.call(next, "direct_pay_ready");
 
   return {
     status,
@@ -34,6 +35,7 @@ export function getStripeOnboardingState(payload) {
     charges_enabled: Boolean(next?.stripe_status?.charges_enabled ?? next.charges_enabled),
     payouts_enabled: Boolean(next?.stripe_status?.payouts_enabled ?? next.payouts_enabled),
     details_submitted: Boolean(next?.stripe_status?.details_submitted ?? next.details_submitted),
+    direct_pay_ready: hasDirectPayReadiness ? Boolean(next.direct_pay_ready) : null,
     restricted: status === "restricted",
     inProgress:
       status === "in_progress" ||
@@ -46,6 +48,16 @@ export function getStripeOnboardingState(payload) {
 
 export function buildStripeOnboardingGuidance(state) {
   const stripeState = getStripeOnboardingState(state);
+  if (stripeState.complete && stripeState.direct_pay_ready === false) {
+    return {
+      tone: "warn",
+      complete: false,
+      label: "Stripe is connected, but Direct Pay needs an account update.",
+      message: "Protected payments remain available. Reconnect Stripe before creating contractor-owned Direct Pay links.",
+      actionLabel: "Update payment setup",
+      actionHref: stripeState.resume_url,
+    };
+  }
   if (stripeState.complete) {
     return {
       tone: "success",

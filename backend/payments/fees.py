@@ -42,6 +42,13 @@ FLAT_FEE = Decimal("0.00")
 MAX_PLATFORM_FEE = Decimal("750.00")
 VOLUME_PLATFORM_FEE_CAP = Decimal("650.00")
 
+# Direct Pay is a lighter-weight SaaS payment rail: the contractor is the
+# seller, the charge lives on the contractor's connected Stripe account, and
+# MyHomeBro does not hold or release the project funds.  Keep this lower than
+# the protected-payment rates while retaining the shared per-project cap and
+# owner-issued promotion behavior.
+DIRECT_PAY_RATE = Decimal("0.020")
+
 
 @dataclass
 class FeeRateInfo:
@@ -694,12 +701,22 @@ def _calculate_unified_platform_fee(
     contractor_created_at = get_intro_pricing_start_for_contractor(contractor)
     monthly_volume = get_previous_month_processed_volume_for_contractor(contractor)
 
-    rate_info = get_fee_rate_for_contractor(
-        contractor_created_at=contractor_created_at,
-        monthly_volume=monthly_volume,
-        is_high_risk=is_high_risk,
-        today=date.today(),
-    )
+    normalized_context = str(context or "").strip().lower()
+    if normalized_context == "direct_pay":
+        rate_info = FeeRateInfo(
+            rate=DIRECT_PAY_RATE,
+            flat_fee=Decimal("0.00"),
+            is_intro=False,
+            tier_name="direct_pay",
+            high_risk_applied=False,
+        )
+    else:
+        rate_info = get_fee_rate_for_contractor(
+            contractor_created_at=contractor_created_at,
+            monthly_volume=monthly_volume,
+            is_high_risk=is_high_risk,
+            today=date.today(),
+        )
 
     project_amount = _money_from_cents(int(amount_cents))
     uncapped = _calculate_platform_fee_from_rate(project_amount=project_amount, rate_info=rate_info).total_fee
@@ -844,6 +861,7 @@ def compute_fee_summary_for_invoice_payment(
     contractor,
     agreement_id: Optional[int],
     project_id: Optional[int] = None,
+    context: str = "invoice_payment",
     is_high_risk: bool = False,
 ) -> InvoicePaymentFeeSummary:
     """
@@ -856,7 +874,7 @@ def compute_fee_summary_for_invoice_payment(
         amount_cents=int(amount_cents),
         contractor=contractor,
         project_id=project_id,
-        context="invoice_payment",
+        context=context,
         is_high_risk=is_high_risk,
     )
 
@@ -889,6 +907,7 @@ def calculate_platform_fee_cents_for_invoice(
         contractor=contractor,
         agreement_id=agreement_id,
         project_id=project_id,
+        context=context,
         is_high_risk=is_high_risk,
     )
     return _cents_from_money(summary.platform_fee)

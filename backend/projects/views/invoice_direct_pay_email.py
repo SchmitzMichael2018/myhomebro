@@ -130,11 +130,11 @@ def invoice_email_direct_pay_link(request, pk: int):
     # Defensive: keep project customer aligned before checkout creation
     _sync_project_customer_from_agreement(invoice)
 
-    # Ensure checkout link exists (idempotent)
+    # The service reuses safe connected-account links and replaces legacy
+    # destination-charge links before an email is sent.
     try:
-        if not getattr(invoice, "direct_pay_checkout_url", ""):
-            create_direct_pay_checkout_for_invoice(invoice)
-            invoice.refresh_from_db()
+        create_direct_pay_checkout_for_invoice(invoice)
+        invoice.refresh_from_db()
     except Exception as e:
         return JsonResponse({"error": f"Could not create pay link: {str(e)}"}, status=400)
 

@@ -113,6 +113,43 @@ class RefundWorkflowTests(TestCase):
 
     @patch("projects.services.refund_workflow.notify_homeowner_refund_update", return_value={})
     @patch("projects.services.refund_workflow.stripe.Refund.create")
+    def test_contractor_owned_direct_charge_refunds_in_connected_account(self, stripe_refund, _notify):
+        stripe_refund.return_value = {"id": "re_connected_direct_1"}
+        self.agreement.payment_mode = AgreementPaymentMode.DIRECT
+        self.agreement.save(update_fields=["payment_mode", "updated_at"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("400.00"),
+            status=InvoiceStatus.PAID,
+            direct_pay_payment_intent_id="pi_connected_direct_1",
+            direct_pay_charge_type="direct",
+            direct_pay_connected_account_id="acct_contractor_owned_1",
+        )
+
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/refund-requests/",
+            {
+                "source_type": "invoice",
+                "invoice_id": invoice.id,
+                "requested_amount": "100.00",
+                "reason": "Customer credit.",
+                "execute_now": True,
+                "confirm": "REFUND",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        kwargs = stripe_refund.call_args.kwargs
+        self.assertEqual(kwargs["payment_intent"], "pi_connected_direct_1")
+        self.assertEqual(kwargs["stripe_account"], "acct_contractor_owned_1")
+        self.assertNotIn("reverse_transfer", kwargs)
+        self.assertTrue(kwargs["refund_application_fee"])
+        transaction = CustomerRefundTransaction.objects.get(refund_request__invoice=invoice)
+        self.assertEqual(transaction.metadata["connected_account_id"], "acct_contractor_owned_1")
+
+    @patch("projects.services.refund_workflow.notify_homeowner_refund_update", return_value={})
+    @patch("projects.services.refund_workflow.stripe.Refund.create")
     def test_contractor_can_refund_a_paid_direct_draw(self, stripe_refund, _notify):
         stripe_refund.return_value = {"id": "re_draw_1"}
         self.agreement.payment_mode = AgreementPaymentMode.DIRECT

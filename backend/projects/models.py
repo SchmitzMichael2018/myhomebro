@@ -2748,6 +2748,16 @@ class DrawRequest(models.Model):
     stripe_checkout_url = models.URLField(blank=True, default="")
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     stripe_transfer_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    direct_pay_charge_type = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        choices=[
+            ("direct", "Connected-account direct charge"),
+            ("destination", "Legacy platform destination charge"),
+        ],
+    )
+    direct_pay_connected_account_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     escrow_source_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     escrow_source_charge_id = models.CharField(max_length=255, blank=True, default="")
     platform_fee_cents = models.PositiveIntegerField(default=0)
@@ -2909,6 +2919,23 @@ class Invoice(models.Model):
     direct_pay_payment_intent_id = models.CharField(max_length=255, blank=True, default="")
     direct_pay_checkout_url = models.URLField(blank=True, default="")
     direct_pay_paid_at = models.DateTimeField(null=True, blank=True)
+    direct_pay_charge_type = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        choices=[
+            ("direct", "Connected-account direct charge"),
+            ("destination", "Legacy platform destination charge"),
+        ],
+        help_text="Immutable payment-rail snapshot used for refunds and reconciliation.",
+    )
+    direct_pay_connected_account_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Connected Stripe account that owns the Direct Pay charge.",
+    )
 
     class Meta:
         ordering = ["-created_at"]

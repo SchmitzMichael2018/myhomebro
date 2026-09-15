@@ -142,10 +142,14 @@ def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
 
     acct_country = getattr(settings, "STRIPE_CONNECT_ACCOUNT_COUNTRY", "US")
     acct = stripe.Account.create(
-        type="custom",
         country=acct_country,
         email=(user.email or None),
-        business_type="individual",
+        controller={
+            "fees": {"payer": "account"},
+            "losses": {"payments": "stripe"},
+            "requirement_collection": "stripe",
+            "stripe_dashboard": {"type": "full"},
+        },
         capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
         metadata={"user_id": str(getattr(user, "id", ""))},
     )
@@ -214,6 +218,9 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
                 "disabled_reason": None,
                 "link": None,
                 "requirements_pending": False,
+                "direct_pay_ready": False,
+                "payment_loss_responsibility": "unknown",
+                "stripe_fee_payer": "unknown",
                 "resume_url": _stripe_embedded_resume_url(),
                 "onboarding": build_onboarding_snapshot(contractor),
             }
@@ -233,6 +240,9 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
             "disabled_reason": None,
             "link": None,
             "requirements_pending": False,
+            "direct_pay_ready": False,
+            "payment_loss_responsibility": "unknown",
+            "stripe_fee_payer": "unknown",
             "resume_url": _stripe_embedded_resume_url(),
             "onboarding": build_onboarding_snapshot(contractor),
         }
@@ -247,6 +257,12 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
     eventually_due = req.get("eventually_due") or []
     past_due = req.get("past_due") or []
     disabled_reason = req.get("disabled_reason")
+    controller = acct.get("controller") or {}
+    losses_owner = str((controller.get("losses") or {}).get("payments") or "")
+    fee_payer = str((controller.get("fees") or {}).get("payer") or "")
+    account_type = str(acct.get("type") or "")
+    stripe_owns_losses = losses_owner == "stripe" or (not losses_owner and account_type == "standard")
+    account_pays_fees = fee_payer == "account" or (not fee_payer and account_type == "standard")
 
     fully_connected = submitted and charges and payouts and (len(currently_due) == 0)
     status_str = "completed" if fully_connected else "in_progress"
@@ -315,6 +331,9 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
         "disabled_reason": disabled_reason,
         "link": None,
         "requirements_pending": bool(currently_due or past_due),
+        "direct_pay_ready": bool(fully_connected and stripe_owns_losses and account_pays_fees),
+        "payment_loss_responsibility": "stripe" if stripe_owns_losses else "platform",
+        "stripe_fee_payer": "contractor" if account_pays_fees else "platform",
         "resume_url": _stripe_embedded_resume_url(),
         "onboarding": build_onboarding_snapshot(contractor),
     }
@@ -402,6 +421,13 @@ class OnboardingManage(APIView):
             acct.get("payouts_enabled")
         ) and (len(currently_due) == 0)
 
+        dashboard_type = str(((acct.get("controller") or {}).get("stripe_dashboard") or {}).get("type") or "")
+        if dashboard_type == "full" and fully_connected:
+            return Response(
+                {"manage_url": "https://dashboard.stripe.com/", "account_id": acct_id},
+                status=200,
+            )
+
         try:
             link_type = "account_update" if fully_connected else "account_onboarding"
             link = stripe.AccountLink.create(
@@ -440,6 +466,13 @@ class OnboardingLoginLink(APIView):
 
         _sync_flags_from_stripe(profile, acct)
         _sync_contractor_from_connected_account(user, acct_id, acct)
+
+        dashboard_type = str(((acct.get("controller") or {}).get("stripe_dashboard") or {}).get("type") or "")
+        if dashboard_type == "full":
+            return Response(
+                {"login_url": "https://dashboard.stripe.com/", "url": "https://dashboard.stripe.com/", "account_id": acct_id},
+                status=200,
+            )
 
         try:
             login = stripe.Account.create_login_link(acct_id)

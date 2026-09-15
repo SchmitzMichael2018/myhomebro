@@ -201,7 +201,7 @@ from projects.services.direct_pay import (
     create_direct_pay_checkout_for_invoice,
     finalize_direct_pay_invoice_paid,
 )
-from projects.services.draw_requests import finalize_draw_paid, release_escrow_draw
+from projects.services.draw_requests import create_direct_checkout_for_draw, finalize_draw_paid, release_escrow_draw
 from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.intake_conversion import convert_intake_to_agreement
@@ -16224,8 +16224,9 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(draw.transfer_failure_reason, "destination account rejected transfer")
 
     @override_settings(STRIPE_SECRET_KEY="sk_test_expense_fee", FRONTEND_URL="https://app.myhomebro.test")
+    @patch("stripe.Account.retrieve")
     @patch("stripe.checkout.Session.create")
-    def test_expense_checkout_uses_project_fee_cap_and_persists_trace_fields(self, mock_session_create):
+    def test_expense_checkout_uses_project_fee_cap_and_persists_trace_fields(self, mock_session_create, mock_account_retrieve):
         self.contractor.stripe_account_id = "acct_expense_ready"
         self.contractor.save(update_fields=["stripe_account_id"])
 
@@ -16260,6 +16261,15 @@ class ProgressPaymentWorkflowTests(TestCase):
             "url": "https://checkout.stripe.test/expense-123",
             "payment_intent": "pi_expense_123",
         }
+        mock_account_retrieve.return_value = {
+            "id": "acct_expense_ready",
+            "type": "standard",
+            "charges_enabled": True,
+            "controller": {
+                "fees": {"payer": "account"},
+                "losses": {"payments": "stripe"},
+            },
+        }
 
         from projects.services.expense_pay import create_expense_checkout_session
 
@@ -16268,6 +16278,8 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(checkout_url, "https://checkout.stripe.test/expense-123")
         mock_session_create.assert_called_once()
         session_kwargs = mock_session_create.call_args.kwargs
+        self.assertEqual(session_kwargs["stripe_account"], "acct_expense_ready")
+        self.assertNotIn("transfer_data", session_kwargs["payment_intent_data"])
         self.assertEqual(session_kwargs["payment_intent_data"]["application_fee_amount"], 10000)
         self.assertEqual(session_kwargs["payment_intent_data"]["metadata"]["platform_fee_cents"], "10000")
         self.assertEqual(session_kwargs["payment_intent_data"]["metadata"]["payout_cents"], "490000")
@@ -16277,6 +16289,8 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(expense.stripe_payment_intent_id, "pi_expense_123")
         self.assertEqual(expense.platform_fee_cents, 10000)
         self.assertEqual(expense.payout_cents, 490000)
+        self.assertEqual(expense.direct_pay_charge_type, "direct")
+        self.assertEqual(expense.direct_pay_connected_account_id, "acct_expense_ready")
         self.assertEqual(expense.stripe_checkout_url, "https://checkout.stripe.test/expense-123")
 
     def test_contractor_approve_endpoint_routes_escrow_draw_to_awaiting_release(self):
@@ -16429,11 +16443,34 @@ class ProgressPaymentWorkflowTests(TestCase):
             created_calls.append(kwargs)
             return {"id": "cs_test_invoice_123", "url": "https://checkout.stripe.test/invoice-123", "payment_intent": "pi_test_invoice_123"}
 
-        with patch("stripe.checkout.Session.create", side_effect=_fake_create):
+        safe_account = {
+            "id": "acct_direct_ready",
+            "type": "standard",
+            "charges_enabled": True,
+            "controller": {
+                "fees": {"payer": "account"},
+                "losses": {"payments": "stripe"},
+            },
+        }
+        with patch("stripe.Account.retrieve", return_value=safe_account), patch(
+            "stripe.checkout.Session.create", side_effect=_fake_create
+        ):
             checkout_url = create_direct_pay_checkout_for_invoice(invoice)
 
         self.assertEqual(checkout_url, "https://checkout.stripe.test/invoice-123")
         self.assertEqual(created_calls[0]["payment_method_types"], ["card", "us_bank_account"])
+        self.assertEqual(created_calls[0]["stripe_account"], "acct_direct_ready")
+        self.assertNotIn("transfer_data", created_calls[0]["payment_intent_data"])
+        self.assertEqual(created_calls[0]["payment_intent_data"]["application_fee_amount"], 8500)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.direct_pay_charge_type, "direct")
+        self.assertEqual(invoice.direct_pay_connected_account_id, "acct_direct_ready")
+        with self.assertRaisesMessage(ValueError, "does not match"):
+            finalize_direct_pay_invoice_paid(
+                invoice_id=invoice.id,
+                payment_intent_id="pi_test_invoice_123",
+                connected_account_id="acct_wrong_owner",
+            )
 
     def test_direct_pay_invoice_checkout_completion_keeps_invoice_pending_until_payment_intent_success(self):
         self.agreement.payment_mode = "direct"
@@ -16469,6 +16506,59 @@ class ProgressPaymentWorkflowTests(TestCase):
                 category=Notification.EVENT_INVOICE_APPROVED,
             ).exists()
         )
+
+    @override_settings(
+        STRIPE_WEBHOOK_SECRET="whsec_platform",
+        STRIPE_CONNECT_WEBHOOK_SECRET="whsec_connected_direct",
+    )
+    def test_connected_account_webhook_finalizes_only_matching_direct_pay_owner(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1900.00"),
+            status=InvoiceStatus.APPROVED,
+            direct_pay_payment_intent_id="pi_connected_webhook",
+            direct_pay_charge_type="direct",
+            direct_pay_connected_account_id="acct_connected_webhook",
+        )
+        event = {
+            "id": "evt_connected_direct",
+            "type": "payment_intent.succeeded",
+            "account": "acct_connected_webhook",
+            "data": {
+                "object": {
+                    "id": "pi_connected_webhook",
+                    "amount_received": 190000,
+                    "currency": "usd",
+                    "metadata": {
+                        "kind": "direct_pay_checkout",
+                        "invoice_id": str(invoice.id),
+                    },
+                }
+            },
+        }
+        request = RequestFactory().post(
+            "/api/payments/webhooks/stripe/",
+            data=b'{"id":"evt_connected_direct"}',
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="test-signature",
+        )
+
+        from payments.webhooks import stripe_webhook
+
+        with (
+            patch("stripe.Webhook.construct_event", side_effect=[ValueError("wrong secret"), event]) as construct_event,
+            patch("payments.webhooks._backfill_card_details_from_stripe", return_value=(None, None, None)),
+        ):
+            response = stripe_webhook(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(construct_event.call_count, 2)
+        self.assertEqual(construct_event.call_args.kwargs["secret"], "whsec_connected_direct")
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.PAID)
+        self.assertIsNotNone(invoice.direct_pay_paid_at)
 
     def test_finalize_direct_pay_invoice_paid_creates_payment_released_notification(self):
         self.agreement.payment_mode = "direct"
@@ -16582,6 +16672,66 @@ class ProgressPaymentWorkflowTests(TestCase):
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.APPROVED)
         self.assertIsNone(draw.paid_at)
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_direct_draw", FRONTEND_URL="https://app.myhomebro.test")
+    def test_direct_draw_checkout_is_owned_by_connected_account_and_uses_reduced_fee(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+        self.contractor.stripe_account_id = "acct_direct_draw_owner"
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
+        self.contractor.requirements_due_count = 0
+        self.contractor.save(
+            update_fields=[
+                "stripe_account_id",
+                "charges_enabled",
+                "payouts_enabled",
+                "details_submitted",
+                "requirements_due_count",
+            ]
+        )
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=15,
+            status=DrawRequestStatus.APPROVED,
+            title="Connected Direct Draw",
+            gross_amount=Decimal("1000.00"),
+            net_amount=Decimal("1000.00"),
+            current_requested_amount=Decimal("1000.00"),
+        )
+        safe_account = {
+            "id": "acct_direct_draw_owner",
+            "type": "standard",
+            "charges_enabled": True,
+            "controller": {
+                "fees": {"payer": "account"},
+                "losses": {"payments": "stripe"},
+            },
+        }
+        fake_session = {
+            "id": "cs_direct_draw_owner",
+            "url": "https://checkout.stripe.test/direct-draw",
+            "payment_intent": "pi_direct_draw_owner",
+        }
+
+        with patch("stripe.Account.retrieve", return_value=safe_account), patch(
+            "stripe.checkout.Session.create", return_value=fake_session
+        ) as session_create:
+            checkout_url = create_direct_checkout_for_draw(draw)
+
+        self.assertEqual(checkout_url, "https://checkout.stripe.test/direct-draw")
+        kwargs = session_create.call_args.kwargs
+        self.assertEqual(kwargs["stripe_account"], "acct_direct_draw_owner")
+        self.assertNotIn("transfer_data", kwargs["payment_intent_data"])
+        self.assertEqual(kwargs["payment_intent_data"]["application_fee_amount"], 2000)
+        draw.refresh_from_db()
+        self.assertEqual(draw.direct_pay_charge_type, "direct")
+        self.assertEqual(draw.direct_pay_connected_account_id, "acct_direct_draw_owner")
+        self.assertEqual(draw.platform_fee_cents, 2000)
+        self.assertEqual(draw.payout_cents, 98000)
 
     def test_payment_intent_failure_marks_draw_as_issue_without_creating_parallel_state(self):
         self.agreement.payment_mode = "direct"

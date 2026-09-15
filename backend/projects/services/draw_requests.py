@@ -15,6 +15,7 @@ from projects.models import DrawRequest, DrawRequestStatus, ExternalPaymentRecor
 from projects.services.activity_feed import create_activity_event
 from projects.services.draw_notifications import create_draw_lifecycle_notification
 from projects.services.draw_state import derive_draw_workflow_status
+from projects.services.direct_pay import verify_direct_charge_account
 from projects.services.project_outcome import capture_project_outcome_snapshot
 from payments.fees import calculate_platform_fee_cents_for_invoice
 from payments.models import Payment
@@ -348,6 +349,7 @@ def create_direct_checkout_for_draw(draw: DrawRequest) -> str:
         raise ValueError("Stripe SDK not installed on server.")
 
     stripe.api_key = stripe_key
+    verify_direct_charge_account(stripe, stripe_account_id)
 
     project_title = getattr(getattr(agreement, "project", None), "title", "") or getattr(agreement, "title", "") or "Project"
 
@@ -360,8 +362,32 @@ def create_direct_checkout_for_draw(draw: DrawRequest) -> str:
             return str(getattr(locked, "stripe_checkout_url", "") or "").strip()
 
         existing_url = str(getattr(locked, "stripe_checkout_url", "") or "").strip()
-        if existing_url:
+        existing_charge_type = str(getattr(locked, "direct_pay_charge_type", "") or "").strip()
+        if existing_url and existing_charge_type == "direct":
             return existing_url
+
+        if existing_url:
+            existing_session_id = str(getattr(locked, "stripe_checkout_session_id", "") or "").strip()
+            if not existing_session_id:
+                raise ValueError("The legacy Direct Pay draw link must be replaced before payment can continue.")
+            try:
+                stripe.checkout.Session.expire(existing_session_id)
+            except Exception as exc:
+                log.warning("Could not expire legacy draw session %s: %s", existing_session_id, type(exc).__name__)
+                raise ValueError("The legacy Direct Pay draw link could not be replaced safely. Please try again.")
+
+        project_id = getattr(getattr(locked.agreement, "project", None), "id", None)
+        platform_fee_cents = int(
+            calculate_platform_fee_cents_for_invoice(
+                amount_cents=amount_cents,
+                contractor=locked.agreement.contractor,
+                agreement_id=locked.agreement_id,
+                project_id=project_id,
+                context="direct_pay",
+            )
+        )
+        platform_fee_cents = min(max(platform_fee_cents, 0), amount_cents)
+        payout_cents = max(amount_cents - platform_fee_cents, 0)
 
         try:
             session = stripe.checkout.Session.create(
@@ -389,18 +415,27 @@ def create_direct_checkout_for_draw(draw: DrawRequest) -> str:
                     "payment_mode": "DIRECT",
                     "customer_email": customer_email,
                     "customer_name": customer_name,
+                    "charge_type": "direct",
+                    "connected_account_id": stripe_account_id,
+                    "platform_fee_cents": str(platform_fee_cents),
+                    "payout_cents": str(payout_cents),
                 },
                 payment_intent_data={
-                    "transfer_data": {"destination": stripe_account_id},
+                    "application_fee_amount": platform_fee_cents,
                     "metadata": {
                         "kind": "draw_direct_checkout",
                         "draw_request_id": str(locked.id),
                         "agreement_id": str(locked.agreement_id),
+                        "charge_type": "direct",
+                        "connected_account_id": stripe_account_id,
+                        "platform_fee_cents": str(platform_fee_cents),
+                        "payout_cents": str(payout_cents),
                     },
                     "receipt_email": customer_email,
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
+                stripe_account=stripe_account_id,
             )
         except Exception as exc:
             log.exception("Stripe draw checkout create failed draw=%s", getattr(locked, "id", None))
@@ -417,6 +452,10 @@ def create_direct_checkout_for_draw(draw: DrawRequest) -> str:
 
         locked.stripe_checkout_session_id = str(session_id or "")
         locked.stripe_checkout_url = str(session_url or "")
+        locked.direct_pay_charge_type = "direct"
+        locked.direct_pay_connected_account_id = stripe_account_id
+        locked.platform_fee_cents = platform_fee_cents
+        locked.payout_cents = payout_cents
         if payment_intent_id:
             locked.stripe_payment_intent_id = str(payment_intent_id)
         locked.save(
@@ -424,6 +463,10 @@ def create_direct_checkout_for_draw(draw: DrawRequest) -> str:
                 "stripe_checkout_session_id",
                 "stripe_checkout_url",
                 "stripe_payment_intent_id",
+                "direct_pay_charge_type",
+                "direct_pay_connected_account_id",
+                "platform_fee_cents",
+                "payout_cents",
                 "updated_at",
             ]
         )
@@ -435,6 +478,7 @@ def finalize_draw_paid(
     draw_request_id: Optional[int] = None,
     checkout_session_id: Optional[str] = None,
     payment_intent_id: Optional[str] = None,
+    connected_account_id: Optional[str] = None,
     paid_at=None,
     payment_method: str = "stripe",
 ) -> DrawRequest:
@@ -454,6 +498,10 @@ def finalize_draw_paid(
             draw = qs.filter(stripe_payment_intent_id=payment_intent_id).first()
         if draw is None:
             raise ValueError("Draw request not found.")
+        if str(getattr(draw, "direct_pay_charge_type", "") or "") == "direct":
+            expected_account_id = str(getattr(draw, "direct_pay_connected_account_id", "") or "").strip()
+            if not expected_account_id or expected_account_id != str(connected_account_id or "").strip():
+                raise ValueError("Direct Pay event connected account does not match the draw payment owner.")
 
         update_fields = []
         if draw.status != DrawRequestStatus.PAID:
@@ -533,6 +581,7 @@ def mark_draw_payment_issue(
     draw_request_id: Optional[int] = None,
     checkout_session_id: Optional[str] = None,
     payment_intent_id: Optional[str] = None,
+    connected_account_id: Optional[str] = None,
     issue_message: str = "",
     payment_method: str = "stripe_checkout",
 ) -> DrawRequest:
@@ -552,6 +601,10 @@ def mark_draw_payment_issue(
             draw = qs.filter(stripe_payment_intent_id=payment_intent_id).first()
         if draw is None:
             raise ValueError("Draw request not found.")
+        if str(getattr(draw, "direct_pay_charge_type", "") or "") == "direct":
+            expected_account_id = str(getattr(draw, "direct_pay_connected_account_id", "") or "").strip()
+            if not expected_account_id or expected_account_id != str(connected_account_id or "").strip():
+                raise ValueError("Direct Pay event connected account does not match the draw payment owner.")
 
         if payment_intent_id and not str(getattr(draw, "stripe_payment_intent_id", "") or "").strip():
             draw.stripe_payment_intent_id = str(payment_intent_id)

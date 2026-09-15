@@ -48,7 +48,9 @@ def _payment_clause(payment_mode: Optional[str]) -> Clause:
             "Payment (Direct Pay)",
             "This Agreement uses Direct Pay. Customer will pay invoices issued by Contractor through a secure Stripe "
             "Checkout link provided via the platform. Funds are transmitted directly to Contractor at payment time; "
-            "the platform does not hold escrow funds for Direct Pay invoices.\n\n"
+            "the charge belongs to Contractor's connected Stripe account, and the platform does not hold or release "
+            "funds for Direct Pay invoices. Contractor is responsible for the underlying service, refunds, and payment "
+            "disputes, subject to Stripe's rules.\n\n"
             "Invoices are due upon receipt unless the parties agree otherwise in writing. If Customer disputes an invoice, "
             "Customer should submit the dispute through the platform before paying whenever possible. If payment has "
             "already been made, any refund, adjustment, or chargeback will be handled under applicable law, the payment "

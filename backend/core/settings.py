@@ -338,6 +338,7 @@ STRIPE_ENABLED = get_bool("STRIPE_ENABLED", default=False)
 STRIPE_SECRET_KEY = get_env_var("STRIPE_SECRET_KEY", required=False)
 STRIPE_PUBLIC_KEY = get_env_var("STRIPE_PUBLIC_KEY", required=False)
 STRIPE_WEBHOOK_SECRET = get_env_var("STRIPE_WEBHOOK_SECRET", required=False)
+STRIPE_CONNECT_WEBHOOK_SECRET = get_env_var("STRIPE_CONNECT_WEBHOOK_SECRET", required=False)
 
 if STRIPE_ENABLED and STRIPE_SECRET_KEY:
     import stripe

@@ -770,6 +770,7 @@ export default function ContractorProfile() {
                 <li>Intro pricing: 3% for the first 60 days</li>
                 <li>Standard pricing: 4%</li>
                 <li>Volume pricing: process $20,000 in one calendar month to earn 3.5% for the entire following month</li>
+                <li>Direct Pay pricing: 2% when the customer pays your connected Stripe account without a MyHomeBro funding hold</li>
                 <li>$750 cap per project; $650 cap at the volume rate</li>
               </ul>
             </div>

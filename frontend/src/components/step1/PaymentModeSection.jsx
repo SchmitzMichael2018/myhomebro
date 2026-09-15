@@ -68,7 +68,7 @@ export default function PaymentModeSection({
         <PaymentChoice
           mode="direct"
           title="Direct Pay"
-          desc="No escrow hold. You generate a pay link per invoice and the customer pays you directly via Stripe."
+          desc="No MyHomeBro funding hold. The customer pays your connected Stripe account per invoice. Reduced 2% platform fee; Stripe processing fees are separate."
           selected={paymentMode === "direct"}
           locked={locked}
           onChange={onChangeMode}

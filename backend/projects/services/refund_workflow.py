@@ -514,7 +514,17 @@ def _fail_transaction(row, exc):
     row.save(update_fields=["status", "error_message", "completed_at"])
 
 
-def _refund_payment_intent(refund_request, *, payment_intent_id: str, amount_cents: int, payment=None, reverse_transfer: bool = False, refund_application_fee: bool = False, suffix: str = ""):
+def _refund_payment_intent(
+    refund_request,
+    *,
+    payment_intent_id: str,
+    amount_cents: int,
+    payment=None,
+    reverse_transfer: bool = False,
+    refund_application_fee: bool = False,
+    connected_account_id: str = "",
+    suffix: str = "",
+):
     key = f"refund-request:{refund_request.id}:refund:{suffix or payment_intent_id}:{amount_cents}"
     row = _new_transaction(
         refund_request,
@@ -524,7 +534,11 @@ def _refund_payment_intent(refund_request, *, payment_intent_id: str, amount_cen
         payment=payment,
         source_payment_intent_id=payment_intent_id,
         source_charge_id=str(getattr(payment, "stripe_charge_id", "") or "") if payment else "",
-        metadata={"reverse_transfer": reverse_transfer, "refund_application_fee": refund_application_fee},
+        metadata={
+            "reverse_transfer": reverse_transfer,
+            "refund_application_fee": refund_application_fee,
+            "connected_account_id": str(connected_account_id or ""),
+        },
     )
     if row.status == CustomerRefundTransaction.Status.SUCCEEDED:
         return row
@@ -543,6 +557,8 @@ def _refund_payment_intent(refund_request, *, payment_intent_id: str, amount_cen
             params["reverse_transfer"] = True
         if refund_application_fee:
             params["refund_application_fee"] = True
+        if connected_account_id:
+            params["stripe_account"] = str(connected_account_id)
         result = stripe.Refund.create(**params, idempotency_key=key)
         refund_id = _stripe_id(result)
         if not refund_id:
@@ -692,18 +708,27 @@ def execute_refund_request(refund_request, *, actor=None):
             _complete_transaction(tx)
         elif locked.payment_mode == CustomerRefundRequest.PaymentMode.DIRECT:
             payment_intent_id = ""
+            charge_type = ""
+            connected_account_id = ""
             if locked.invoice_id:
                 payment_intent_id = str(locked.invoice.direct_pay_payment_intent_id or locked.invoice.stripe_payment_intent_id or "")
+                charge_type = str(getattr(locked.invoice, "direct_pay_charge_type", "") or "")
+                connected_account_id = str(getattr(locked.invoice, "direct_pay_connected_account_id", "") or "")
             elif locked.draw_request_id:
                 payment_intent_id = str(locked.draw_request.stripe_payment_intent_id or "")
+                charge_type = str(getattr(locked.draw_request, "direct_pay_charge_type", "") or "")
+                connected_account_id = str(getattr(locked.draw_request, "direct_pay_connected_account_id", "") or "")
             if not payment_intent_id:
                 raise ValueError("The original Direct Pay charge is not recorded.")
+            if charge_type == "direct" and not connected_account_id:
+                raise ValueError("The contractor Stripe account for this Direct Pay charge is not recorded.")
             _refund_payment_intent(
                 locked,
                 payment_intent_id=payment_intent_id,
                 amount_cents=amount_cents,
-                reverse_transfer=True,
+                reverse_transfer=charge_type != "direct",
                 refund_application_fee=True,
+                connected_account_id=connected_account_id if charge_type == "direct" else "",
             )
         elif locked.source_type == CustomerRefundRequest.SourceType.ESCROW:
             _execute_escrow_balance(locked, amount_cents)

@@ -394,10 +394,6 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 status=400,
             )
 
-        existing_url = (getattr(invoice, "direct_pay_checkout_url", "") or "").strip()
-        if existing_url:
-            return Response({"checkout_url": existing_url}, status=status.HTTP_200_OK)
-
         try:
             checkout_url = create_direct_pay_checkout_for_invoice(invoice)
         except Exception as e:

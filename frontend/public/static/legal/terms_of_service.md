@@ -54,6 +54,8 @@ Payment services are provided through Stripe and, where applicable, Stripe Conne
 
 The Platform may support milestone funding, direct payments, draws, contingency funding, expense reimbursements, partial payments, refunds, and transfers. Funds may be held in a payment processor or Platform-connected balance pending an authorized release. Unless a regulated provider expressly identifies a specific arrangement as escrow, references in the interface to "escrow," "funding," or "held funds" describe a contractual payment hold and workflow—not a bank account, trust account, or licensed escrow service provided by MyHomeBro.
 
+For **Direct Pay**, the contractor is the seller and the charge is created on the contractor's connected Stripe account. The contractor receives the payment without a MyHomeBro funding hold, pays the applicable Stripe processing charges, and is responsible for the underlying service, refunds, and payment disputes, subject to Stripe's rules. MyHomeBro receives only the separately disclosed application fee and may provide tools to document or initiate a refund. Milestone funding, draws, contingency funding, and other protected-payment workflows are processed separately on the Platform and remain subject to their stated authorization and release conditions.
+
 Before authorizing a transaction, review the amount, payee, funding source, Platform fee, processor fee, and release conditions displayed in the Platform. You authorize MyHomeBro and its payment providers to create charges, transfers, refunds, reversals, and related entries that you expressly approve or that the governing agreement and these Terms permit.
 
 ### Invoice Review and Release
@@ -72,6 +74,7 @@ The exact Platform fee and responsible payer are shown before the relevant trans
 - the standard rate is **4%**;
 - the rate is **3.5%** when the contractor processed at least $20,000 through the Platform during the prior calendar month;
 - the Platform fee is capped at **$750 per project**, or **$650 per project** while the 3.5% volume rate applies; and
+- Direct Pay uses a reduced **2% Platform fee** because it does not include a MyHomeBro funding hold or milestone-release protection;
 - an owner-issued promotion may waive some or all of the Platform fee for the stated contractor and period.
 
 Third-party processing, chargeback, banking, outside professional, or other separately disclosed fees are not included in the Platform fee cap. We may change fees prospectively after notice; the amount disclosed for an already authorized transaction controls that transaction.

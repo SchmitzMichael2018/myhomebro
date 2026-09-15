@@ -9,6 +9,7 @@ from django.db import transaction
 
 from projects.models import ExpenseRequest
 from payments.fees import calculate_platform_fee
+from projects.services.direct_pay import verify_direct_charge_account
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
     """
     Creates a Stripe Checkout Session for an ExpenseRequest.
 
-    - Destination charge → contractor receives funds immediately (Direct Pay style).
+    - Direct charge → contractor's connected Stripe account owns the payment.
     - Adds metadata.expense_request_id for webhook.
     - ALSO adds PaymentIntent metadata so payment_intent.succeeded can update it.
     - If expense is already PAID, blocks.
@@ -46,6 +47,8 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
     agreement = getattr(expense, "agreement", None)
     if not agreement:
         raise ValueError("ExpenseRequest has no agreement.")
+    if str(getattr(expense, "request_kind", "") or "") != ExpenseRequest.RequestKind.DIRECT_EXPENSE:
+        raise ValueError("Escrow-backed contingency expenses must use the protected release workflow.")
 
     contractor = getattr(agreement, "contractor", None)
     if not contractor:
@@ -77,6 +80,7 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
         raise ValueError("Stripe SDK not installed on server.")
 
     stripe.api_key = stripe_key
+    verify_direct_charge_account(stripe, stripe_acct)
 
     with transaction.atomic():
         exp = ExpenseRequest.objects.select_for_update().select_related(
@@ -87,8 +91,18 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
             raise ValueError("Expense is already PAID.")
 
         existing_url = str(getattr(exp, "stripe_checkout_url", "") or "").strip()
-        if existing_url:
+        existing_charge_type = str(getattr(exp, "direct_pay_charge_type", "") or "").strip()
+        if existing_url and existing_charge_type == "direct":
             return existing_url
+        if existing_url:
+            existing_session_id = str(getattr(exp, "stripe_checkout_session_id", "") or "").strip()
+            if not existing_session_id:
+                raise ValueError("The legacy Direct Pay expense link must be replaced before payment can continue.")
+            try:
+                stripe.checkout.Session.expire(existing_session_id)
+            except Exception as exc:
+                log.warning("Could not expire legacy expense session %s: %s", existing_session_id, type(exc).__name__)
+                raise ValueError("The legacy Direct Pay expense link could not be replaced safely. Please try again.")
 
         project_title = ""
         try:
@@ -101,7 +115,7 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
             amount_cents=amount_cents,
             contractor=contractor,
             project_id=project_id,
-            context="expense_checkout",
+            context="direct_pay",
         )
         application_fee_amount = int(fee_result.platform_fee_cents)
         payout_cents = int(fee_result.payout_cents)
@@ -116,6 +130,8 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
             "contractor_id": str(getattr(contractor, "id", "") or ""),
             "kind": "EXPENSE_REQUEST",
             "fee_context": "expense_checkout",
+            "charge_type": "direct",
+            "connected_account_id": stripe_acct,
             "platform_fee_cents": str(application_fee_amount),
             "payout_cents": str(payout_cents),
         }
@@ -142,9 +158,9 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
             payment_intent_data={
                 # ✅ PI metadata (THIS is what was empty in your screenshot)
                 "metadata": meta,
-                "transfer_data": {"destination": stripe_acct},
                 "application_fee_amount": int(application_fee_amount),
             },
+            stripe_account=stripe_acct,
         )
 
         session_url = getattr(session, "url", None) or (session.get("url") if isinstance(session, dict) else "")
@@ -158,6 +174,8 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
 
         exp.stripe_checkout_session_id = str(session_id or "")
         exp.stripe_checkout_url = str(session_url or "")
+        exp.direct_pay_charge_type = "direct"
+        exp.direct_pay_connected_account_id = stripe_acct
         if hasattr(exp, "stripe_payment_intent_id") and payment_intent_id:
             exp.stripe_payment_intent_id = str(payment_intent_id)
         if hasattr(exp, "platform_fee_cents"):
@@ -165,7 +183,12 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
         if hasattr(exp, "payout_cents"):
             exp.payout_cents = int(payout_cents)
 
-        update_fields = ["stripe_checkout_session_id", "stripe_checkout_url"]
+        update_fields = [
+            "stripe_checkout_session_id",
+            "stripe_checkout_url",
+            "direct_pay_charge_type",
+            "direct_pay_connected_account_id",
+        ]
         if hasattr(exp, "stripe_payment_intent_id") and payment_intent_id:
             update_fields.append("stripe_payment_intent_id")
         if hasattr(exp, "platform_fee_cents"):

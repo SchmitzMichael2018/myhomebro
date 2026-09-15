@@ -142,7 +142,7 @@ export const PUBLIC_FAQ_CATEGORIES = [
         question:
           'What is the difference between escrow, direct pay, and a draw?',
         answer:
-          'Escrow funding is held for documented project releases. Direct pay sends an authorized payment without using the project escrow balance. A draw is a documented request to release part of available project funding. The agreement and payment screen identify which method applies.',
+          'Escrow funding uses documented project-release controls. Direct Pay is a charge from the customer to the contractor’s connected Stripe account and does not include a MyHomeBro funding hold or milestone-release protection. A draw is a documented request to release part of available project funding. The agreement and payment screen identify which method applies.',
       },
       {
         id: 'fund-release',
@@ -210,7 +210,7 @@ export const PUBLIC_FAQ_CATEGORIES = [
         id: 'contractor-platform-fees',
         question: 'What does MyHomeBro cost contractors?',
         answer:
-          'The current structure is a 3% platform fee during the contractor’s first 60 days of qualifying activity, then 4%. Contractors processing at least $20,000 in the prior calendar month qualify for a 3.5% rate. The project fee is capped at $750, or $650 while the volume rate applies. The displayed fee review controls each transaction.',
+          'Protected-payment workflows use a 3% platform fee during the contractor’s first 60 days of qualifying activity, then 4%. Contractors processing at least $20,000 in the prior calendar month qualify for a 3.5% rate. Direct Pay uses a reduced 2% platform fee because MyHomeBro does not hold or release those funds. The project fee is capped at $750, or $650 while the volume rate applies. The displayed fee review controls each transaction.',
       },
       {
         id: 'promotional-fee-waivers',

@@ -93,6 +93,15 @@ def _resolve_invoice_for_update(
     return inv
 
 
+def _validate_connected_account_event(invoice: Invoice, connected_account_id: Optional[str]) -> None:
+    if str(getattr(invoice, "direct_pay_charge_type", "") or "") != "direct":
+        return
+    expected = str(getattr(invoice, "direct_pay_connected_account_id", "") or "").strip()
+    received = str(connected_account_id or "").strip()
+    if not expected or not received or expected != received:
+        raise ValueError("Direct Pay event connected account does not match the invoice payment owner.")
+
+
 def _get_agreement_customer(agreement) -> Tuple[Optional[object], str, str]:
     """
     Option A:
@@ -117,6 +126,41 @@ def _get_agreement_customer(agreement) -> Tuple[Optional[object], str, str]:
         or ""
     )
     return (customer, str(email or "").strip(), str(name or "").strip())
+
+
+def _connected_account_value(account, *path, default=None):
+    current = account
+    for key in path:
+        if isinstance(current, dict):
+            current = current.get(key)
+        else:
+            current = getattr(current, key, None)
+        if current is None:
+            return default
+    return current
+
+
+def verify_direct_charge_account(stripe, account_id: str) -> None:
+    """Fail closed unless Stripe, rather than MyHomeBro, owns account losses."""
+    try:
+        account = stripe.Account.retrieve(account_id)
+    except Exception as exc:
+        log.warning("Direct Pay account verification failed for %s: %s", account_id, type(exc).__name__)
+        raise ValueError("The contractor's Direct Pay account could not be verified. Please reconnect Stripe.")
+
+    if not bool(_connected_account_value(account, "charges_enabled", default=False)):
+        raise ValueError("The contractor's Stripe account is not ready to accept Direct Pay charges.")
+
+    losses_owner = str(_connected_account_value(account, "controller", "losses", "payments", default="") or "")
+    fee_payer = str(_connected_account_value(account, "controller", "fees", "payer", default="") or "")
+    account_type = str(_connected_account_value(account, "type", default="") or "")
+    stripe_owns_losses = losses_owner == "stripe" or (not losses_owner and account_type == "standard")
+    account_pays_processing_fees = fee_payer == "account" or (not fee_payer and account_type == "standard")
+
+    if not stripe_owns_losses or not account_pays_processing_fees:
+        raise ValueError(
+            "Direct Pay requires a contractor-owned Stripe account. Reconnect Stripe before sending this payment link."
+        )
 
 
 def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
@@ -197,15 +241,35 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
         if _is_paid(inv) or inv.status == InvoiceStatus.PAID:
             raise ValueError("Invoice is already PAID.")
 
-        # If link already exists, reuse
+        # Reuse only a link created on the new connected-account rail. Legacy
+        # destination-charge links must never remain active alongside a new
+        # direct-charge link for the same invoice.
         existing_url = str(getattr(inv, "direct_pay_checkout_url", "") or "").strip()
-        if existing_url:
+        existing_charge_type = str(getattr(inv, "direct_pay_charge_type", "") or "").strip()
+        if existing_url and existing_charge_type == "direct":
             return existing_url
 
         # ✅ Option A customer identity (from agreement)
         agreement_locked = getattr(inv, "agreement", None)
         _cust_obj, customer_email, customer_name = _get_agreement_customer(agreement_locked)
         project_id = getattr(getattr(agreement_locked, "project", None), "id", None)
+        connected_account_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
+        verify_direct_charge_account(stripe, connected_account_id)
+
+        if existing_url:
+            existing_session_id = str(getattr(inv, "direct_pay_checkout_session_id", "") or "").strip()
+            if not existing_session_id:
+                raise ValueError("The legacy Direct Pay link must be replaced before payment can continue.")
+            try:
+                stripe.checkout.Session.expire(existing_session_id)
+            except Exception as exc:
+                log.warning(
+                    "Could not expire legacy Direct Pay session invoice=%s session=%s error=%s",
+                    inv.id,
+                    existing_session_id,
+                    type(exc).__name__,
+                )
+                raise ValueError("The legacy Direct Pay link could not be replaced safely. Please try again.")
 
         fee_cents = int(
             calculate_platform_fee_cents_for_invoice(
@@ -257,13 +321,14 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
                     "customer_email": customer_email,
                     "customer_name": customer_name,
                     "fee_context": "direct_pay",
+                    "charge_type": "direct",
+                    "connected_account_id": connected_account_id,
                     "platform_fee_cents": str(fee_cents),
                     "payout_cents": str(payout_cents),
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
                 payment_intent_data={
-                    "transfer_data": {"destination": contractor.stripe_account_id},
                     "application_fee_amount": int(fee_cents),
 
                     # ✅ Best-effort: makes Stripe send receipts to this email (if enabled)
@@ -277,10 +342,13 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
                         "project_id": str(project_id or ""),
                         "customer_email": customer_email,
                         "fee_context": "direct_pay",
+                        "charge_type": "direct",
+                        "connected_account_id": connected_account_id,
                         "platform_fee_cents": str(fee_cents),
                         "payout_cents": str(payout_cents),
                     },
                 },
+                stripe_account=connected_account_id,
             )
         except Exception as e:
             log.exception("Direct Pay: Stripe checkout create failed (invoice_id=%s)", getattr(inv, "id", None))
@@ -299,6 +367,8 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
 
         inv.direct_pay_checkout_session_id = session_id or ""
         inv.direct_pay_checkout_url = session_url or ""
+        inv.direct_pay_charge_type = "direct"
+        inv.direct_pay_connected_account_id = connected_account_id
         if hasattr(inv, "direct_pay_payment_intent_id") and payment_intent_id:
             inv.direct_pay_payment_intent_id = str(payment_intent_id)
         if hasattr(inv, "platform_fee_cents"):
@@ -307,7 +377,13 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
             inv.payout_cents = int(payout_cents)
         inv.status = InvoiceStatus.SENT
 
-        update_fields = ["direct_pay_checkout_session_id", "direct_pay_checkout_url", "status"]
+        update_fields = [
+            "direct_pay_checkout_session_id",
+            "direct_pay_checkout_url",
+            "direct_pay_charge_type",
+            "direct_pay_connected_account_id",
+            "status",
+        ]
         if hasattr(inv, "direct_pay_payment_intent_id") and payment_intent_id:
             update_fields.append("direct_pay_payment_intent_id")
         if hasattr(inv, "platform_fee_cents"):
@@ -326,6 +402,7 @@ def mark_direct_pay_invoice_payment_pending(
     invoice_number: Optional[str] = None,
     checkout_session_id: Optional[str] = None,
     payment_intent_id: Optional[str] = None,
+    connected_account_id: Optional[str] = None,
 ) -> Invoice:
     """
     Webhook-driven transition for a direct-pay invoice that has entered Stripe's
@@ -338,6 +415,7 @@ def mark_direct_pay_invoice_payment_pending(
             checkout_session_id=checkout_session_id,
             payment_intent_id=payment_intent_id,
         )
+        _validate_connected_account_event(inv, connected_account_id)
 
         if _is_paid(inv) or inv.status == InvoiceStatus.PAID:
             return inv
@@ -384,6 +462,7 @@ def mark_direct_pay_invoice_payment_issue(
     invoice_number: Optional[str] = None,
     checkout_session_id: Optional[str] = None,
     payment_intent_id: Optional[str] = None,
+    connected_account_id: Optional[str] = None,
     issue_message: str = "",
 ) -> Invoice:
     """
@@ -399,6 +478,7 @@ def mark_direct_pay_invoice_payment_issue(
             checkout_session_id=checkout_session_id,
             payment_intent_id=payment_intent_id,
         )
+        _validate_connected_account_event(inv, connected_account_id)
 
         if _is_paid(inv) or inv.status == InvoiceStatus.PAID:
             return inv
@@ -445,6 +525,7 @@ def finalize_direct_pay_invoice_paid(
     invoice_number: Optional[str] = None,
     checkout_session_id: Optional[str] = None,
     payment_intent_id: Optional[str] = None,
+    connected_account_id: Optional[str] = None,
     paid_at: Optional[timezone.datetime] = None,
 ) -> Invoice:
     """
@@ -477,6 +558,7 @@ def finalize_direct_pay_invoice_paid(
 
         if inv is None:
             raise ValueError("Invoice not found for direct pay finalization.")
+        _validate_connected_account_event(inv, connected_account_id)
 
         # Idempotent: if already paid, ensure fields are set and return.
         already_paid = _is_paid(inv) or inv.status == InvoiceStatus.PAID
