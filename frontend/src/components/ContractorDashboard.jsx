@@ -535,8 +535,8 @@ const fmtRate = (rateDecimal) => {
 const INTRO_RATE_LABEL = "3.00%";
 const STANDARD_START_RATE_LABEL = "4.00%";
 
-// ✅ Direct Pay pricing (LOCKED)
-const DIRECT_PAY_LABEL = "1% + $1";
+// Keep in sync with DIRECT_PAY_RATE in backend/payments/fees.py.
+const DIRECT_PAY_LABEL = "2%";
 
 function planLabel() {
   return "Included";
