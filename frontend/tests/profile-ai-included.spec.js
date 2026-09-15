@@ -152,7 +152,10 @@ test('profile billing view renders with included AI wording', async ({ page }) =
   await expect(page.getByText('Billing & Fees')).toBeVisible();
   await expect(page.getByText('All AI tools are included with your account.')).toBeVisible();
   await expect(page.getByText('Platform Fees (MyHomeBro)')).toBeVisible();
-  await expect(page.getByText('Intro pricing: 3% + $1 for the first 60 days')).toBeVisible();
+  await expect(page.getByText('Intro pricing: 3% for the first 60 days')).toBeVisible();
+  await expect(page.getByText('Standard pricing: 4%')).toBeVisible();
+  await expect(page.getByText(/Direct Pay pricing: 2%/)).toBeVisible();
+  await expect(page.getByText('$750 cap per project; $650 cap at the volume rate')).toBeVisible();
   await expect(page.getByText('Payment Processing (Stripe)')).toBeVisible();
   await expect(page.getByText('Card payments: typically about 2.9% + $0.30')).toBeVisible();
   await expect(page.getByText("What You'll See in the App")).toBeVisible();
