@@ -70,7 +70,7 @@ export default function ProfileDangerZone() {
         Danger Zone
         <span className="ml-2 text-sm font-normal text-[var(--mhb-text-muted)]">Account deletion controls</span>
       </summary>
-      <section className="mt-5 rounded-xl border border-red-300 bg-red-50 p-4">
+      <section className="mhb-profile-danger-panel mt-5 rounded-xl border border-red-300 bg-red-50 p-4">
       <h2 className="text-lg font-semibold text-red-800 mb-2">Delete contractor profile</h2>
       <p className="text-sm text-red-800 mb-3">
         Deleting your contractor profile will remove your business information and deactivate your account.
@@ -78,7 +78,7 @@ export default function ProfileDangerZone() {
         projects, agreements, or invoices.
       </p>
 
-      <label className="flex items-center gap-2 text-sm text-red-800 mb-3">
+      <label className="mhb-profile-danger-label flex items-center gap-2 text-sm text-red-800 mb-3">
         <input
           type="checkbox"
           className="h-4 w-4"
@@ -90,8 +90,12 @@ export default function ProfileDangerZone() {
       </label>
 
       <div className="mb-3">
-        <label htmlFor="mhb-profiledangerzone-88" className="block text-sm font-medium text-red-900 mb-1">
-          Type <span className="font-mono bg-red-100 px-1 rounded">DELETE</span> to confirm
+        <label
+          htmlFor="mhb-profiledangerzone-88"
+          className="mhb-profile-danger-label block text-sm font-medium text-red-900 mb-1"
+          data-testid="profile-danger-confirm-label"
+        >
+          Type <span className="mhb-profile-danger-token font-mono bg-red-100 px-1 rounded">DELETE</span> to confirm
         </label>
         <input id="mhb-profiledangerzone-88"
           type="text"

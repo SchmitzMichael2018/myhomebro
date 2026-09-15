@@ -3165,6 +3165,16 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-sur
   color: var(--mhb-text-secondary);
 }
 
+/* Keep destructive confirmation instructions legible on their light warning panel. */
+.mhb-operational-surface .mhb-profile-danger-panel .mhb-profile-danger-label {
+  color: #7f1d1d !important;
+}
+
+.mhb-operational-surface .mhb-profile-danger-panel .mhb-profile-danger-token {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface table {
   border-color: var(--mhb-border-divider);
   background: var(--mhb-surface-card);

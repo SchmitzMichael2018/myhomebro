@@ -133,6 +133,7 @@ test('profile billing view renders with included AI wording', async ({ page }) =
   await expect(dangerZone).not.toHaveAttribute('open', '');
   await dangerZone.locator('summary').click();
   await expect(page.getByRole('heading', { name: 'Delete contractor profile' })).toBeVisible();
+  await expect(page.getByTestId('profile-danger-confirm-label')).toHaveCSS('color', 'rgb(127, 29, 29)');
   await page.screenshot({ path: 'test-results/profile-account-danger-zone.png', fullPage: true });
 
   await expect(page.getByRole('button', { name: /Plan & Billing/ })).toBeVisible();
