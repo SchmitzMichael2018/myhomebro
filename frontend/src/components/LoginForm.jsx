@@ -9,6 +9,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
 import { resolveAuthenticatedEntry } from "../lib/contractorOnboardingRoute.js";
+import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
 import logo from "../assets/myhomebro_logo.png";
 
 export default function LoginForm({ redirectTo = "/dashboard" }) {
@@ -129,11 +130,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         navigate(redirectTo);
       }
     } catch (err) {
-      const msg =
-        err?.response?.data?.detail ||
-        err?.message ||
-        "Invalid email or password.";
-      toast.error(String(msg));
+      toast.error(getLoginErrorMessage(err));
       console.error("LoginForm error:", err);
     } finally {
       setLoading(false);

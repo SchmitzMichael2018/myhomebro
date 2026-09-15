@@ -7,6 +7,7 @@ import api, { getAccessToken, setTokens } from "../api";
 import CustomerDashboard from "../components/CustomerDashboard.jsx";
 import Modal from "../components/Modal.jsx";
 import logo from "../assets/myhomebro_logo.png";
+import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
 
 function formatDate(value) {
   if (!value) return "—";
@@ -556,7 +557,7 @@ export default function CustomerPortalPage() {
       setPortal(data);
       toast.success("Welcome back to your Customer Portal.");
     } catch (error) {
-      const message = error?.response?.data?.detail || "Invalid email or password.";
+      const message = getLoginErrorMessage(error);
       setLoginError(message);
       toast.error(message);
     } finally {

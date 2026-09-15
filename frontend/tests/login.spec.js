@@ -139,6 +139,35 @@ test('landing login dropdown opens contractor modal and routes to contractor das
   await expect(page).toHaveURL(/\/app\/dashboard$/);
 });
 
+test('wrong password uses customer-friendly login copy', async ({ page }) => {
+  await page.route('**/api/auth/login/', async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'No active account found with the given credentials',
+      }),
+    });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('landing-sign-in-button').click();
+  await page
+    .getByRole('menu', { name: 'Log in options' })
+    .getByRole('button', { name: 'Contractor Log In', exact: true })
+    .click();
+  await page.getByTestId('login-email-input').fill('contractor@example.com');
+  await page.getByTestId('login-password-input').fill('wrong-password');
+  await page.getByTestId('login-submit-button').click();
+
+  await expect(
+    page.getByText('Email or password is incorrect. Please try again.')
+  ).toBeVisible();
+  await expect(
+    page.getByText('No active account found with the given credentials')
+  ).toHaveCount(0);
+});
+
 test('landing login modal closes with close button and backdrop click', async ({
   page,
 }) => {

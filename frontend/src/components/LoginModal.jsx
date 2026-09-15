@@ -7,6 +7,7 @@ import api, { setTokens } from "../api";
 import { useAuth } from "../context/AuthContext";
 import logo from "../assets/myhomebro_logo.png";
 import { resolveAuthenticatedEntry } from "../lib/contractorOnboardingRoute.js";
+import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
 
 /**
  * LoginModal (Sign In only)
@@ -325,12 +326,7 @@ export default function LoginModal() {
       setVisible(false);
       navigate(nextRoute);
     } catch (err) {
-      const msg =
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        err?.message ||
-        "Unable to sign in. Check your email and password and try again.";
-      toast.error(String(msg));
+      toast.error(getLoginErrorMessage(err));
       console.error("Login error:", err);
     } finally {
       setLoading(false);

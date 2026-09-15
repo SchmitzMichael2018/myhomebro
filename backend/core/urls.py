@@ -31,6 +31,7 @@ from projects.views.notifications import (
 from rest_framework.permissions import AllowAny
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from accounts.views import EmailLoginView
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 from .views_frontend import pwa_asset, spa as spa_index
@@ -107,8 +108,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 
     # Auth (JWT) — legacy aliases kept
-    path("api/auth/login",    TokenObtainPairView.as_view(), name="auth-login-noslash"),
-    path("api/auth/login/",   TokenObtainPairView.as_view(), name="auth-login"),
+    path("api/auth/login",    EmailLoginView.as_view(), name="auth-login-noslash"),
+    path("api/auth/login/",   EmailLoginView.as_view(), name="auth-login"),
     path("api/auth/refresh",  TokenRefreshView.as_view(),    name="auth-refresh-noslash"),
     path("api/auth/refresh/", TokenRefreshView.as_view(),    name="auth-refresh"),
     path("api/auth/verify",   TokenVerifyView.as_view(),     name="auth-verify-noslash"),

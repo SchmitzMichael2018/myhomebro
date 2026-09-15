@@ -7,6 +7,38 @@ from projects.models import Contractor, Homeowner
 from projects.services.public_intake_customers import get_or_create_customer_for_public_intake
 
 
+class LoginMessageTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            email="login-message@example.com",
+            password="CorrectPass123!",
+            is_active=True,
+            is_verified=True,
+        )
+
+    def test_wrong_password_returns_customer_friendly_message(self):
+        response = self.client.post(
+            "/api/auth/login/",
+            {"email": self.user.email, "password": "wrong-password"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.data["detail"], "Invalid email or password.")
+
+    def test_correct_password_returns_tokens(self):
+        response = self.client.post(
+            "/api/auth/login/",
+            {"email": self.user.email, "password": "CorrectPass123!"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+
+
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     ACCOUNTS_REQUIRE_EMAIL_VERIFICATION=True,
