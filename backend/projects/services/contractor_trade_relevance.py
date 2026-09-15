@@ -103,10 +103,44 @@ TRADE_INTENTS: tuple[TradeIntent, ...] = (
         unrelated_terms={"plumbing", "plumber", "roofing", "roofer", "electrical", "electrician", "hvac"},
     ),
     TradeIntent(
+        key="flooring",
+        label="Flooring",
+        query="flooring installation contractor",
+        primary_terms={
+            "flooring",
+            "flooring contractor",
+            "flooring installer",
+            "floor installer",
+            "floor installation",
+            "luxury vinyl plank",
+            "vinyl plank",
+            "lvp",
+            "hardwood flooring",
+            "hardwood floor",
+            "laminate flooring",
+            "tile flooring",
+            "tile floor",
+            "carpet installation",
+            "floor refinishing",
+            "subfloor repair",
+        },
+        secondary_terms={"tile contractor", "finish carpentry", "remodeling", "handyman"},
+        unrelated_terms={"roofing", "roofer", "shingle", "gutter", "plumbing", "hvac", "electrical"},
+    ),
+    TradeIntent(
         key="roofing",
         label="Roofing",
         query="roofing contractor",
-        primary_terms={"roof", "roofing", "roofer", "shingle", "shingles", "flashing", "underlayment"},
+        primary_terms={
+            "roof",
+            "roofing",
+            "roofer",
+            "shingle",
+            "shingles",
+            "flashing",
+            "roof underlayment",
+            "roofing underlayment",
+        },
         secondary_terms={"exterior", "siding", "gutter"},
         unrelated_terms={"pool", "appliance", "flooring", "plumbing", "hvac"},
     ),
@@ -170,6 +204,17 @@ def project_trade_intent(*values: Any) -> TradeIntent | None:
     text = normalize_relevance_text(*values)
     if not text:
         return None
+
+    # Callers pass the canonical project type and subtype first. Prefer that
+    # reviewed classification over incidental words in the title or scope. A
+    # flooring request, for example, may legitimately mention "underlayment";
+    # that supporting detail must not turn it into a roofing request.
+    classification_text = normalize_relevance_text(*values[:2])
+    if classification_text:
+        for intent in TRADE_INTENTS:
+            if contains_term(classification_text, intent.primary_terms):
+                return intent
+
     if contains_term(text, {"water heater"}):
         return next(intent for intent in TRADE_INTENTS if intent.key == "plumbing")
     if contains_term(text, {"pool", "swimming pool", "spa"}) and contains_term(

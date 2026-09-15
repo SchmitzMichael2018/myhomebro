@@ -5,9 +5,10 @@ from rest_framework.test import APIClient
 
 from projects.models import Contractor, CustomerRequest
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
-from projects.models_diy_planner import DIYProject, DIYProjectAsset, DIYProjectMeasurement, DIYProjectTask
+from projects.models_diy_planner import DIYProject, DIYProjectAsset, DIYProjectMeasurement, DIYProjectPhase, DIYProjectTask
 from projects.models_project_intake import ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name
+from projects.services.diy_planner import _fallback_plan, _plan_is_contextual
 from projects.views.customer_portal import _portal_token
 
 
@@ -133,6 +134,56 @@ class DIYProjectPlannerTests(TestCase):
         self.assertEqual(task.source, DIYProjectTask.Source.AI)
         self.assertIn("proposal_id", task.ai_metadata)
 
+    def test_fallback_plan_preserves_specific_scope_and_material_sequence(self):
+        project = DIYProject.objects.create(
+            owner_email=self.email,
+            title="Bathroom vanity and flooring refresh",
+            category="Bathroom cosmetic renovation",
+            desired_outcome=(
+                "Paint the existing vanity white, install a sealed butcher-block countertop, "
+                "water-resistant luxury vinyl plank flooring, decorative wood-slat wall panels, "
+                "a sink and faucet, and matte-black hardware."
+            ),
+            existing_conditions="Existing stained vanity and laminate countertop remain in place.",
+            additional_context=(
+                "Purchase 61 square feet of bathroom-approved LVP, use a 50 by 25 inch "
+                "butcher-block blank, and plan for 24 square feet of wall panels."
+            ),
+        )
+
+        payload = _fallback_plan(project)
+        task_titles = [
+            task["title"]
+            for phase in payload["phases"]
+            for task in phase["tasks"]
+        ]
+        combined = " ".join(task_titles).lower()
+
+        self.assertTrue(_plan_is_contextual(payload, project))
+        self.assertIn("cabinetry", combined)
+        self.assertIn("countertop", combined)
+        self.assertIn("wall panels", combined)
+        self.assertIn("flooring", combined)
+        self.assertIn("plumbing", combined)
+        self.assertLess(task_titles.index("Prepare and finish the cabinetry"), task_titles.index("Cut, seal, and install the countertop"))
+        self.assertLess(task_titles.index("Cut, seal, and install the countertop"), task_titles.index("Prepare the substrate and install the flooring"))
+
+    def test_context_gate_rejects_generic_provider_plan(self):
+        project = DIYProject.objects.create(
+            owner_email=self.email,
+            title="Bathroom refresh",
+            desired_outcome="Paint cabinets and install butcher-block countertop and water-resistant LVP.",
+        )
+        generic = {
+            "phases": [{
+                "title": "Execute and document",
+                "description": "Complete the selected work.",
+                "tasks": [{"title": "Complete work", "description": "Review results."}],
+            }]
+        }
+
+        self.assertFalse(_plan_is_contextual(generic, project))
+
     def test_get_help_copies_selected_content_and_links_idempotently(self):
         project = self.create_project()
         phase = self.client.post(f"{self.base}/{project['id']}/phases/", {"title": "Technical work"}, format="json").data
@@ -155,6 +206,39 @@ class DIYProjectPlannerTests(TestCase):
         self.assertEqual(second.status_code, 200, second.data)
         self.assertFalse(second.data["created"])
         self.assertEqual(CustomerRequest.objects.count(), 1)
+
+    def test_get_help_classifies_selected_lvp_task_instead_of_parent_bathroom_project(self):
+        project = DIYProject.objects.create(
+            owner_email=self.email,
+            title="Bathroom vanity and flooring refresh",
+            category="Bathroom cosmetic renovation",
+            desired_outcome="Refresh the vanity, countertop, wall panels, and flooring.",
+        )
+        phase = DIYProjectPhase.objects.create(project=project, title="Finish installation")
+        flooring_task = DIYProjectTask.objects.create(
+            phase=phase,
+            title="Install water-resistant LVP flooring",
+            description="Prepare the subfloor and install luxury vinyl plank with underlayment and transitions.",
+            participation_type=DIYProjectTask.Participation.NEED_GUIDANCE,
+        )
+
+        response = self.client.post(
+            f"{self.base}/{project.id}/get-help/",
+            {
+                "selection_type": "task",
+                "task_ids": [flooring_task.id],
+                "project_mode": "diy_assist",
+                "idempotency_key": "lvp-help-v1",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        request_row = CustomerRequest.objects.select_related("source_intake").get(id=response.data["request_id"])
+        self.assertEqual(request_row.project_type, "Flooring")
+        self.assertEqual(request_row.project_subtype, "LVP / Vinyl Plank")
+        self.assertEqual(request_row.source_intake.ai_project_type, "Flooring")
+        self.assertEqual(request_row.source_intake.ai_project_subtype, "LVP / Vinyl Plank")
 
     def test_diy_help_selected_evidence_routes_to_contractor_without_exposing_private_assets(self):
         project = self.create_project()

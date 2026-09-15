@@ -81,6 +81,7 @@ async function installDashboardMocks(page, overrides = {}) {
         role: 'contractor_owner',
         email: 'playwright@myhomebro.local',
         review_queue_count: 1,
+        attention_counts: data.attentionCounts || {},
       }),
     });
   });
@@ -325,6 +326,18 @@ test('contractor dashboard renders current quick actions and workflow entry poin
   await expect(quickActions.getByRole('button', { name: "Today's Schedule", exact: true })).toBeVisible();
   await expect(quickActions.getByRole('button', { name: 'Expense', exact: true })).toBeVisible();
   await expect(quickActions.getByRole('button', { name: 'Payment', exact: true })).toBeVisible();
+});
+
+test('contractor sidebar shows the number of new opportunities', async ({ page }) => {
+  await installDashboardMocks(page, {
+    attentionCounts: { new_opportunities_count: 2 },
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const opportunitiesLink = page.getByTestId('authenticated-sidebar-navigation').getByRole('link', { name: /Opportunities/ });
+  await expect(opportunitiesLink).toContainText('2');
+  await expect(opportunitiesLink.locator('[aria-label="2 new opportunities"]')).toBeVisible();
 });
 
 test('contractor dashboard surfaces backend priority action in the current priorities panel', async ({ page }) => {

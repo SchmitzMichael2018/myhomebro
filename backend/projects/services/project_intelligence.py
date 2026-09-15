@@ -59,7 +59,8 @@ PROJECT_TYPE_FAMILIES: list[dict[str, Any]] = [
             "re roof",
             "shingle",
             "shingles",
-            "underlayment",
+            "roof underlayment",
+            "roofing underlayment",
             "flashing",
             "drip edge",
             "ridge vent",
@@ -568,8 +569,8 @@ def build_project_setup_recommendation(
             suggested_template_label = "Kitchen Remodel Template"
             recommendation_note = "Kitchen remodels benefit from confirming cabinets, countertops, layout changes, and related work before final pricing."
     elif family_key == "flooring":
-        recommended_project_type = "Flooring Installation"
-        recommended_project_subtype = "Flooring Installation"
+        recommended_project_type = "Flooring"
+        recommended_project_subtype = _safe_text(project_subtype) or "Flooring Installation"
         suggested_workflow = "Install workflow"
         suggested_template_label = "Flooring Installation Template"
         recommendation_note = "Flooring jobs are clearer when square footage, subfloor condition, and any removal or prep needs are confirmed."
@@ -667,6 +668,36 @@ def build_project_setup_recommendation(
 def infer_project_intelligence(*, project_title: str = "", project_type: str = "", project_subtype: str = "", description: str = "") -> dict[str, Any]:
     text = _normalize(" ".join([project_title, project_type, project_subtype, description]))
 
+    # A reviewed type/subtype is more authoritative than incidental wording in
+    # the broader scope. Flooring underlayment, for example, must not turn an
+    # LVP request into roofing or an unrelated outdoor project.
+    normalized_type = _normalize(project_type)
+    normalized_subtype = _normalize(project_subtype)
+    classification_family = None
+    classification_score = 0
+    for family in PROJECT_TYPE_FAMILIES:
+        score = 0
+        family_key = _normalize(family["key"])
+        family_label = _normalize(family["label"])
+        if normalized_type in {family_key, family_label}:
+            score += 12
+        if normalized_subtype in {family_key, family_label}:
+            score += 10
+        for keyword in family.get("keywords", []):
+            normalized_keyword = _normalize(keyword)
+            if not normalized_keyword:
+                continue
+            if normalized_keyword in normalized_subtype:
+                score += 6
+            elif normalized_keyword in normalized_type:
+                score += 4
+        if score > classification_score:
+            classification_family = family
+            classification_score = score
+
+    if classification_family is not None and classification_score >= 4:
+        return {**classification_family, "is_generic": False}
+
     has_shed_intent = _contains_any(
         text,
         ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"],
@@ -701,8 +732,6 @@ def infer_project_intelligence(*, project_title: str = "", project_type: str = "
             if normalized_keyword and normalized_keyword in text:
                 score += 2 if " " in normalized_keyword else 1
 
-        normalized_type = _normalize(project_type)
-        normalized_subtype = _normalize(project_subtype)
         if family["key"] in normalized_type or family["key"] in normalized_subtype:
             score += 3
 

@@ -10,8 +10,11 @@ from projects.models import (
     Contractor,
     Milestone,
     MilestoneAssignment,
+    PublicContractorLead,
     SubcontractorCompletionStatus,
 )
+from projects.models_contractor_discovery import ContractorOpportunity
+from projects.models_project_intake import ProjectIntake
 from projects.models_subcontractor import SubcontractorInvitation, SubcontractorInvitationStatus
 from projects.services.milestone_workflow import is_effective_reviewer_user
 from projects.services.milestone_lifecycle import milestone_is_overdue, milestone_lifecycle_state
@@ -40,6 +43,7 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
             "overdue_milestone_count": 0,
             "pending_invites_count": 0,
             "active_subcontractor_count": 0,
+            "new_opportunities_count": 0,
             "total_attention_count": 0,
         }
 
@@ -122,6 +126,33 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
             accepted_subcontractor_identities.add(("email", email))
     active_subcontractor_count = len(accepted_subcontractor_identities)
 
+    # Match the unified Opportunities workspace without double-counting an
+    # intake that has already been routed as a marketplace opportunity.
+    new_public_leads_count = contractor.public_leads.filter(
+        status__in=[
+            PublicContractorLead.STATUS_NEW,
+            PublicContractorLead.STATUS_READY_FOR_REVIEW,
+        ],
+        converted_agreement__isnull=True,
+    ).count()
+    new_standalone_intakes_count = ProjectIntake.objects.filter(
+        contractor=contractor,
+        public_lead__isnull=True,
+        agreement__isnull=True,
+        contractor_opportunities__isnull=True,
+        status__in=["submitted", "analyzed"],
+    ).count()
+    new_marketplace_opportunities_count = ContractorOpportunity.objects.filter(
+        Q(directory_entry__claimed_by_contractor=contractor)
+        | Q(accepted_by_contractor=contractor),
+        status=ContractorOpportunity.STATUS_PENDING,
+    ).distinct().count()
+    new_opportunities_count = (
+        new_public_leads_count
+        + new_standalone_intakes_count
+        + new_marketplace_opportunities_count
+    )
+
     total_attention_count = (
         awaiting_review_count
         + unassigned_assignment_count
@@ -138,6 +169,7 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
         "overdue_milestone_count": overdue_milestone_count,
         "pending_invites_count": pending_invites_count,
         "active_subcontractor_count": active_subcontractor_count,
+        "new_opportunities_count": new_opportunities_count,
         "total_attention_count": total_attention_count,
     }
 

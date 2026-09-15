@@ -19,6 +19,7 @@ from projects.models_diy_planner import (
     DIYProjectPhase, DIYProjectProgressEntry, DIYProjectRequestLink, DIYProjectTask,
 )
 from projects.services.diy_planner import apply_plan_proposal, build_plan_proposal
+from projects.services.ai.project_drafter import classify_type_subtype
 from projects.views.customer_portal import _primary_homeowner_for_email, _unsign_portal_token
 
 
@@ -405,6 +406,22 @@ class DIYGetHelpView(APIView):
         if len(assets) != len(set(data.get("asset_ids", []))) or len(measurements) != len(set(data.get("measurement_ids", []))):
             return Response({"detail": "One or more selected supporting details do not belong to this project."}, status=400)
         generated_scope = "\n".join([f"- {t.phase.title}: {t.title} — {t.description}".strip() for t in task_list])
+        selected_project_type, selected_project_subtype, _classification_reason = classify_type_subtype(
+            project_title=data.get("title") or "",
+            description=generated_scope,
+            scope_text="\n".join(
+                filter(
+                    None,
+                    [
+                        data.get("scope") or "",
+                        "\n".join(task.title for task in task_list),
+                        "\n".join(task.description for task in task_list),
+                    ],
+                )
+            ),
+        )
+        selected_project_type = selected_project_type or project.category
+        selected_project_subtype = selected_project_subtype or ""
         scope = data.get("scope") or (
             f"Desired outcome: {project.desired_outcome}\n"
             f"Existing conditions: {project.existing_conditions or 'Not provided'}\n"
@@ -424,8 +441,9 @@ class DIYGetHelpView(APIView):
         request_row = CustomerRequest.objects.create(
             homeowner=_primary_homeowner_for_email(email), property_profile=project.property_profile,
             customer_email=email, request_type=CustomerRequest.TYPE_DIY_ASSISTANCE,
-            project_mode=data["project_mode"], project_category=project.category,
-            project_type=project.category, title=data.get("title") or f"Help with {project.title}",
+            project_mode=data["project_mode"], project_category=selected_project_type,
+            project_type=selected_project_type, project_subtype=selected_project_subtype,
+            title=data.get("title") or f"Help with {project.title}",
             description=scope, preferred_timeline=str(project.target_completion_date or ""),
             status=CustomerRequest.STATUS_DRAFT,
         )
@@ -472,6 +490,7 @@ class DIYGetHelpView(APIView):
             accomplishment_text=scope,
             ai_project_title=request_row.title,
             ai_project_type=request_row.project_type,
+            ai_project_subtype=request_row.project_subtype,
             ai_description=scope,
             measurement_handling="provided" if measurements else "",
             ai_clarification_answers={

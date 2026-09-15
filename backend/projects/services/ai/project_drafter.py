@@ -64,7 +64,7 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     "Roofing": [
         "roof", "roofing", "roof leak", "roof repair", "roof replacement",
         "new roof", "reroof", "re-roof", "shingle", "shingles", "ridge vent",
-        "underlayment", "flashing", "drip edge", "metal roof", "tile roof",
+        "roof underlayment", "roofing underlayment", "flashing", "drip edge", "metal roof", "tile roof",
         "clay tile", "concrete tile", "asphalt shingle",
     ],
     "Pool": [
@@ -629,7 +629,7 @@ def _roofing_force_override(project_title: str, description: str) -> tuple[Optio
     roof_signals = [
         "roof", "roofing", "roof leak", "roof repair", "roof replacement",
         "new roof", "reroof", "re-roof", "shingle", "shingles", "flashing",
-        "underlayment", "drip edge", "ridge vent", "metal roof", "tile roof",
+        "roof underlayment", "roofing underlayment", "drip edge", "ridge vent", "metal roof", "tile roof",
         "clay tile", "concrete tile", "asphalt shingle",
     ]
     if not any(sig in hay for sig in roof_signals):
@@ -946,6 +946,18 @@ def classify_type_subtype(
         "tile floor",
     ]
     if any(sig in hay_norm for sig in flooring_signals):
+        if any(sig in hay_norm for sig in ["lvp", "luxury vinyl", "vinyl plank"]):
+            return (
+                "Flooring",
+                "LVP / Vinyl Plank",
+                "Detected luxury-vinyl-plank flooring scope. Using type 'Flooring' and subtype 'LVP / Vinyl Plank'.",
+            )
+        if any(sig in hay_norm for sig in ["tile floor", "tile flooring"]):
+            return (
+                "Flooring",
+                "Tile Flooring",
+                "Detected tile-flooring installation scope. Using type 'Flooring' and subtype 'Tile Flooring'.",
+            )
         if any(sig in hay_norm for sig in ["hardwood floor", "hardwood flooring", "install hardwood"]):
             return (
                 "Flooring",
@@ -954,8 +966,8 @@ def classify_type_subtype(
             )
         return (
             "Flooring",
-            "Hardwood Floor Installation",
-            "Detected flooring installation scope. Using type 'Flooring' and subtype 'Hardwood Floor Installation'.",
+            "Flooring Installation",
+            "Detected flooring installation scope. Using type 'Flooring' and subtype 'Flooring Installation'.",
         )
 
     exterior_multi_scope = (

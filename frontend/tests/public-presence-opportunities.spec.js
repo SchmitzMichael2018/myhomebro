@@ -373,3 +373,35 @@ test('opportunity review displays customer-requested estimate details as awaitin
   await expect(proposeDialog).toContainText('Appointments begin in 15-minute increments.');
   await expect(page.getByTestId('decline-estimate-request-action')).toBeVisible();
 });
+
+test('routed flooring request opens exact next steps with clear estimate-to-agreement path on mobile', async ({ page }) => {
+  await mockUnifiedOpportunityPipeline(page, [
+    makeOpportunity({
+      bid_id: 'opportunity-4',
+      source_id: 4,
+      source_kind: 'marketplace',
+      source_kind_label: 'Marketplace',
+      lead_source_filter: 'marketplace',
+      project_title: 'DIY Assistance — Water-Resistant LVP Flooring',
+      project_type: 'Flooring',
+      project_subtype: 'LVP / Vinyl Plank',
+      notes: 'Install water-resistant LVP with flooring underlayment and transitions.',
+      request_path_label: 'Marketplace',
+    }),
+  ]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/opportunities?source=marketplace&focus=opportunity-4&tab=next', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('bids-detail-drawer')).toBeVisible();
+  await expect(page.getByTestId('opportunity-review-tab-next')).toHaveClass(/bg-blue-500/);
+  await expect(page.getByTestId('opportunity-estimate-path')).toContainText('Schedule a site estimate');
+  await expect(page.getByTestId('opportunity-estimate-path')).toContainText('After the customer accepts');
+  await expect(page.getByTestId('schedule-estimate-action')).toBeVisible();
+  await expect(page.getByTestId('proposal-workspace-action')).toContainText('Start Estimate Without Visit');
+  await expect(page.getByTestId('response-prep-section')).toContainText('Confirm square footage');
+  await expect(page.getByTestId('response-starter-section')).toContainText('flooring details');
+  await expect(page.getByTestId('response-starter-section')).not.toContainText('outdoor structure');
+  await expect(page.getByTestId('opportunity-review-tabs')).toHaveCSS('overflow-x', 'visible');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

@@ -134,7 +134,8 @@ const PROJECT_TYPE_FAMILIES = [
       "re roof",
       "shingle",
       "shingles",
-      "underlayment",
+      "roof underlayment",
+      "roofing underlayment",
       "flashing",
       "drip edge",
       "ridge vent",
@@ -429,6 +430,35 @@ export function inferProjectIntelligence({
   projectFamilyLabel = "",
 } = {}) {
   const text = normalize([projectTitle, projectType, projectSubtype, description].filter(Boolean).join(" "));
+  const normalizedType = normalize(projectType);
+  const normalizedSubtype = normalize(projectSubtype);
+  let classificationFamily = null;
+  let classificationScore = 0;
+
+  // Prefer the reviewed type/subtype to incidental wording in the full scope.
+  // This keeps flooring terms such as underlayment from selecting another
+  // trade family when the request is already classified as Flooring / LVP.
+  for (const family of PROJECT_TYPE_FAMILIES) {
+    let score = 0;
+    const familyKey = normalize(family.key);
+    const familyLabel = normalize(family.label);
+    if ([familyKey, familyLabel].includes(normalizedType)) score += 12;
+    if ([familyKey, familyLabel].includes(normalizedSubtype)) score += 10;
+    for (const keyword of family.keywords) {
+      const needle = normalize(keyword);
+      if (!needle) continue;
+      if (normalizedSubtype.includes(needle)) score += 6;
+      else if (normalizedType.includes(needle)) score += 4;
+    }
+    if (score > classificationScore) {
+      classificationFamily = family;
+      classificationScore = score;
+    }
+  }
+  if (classificationFamily && classificationScore >= 4) {
+    return { ...classificationFamily, isGeneric: false };
+  }
+
   const preferredFamily = getFamilyMatchProfile(projectFamilyKey);
   let best = preferredFamily || GENERIC_PROJECT_INTELLIGENCE;
   let bestScore = preferredFamily ? 4 : 0;
@@ -473,8 +503,6 @@ export function inferProjectIntelligence({
       }
     }
 
-    const normalizedType = normalize(projectType);
-    const normalizedSubtype = normalize(projectSubtype);
     if (normalizedType.includes(family.key) || normalizedSubtype.includes(family.key)) {
       score += 3;
     }
@@ -686,8 +714,8 @@ export function buildProjectSetupRecommendation({
         "Kitchen remodels benefit from confirming cabinets, countertops, layout changes, and related work before final pricing.";
     }
   } else if (family.key === "flooring") {
-    recommendedProjectType = "Flooring Installation";
-    recommendedProjectSubtype = "Flooring Installation";
+    recommendedProjectType = "Flooring";
+    recommendedProjectSubtype = projectSubtype || "Flooring Installation";
     suggestedWorkflow = "Install workflow";
     suggestedTemplateLabel = "Flooring Installation Template";
     recommendationNote =

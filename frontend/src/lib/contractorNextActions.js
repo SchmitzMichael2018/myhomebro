@@ -568,6 +568,71 @@ export function getContractorNextActions({
     );
   }
 
+  const estimateRequestId = safeText(
+    latestEstimateRequest?.opportunity_id ||
+      latestEstimateRequest?.source_id ||
+      latestEstimateRequest?.record_id ||
+      latestEstimateRequest?.id
+  );
+  const latestRoutedEstimateOpportunity = latestByDate(
+    (Array.isArray(publicLeads) ? publicLeads : []).filter((row) => {
+      const sourceKind = normalizeSource(row?.source_kind);
+      const rowId = safeText(row?.opportunity_id || row?.source_id || row?.record_id || row?.id);
+      const hasAgreement = Boolean(row?.linked_agreement_id || row?.agreement_id || row?.linked_agreement_url);
+      if (hasAgreement || isWebsiteLeadRow(row) || !isUnhandledLeadStatus(row)) return false;
+      if (estimateRequestId && rowId === estimateRequestId) return false;
+      return ["marketplace", "intake", "quote_request"].includes(sourceKind);
+    }),
+    (row) => row?.submitted_at || row?.selected_at || row?.created_at || row?.updated_at
+  );
+  if (latestRoutedEstimateOpportunity) {
+    const opportunityId =
+      latestRoutedEstimateOpportunity?.opportunity_id ||
+      latestRoutedEstimateOpportunity?.source_id ||
+      latestRoutedEstimateOpportunity?.record_id ||
+      latestRoutedEstimateOpportunity?.id ||
+      "latest";
+    const bidId = safeText(latestRoutedEstimateOpportunity?.bid_id) || `opportunity-${opportunityId}`;
+    const customerName = pickFirst(
+      latestRoutedEstimateOpportunity?.customer_name,
+      latestRoutedEstimateOpportunity?.full_name,
+      latestRoutedEstimateOpportunity?.name
+    ) || "A customer";
+    const projectName = pickFirst(
+      latestRoutedEstimateOpportunity?.project_title,
+      latestRoutedEstimateOpportunity?.project_type,
+      latestRoutedEstimateOpportunity?.request_snapshot?.project_title
+    ) || "New project request";
+    const sourceFilter = normalizeSource(latestRoutedEstimateOpportunity?.lead_source_filter) || "marketplace";
+    actions.push(
+      buildAction({
+        key: `estimate-needed:${bidId}`,
+        dedupeKey: `opportunity:${opportunityId}`,
+        title: `Estimate needed: ${projectName}`,
+        description: `${customerName}'s routed request is ready for review and estimate planning.`,
+        buttonLabel: "Review next steps",
+        navigationTarget: `/app/opportunities?source=${encodeURIComponent(sourceFilter)}&focus=${encodeURIComponent(bidId)}&tab=next`,
+        priorityScore: 94,
+        category: "lead",
+        source: "opportunities",
+        actionType: "prepare_opportunity_estimate",
+        summary: `${customerName} is waiting for estimate next steps.`,
+        reason: "A newly routed request should be reviewed, scheduled, or estimated promptly.",
+        estimatedEffort: "3 minutes",
+        urgency: "Today",
+        customer: customerName,
+        project: projectName,
+        receivedAt: latestRoutedEstimateOpportunity?.submitted_at || latestRoutedEstimateOpportunity?.created_at,
+        updatedAt: latestRoutedEstimateOpportunity?.updated_at,
+        blocking: true,
+        entityType: "opportunity",
+        entityId: opportunityId,
+        actionFamily: "opportunity_estimate",
+        specificity: 4,
+      })
+    );
+  }
+
   const estimateWorkspaceActivity = latestByDate(
     (Array.isArray(activityFeed) ? activityFeed : []).filter((item) => {
       const text = normalizeStatus(`${item?.title || ""} ${item?.summary || ""} ${item?.message || ""}`);

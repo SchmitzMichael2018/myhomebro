@@ -330,4 +330,29 @@ describe("getContractorNextActions", () => {
       blocking: true,
     });
   });
+
+  it("surfaces a routed marketplace request that still needs an estimate", () => {
+    const actions = getContractorNextActions({
+      publicLeads: [{
+        bid_id: "opportunity-4",
+        source_id: 4,
+        source_kind: "marketplace",
+        lead_source_filter: "marketplace",
+        workspace_stage: "new_lead",
+        status: "submitted",
+        project_title: "Water-Resistant LVP Flooring",
+        project_type: "Flooring",
+        customer_name: "QA Homeowner",
+        submitted_at: "2026-09-14T12:00:00Z",
+      }],
+    });
+
+    expect(actions[0]).toMatchObject({
+      key: "estimate-needed:opportunity-4",
+      title: "Estimate needed: Water-Resistant LVP Flooring",
+      buttonLabel: "Review next steps",
+      action_family: "opportunity_estimate",
+      navigationTarget: "/app/opportunities?source=marketplace&focus=opportunity-4&tab=next",
+    });
+  });
 });

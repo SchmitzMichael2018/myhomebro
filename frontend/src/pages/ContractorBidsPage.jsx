@@ -1581,8 +1581,10 @@ export default function ContractorBidsPage() {
       setAppointmentMinimumLead(Number(data?.appointment_minimum_lead_minutes) || 0);
       setServerSummary(data?.summary || {});
       setContractorBrandVoice(meResponse?.data?.public_profile || {});
-      if (keepSelectedBidId) {
-        const nextSelected = nextRows.find((row) => String(row.bid_id) === String(keepSelectedBidId));
+      const focusedBidId = new URLSearchParams(location.search).get("focus") || "";
+      const requestedBidId = keepSelectedBidId || focusedBidId;
+      if (requestedBidId) {
+        const nextSelected = nextRows.find((row) => String(row.bid_id) === String(requestedBidId));
         setSelectedRow(nextSelected || null);
       }
     } catch (err) {
@@ -1602,8 +1604,10 @@ export default function ContractorBidsPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedRow) setDetailTab("overview");
-  }, [selectedRow?.bid_id]);
+    if (!selectedRow?.bid_id) return;
+    const requestedTab = normalize(new URLSearchParams(location.search).get("tab"));
+    setDetailTab(["overview", "project", "next", "history"].includes(requestedTab) ? requestedTab : "overview");
+  }, [location.search, selectedRow?.bid_id]);
 
   useEffect(() => {
     setCrewPreview(null);
@@ -1798,11 +1802,17 @@ export default function ContractorBidsPage() {
       const backendRecommendation = normalizeProjectSetupRecommendation(
         selectedSnapshot?.recommended_setup || selectedRow?.ai_analysis?.recommended_setup || {}
       );
+      const backendConflictsWithCurrentClassification = Boolean(
+        baseRecommendation.projectFamilyKey &&
+          backendRecommendation.projectFamilyKey &&
+          baseRecommendation.projectFamilyKey !== backendRecommendation.projectFamilyKey
+      );
       return {
         ...baseRecommendation,
-        ...backendRecommendation,
+        ...(backendConflictsWithCurrentClassification ? {} : backendRecommendation),
         strongTemplateMatch:
-          backendRecommendation.strongTemplateMatch || baseRecommendation.strongTemplateMatch,
+          !backendConflictsWithCurrentClassification &&
+          (backendRecommendation.strongTemplateMatch || baseRecommendation.strongTemplateMatch),
       };
     },
     [
@@ -1851,7 +1861,7 @@ export default function ContractorBidsPage() {
       }),
     [selectedProjectIntelligence, selectedSnapshot, selectedSignals]
   );
-  const selectedProjectTypeCue = selectedSnapshot.project_family_label || selectedProjectIntelligence?.familyCueLabel || "";
+  const selectedProjectTypeCue = selectedProjectIntelligence?.familyCueLabel || selectedSnapshot.project_family_label || "";
   const selectedCanConvertToAgreement = isConvertToAgreementRow(selectedRow);
   const selectedIsPropertyWorkOrder = normalize(selectedRow?.source_kind) === "property_work_order";
   const selectedNextActionKey = normalize(selectedRow?.next_action?.key);
@@ -1953,8 +1963,7 @@ export default function ContractorBidsPage() {
   const selectedCanCreateProposal = Boolean(
     selectedScheduleSource &&
       selectedStage !== "closed" &&
-      !selectedCanOpenAgreement &&
-      (selectedRow?.latest_estimate_appointment || selectedRow?.estimate_scheduled || selectedProposal?.id)
+      !selectedCanOpenAgreement
   );
   const selectedDetailActionSchedulesEstimate =
     (selectedStage === "new_lead" || selectedStage === "follow_up") &&
@@ -2809,14 +2818,14 @@ export default function ContractorBidsPage() {
               </button>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto bg-slate-900/80 px-5 py-3" data-testid="opportunity-review-tabs">
+              <div className="grid grid-cols-2 gap-2 bg-slate-900/80 px-5 py-3 sm:flex sm:overflow-x-auto" data-testid="opportunity-review-tabs">
                 {detailTabs.map((tab) => (
                   <button
                     key={tab.key}
                     type="button"
                     data-testid={`opportunity-review-tab-${tab.key}`}
                     onClick={() => setDetailTab(tab.key)}
-                    className={`shrink-0 rounded-lg border px-5 py-2.5 text-sm font-bold transition ${
+                    className={`min-w-0 rounded-lg border px-3 py-2.5 text-sm font-bold transition sm:shrink-0 sm:px-5 ${
                       detailTab === tab.key
                         ? "border-blue-300/60 bg-slate-900 bg-blue-500 text-white shadow-sm shadow-blue-950/30"
                         : "border-white/10 bg-slate-800/70 text-slate-200 hover:border-blue-300/40 hover:bg-slate-800"
@@ -2983,7 +2992,7 @@ export default function ContractorBidsPage() {
                   <DetailField label="Received" value={fmtDate(selectedRow.submitted_at)} />
                   <DetailField label="Lifecycle Status" value={selectedLifecycle.label} />
                   <DetailField label="Project Type" value={firstPresent(selectedRow.project_type, selectedRow.project_class_label, "-")} />
-                  <DetailField label="Project Family" value={selectedSnapshot.project_family_label || selectedRow.project_class_label || "-"} />
+                  <DetailField label="Project Family" value={selectedProjectIntelligence?.familyLabel || selectedSnapshot.project_family_label || selectedRow.project_class_label || "-"} />
                   <DetailField label="Project Class" value={selectedRow.project_class_label || "-"} />
                   {selectedRow.project_subtype ? <DetailField label="Area / Subtype" value={selectedRow.project_subtype} /> : null}
                   {selectedTimeline ? <DetailField label="Timeline" value={selectedTimeline} /> : null}
@@ -3045,6 +3054,26 @@ export default function ContractorBidsPage() {
                 subtitle="Choose the next sales action for this opportunity."
                 className={detailTab === "overview" || detailTab === "next" ? "" : "hidden"}
               >
+                <div
+                  data-testid="opportunity-estimate-path"
+                  className="mb-4 rounded-xl border border-blue-400/30 bg-blue-500/10 p-4"
+                >
+                  <div className="text-sm font-bold text-blue-50">How this request moves forward</div>
+                  <ol className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+                    <li className="rounded-lg bg-slate-950/45 px-3 py-3 text-slate-200 ring-1 ring-white/10">
+                      <span className="block text-xs font-black uppercase tracking-[0.12em] text-blue-200">1 · Choose</span>
+                      <span className="mt-1 block font-semibold">Schedule a site estimate, or start the estimate now if the scope is already clear.</span>
+                    </li>
+                    <li className="rounded-lg bg-slate-950/45 px-3 py-3 text-slate-200 ring-1 ring-white/10">
+                      <span className="block text-xs font-black uppercase tracking-[0.12em] text-blue-200">2 · Estimate</span>
+                      <span className="mt-1 block font-semibold">Confirm scope and pricing, then send the estimate to the customer.</span>
+                    </li>
+                    <li className="rounded-lg bg-slate-950/45 px-3 py-3 text-slate-200 ring-1 ring-white/10">
+                      <span className="block text-xs font-black uppercase tracking-[0.12em] text-blue-200">3 · Agreement</span>
+                      <span className="mt-1 block font-semibold">After the customer accepts, create the agreement from the approved estimate.</span>
+                    </li>
+                  </ol>
+                </div>
                 <div
                   data-testid="opportunity-prerequisite-checklist"
                   className="mb-4 rounded-xl bg-slate-950/45 px-4 py-3 ring-1 ring-white/10"
@@ -3185,7 +3214,7 @@ export default function ContractorBidsPage() {
                       className="inline-flex items-center gap-2 rounded-lg border border-blue-300/60 bg-blue-500/15 px-4 py-2 text-sm font-semibold text-blue-50 hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-60"
                       title="Create or open the pre-agreement Estimate Workspace for site visit details, measurements, photos, documents, scope, pricing, and incidentals."
                     >
-                      {proposalBusy ? "Opening..." : selectedProposal?.id ? "Open Estimate Workspace" : "Create Estimate"}
+                      {proposalBusy ? "Opening..." : selectedProposal?.id ? "Open Estimate Workspace" : "Start Estimate Without Visit"}
                       <ClipboardList size={14} />
                     </button>
                   ) : null}
@@ -3210,7 +3239,7 @@ export default function ContractorBidsPage() {
                       {selectedPrimaryActionLabel}
                       <ArrowRight size={14} />
                     </button>
-                  ) : (
+                  ) : selectedStage === "new_lead" || selectedStage === "follow_up" ? null : (
                     <button
                       type="button"
                       onClick={runSelectedDetailAction}

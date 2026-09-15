@@ -68,6 +68,7 @@ def _empty_attention_counts() -> dict:
         "overdue_milestone_count": 0,
         "pending_invites_count": 0,
         "active_subcontractor_count": 0,
+        "new_opportunities_count": 0,
         "total_attention_count": 0,
     }
 

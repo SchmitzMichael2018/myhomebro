@@ -78,7 +78,7 @@ function NavGroup({ label, children, className = "" }) {
   );
 }
 
-function Item({ to, label, icon: Icon, emoji, title, hint, count = 0 }) {
+function Item({ to, label, icon: Icon, emoji, title, hint, count = 0, countLabel = "items" }) {
   const location = useLocation();
   const { navHint, showNavHint, hideNavHint } = useContext(SidebarNavCtx);
   const tooltipId = React.useId();
@@ -120,8 +120,12 @@ function Item({ to, label, icon: Icon, emoji, title, hint, count = 0 }) {
         </span>
         <span className="min-w-0 truncate leading-5">{label}</span>
         {Number(count || 0) > 0 ? (
-          <span className="ml-auto inline-flex min-w-7 items-center justify-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">
-            {Number(count)}
+          <span
+            className="ml-auto inline-flex min-w-7 items-center justify-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900"
+            aria-label={`${Number(count)} ${countLabel}`}
+            title={`${Number(count)} ${countLabel}`}
+          >
+            {Number(count) > 99 ? "99+" : Number(count)}
           </span>
         ) : null}
       </NavLink>
@@ -194,6 +198,7 @@ export default function Sidebar({ variant = "desktop" }) {
   const isOnAdminRoute = location.pathname.startsWith("/app/admin");
   const reviewQueueCount = Number(data?.review_queue_count || 0);
   const attentionCounts = data?.attention_counts || {};
+  const newOpportunitiesCount = Number(attentionCounts.new_opportunities_count || 0);
 
   const handleLogout = useCallback(() => {
     // Central auth cleanup clears local, session, legacy, and in-memory tokens.
@@ -343,7 +348,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/business`} label="Insights" icon={Gauge} />
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
-        <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
+        <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} count={newOpportunitiesCount} countLabel="new opportunities" />
         <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
         <Item to={`${APP_BASE}/warranties`} label="Warranties" icon={ShieldCheck} />
@@ -357,7 +362,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/disputes`} label="Resolution" icon={MessageSquareWarning} />
       </>
     );
-  }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor, reviewQueueCount]);
+  }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor, newOpportunitiesCount, reviewQueueCount]);
 
   const accountNav = useMemo(() => {
     if (isAdmin) {
@@ -590,7 +595,7 @@ export default function Sidebar({ variant = "desktop" }) {
             </NavGroup>
 
             <NavGroup label="Operations" className="pt-1">
-              <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
+              <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} count={newOpportunitiesCount} countLabel="new opportunities" />
               <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
               <Item to={`${APP_BASE}/warranties`} label="Warranties" icon={ShieldCheck} />

@@ -709,6 +709,22 @@ def _score_listing(project: dict[str, Any], listing: ContractorDirectoryListing)
         if fit.get("reason"):
             reasons.append(fit["reason"])
 
+        # A contractor explicitly identified as an unrelated trade should not
+        # be offered as a selectable match. Missing trade metadata can remain a
+        # limited match, but known roofing cannot satisfy known flooring, etc.
+        if fit.get("level") in {"unrelated", "excluded"}:
+            return {
+                "score": 0,
+                "tier": "Excluded",
+                "reasons": list(dict.fromkeys(reasons))[:6],
+                "supported_modes": ["full_service"],
+                "escrow_friendly": False,
+                "assisted_diy_friendly": False,
+                "inspection_capable": False,
+                "rescue_project_friendly": False,
+                "excluded": True,
+            }
+
     score = max(0, min(score, 100))
     if score >= 75:
         tier = "Strong Match"
@@ -770,9 +786,17 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         reasons = list(dict.fromkeys([*(match.get("reasons") or []), *([fit.get("reason")] if fit.get("reason") else [])]))
         match = {
             **match,
-            "score": capped_score,
+            "score": 0 if fit.get("level") in {"unrelated", "excluded"} else capped_score,
             "reasons": reasons,
-            "tier": "Strong Match" if capped_score >= 75 else "Good Match" if capped_score >= 45 else "Limited Match",
+            "tier": (
+                "Excluded"
+                if fit.get("level") in {"unrelated", "excluded"}
+                else "Strong Match"
+                if capped_score >= 75
+                else "Good Match"
+                if capped_score >= 45
+                else "Limited Match"
+            ),
         }
     claimed = True
     distance_miles = None
