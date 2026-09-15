@@ -4,32 +4,19 @@ import toast from "react-hot-toast";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 
-/**
- * Danger Zone – delete profile (soft or hard).
- * Soft delete (default): scrubs contractor PII and (optionally) deactivates the user.
- * Hard delete: only allowed when there are no related records; otherwise 409 with counts.
- */
+/** Permanently remove an unused contractor role without deleting the shared login. */
 export default function ProfileDangerZone() {
   const [confirmText, setConfirmText] = useState("");
   const [hardDelete, setHardDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const navigate = useNavigate();
-  const { onLogout } = useAuth();
+  const { logout } = useAuth();
 
-  const canDelete = confirmText.trim().toUpperCase() === "DELETE" && !busy;
+  const canDelete = hardDelete && confirmText.trim().toUpperCase() === "DELETE" && !busy;
 
   const requestDelete = async () => {
-    // Try both routes to match your backend wiring
-    for (const url of ["/contractors/me/", "/projects/contractors/me/"]) {
-      try {
-        return await api.delete(url, { params: { hard: hardDelete ? 1 : 0 } });
-      } catch (err) {
-        const code = err?.response?.status;
-        if (code && ![404, 405].includes(code)) throw err;
-      }
-    }
-    throw new Error("No delete endpoint available.");
+    return api.delete("/projects/contractors/me/", { params: { hard: 1 } });
   };
 
   const handleDelete = async () => {
@@ -38,12 +25,8 @@ export default function ProfileDangerZone() {
     try {
       const res = await requestDelete();
       if (res.status === 204 || res.status === 200) {
-        toast.success(hardDelete ? "Profile permanently deleted." : "Profile deactivated and data scrubbed.");
-        try {
-          localStorage.removeItem("access");
-          localStorage.removeItem("refresh");
-        } catch { /* Continue logout when browser storage is unavailable. */ }
-        onLogout?.();
+        toast.success("Contractor profile deleted. Your other workspace access is unchanged.");
+        await logout?.();
         navigate("/signin", { replace: true });
         return;
       }
@@ -53,7 +36,7 @@ export default function ProfileDangerZone() {
       const data = err?.response?.data;
       if (status === 409 && data?.related_counts) {
         toast.error(
-          `Hard delete blocked (projects: ${data.related_counts.projects}, agreements: ${data.related_counts.agreements}, invoices: ${data.related_counts.invoices}).`
+          `Deletion blocked (customers: ${data.related_counts.customers}, projects: ${data.related_counts.projects}, agreements: ${data.related_counts.agreements}, invoices: ${data.related_counts.invoices}).`
         );
       } else {
         toast.error(data?.detail || "Delete failed. Please try again.");
@@ -73,9 +56,9 @@ export default function ProfileDangerZone() {
       <section className="mhb-profile-danger-panel mt-5 rounded-xl border border-red-300 bg-red-50 p-4">
       <h2 className="text-lg font-semibold text-red-800 mb-2">Delete contractor profile</h2>
       <p className="text-sm text-red-800 mb-3">
-        Deleting your contractor profile will remove your business information and deactivate your account.
-        You can optionally request a <strong>hard delete</strong>; this only succeeds if you have no related
-        projects, agreements, or invoices.
+        This permanently removes only your contractor profile and contractor workspace access. Your login
+        and any customer or property-manager workspace remain available. Deletion is blocked if this contractor
+        has related customers, projects, agreements, or invoices.
       </p>
 
       <label className="mhb-profile-danger-label flex items-center gap-2 text-sm text-red-800 mb-3">
@@ -86,7 +69,7 @@ export default function ProfileDangerZone() {
           onChange={(e) => setHardDelete(e.target.checked)}
           disabled={busy}
         />
-        Permanently delete my profile if there are no related records (hard delete)
+        I understand this permanently deletes only my contractor profile
       </label>
 
       <div className="mb-3">

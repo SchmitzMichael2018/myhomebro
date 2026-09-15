@@ -134,6 +134,11 @@ test('profile billing view renders with included AI wording', async ({ page }) =
   await dangerZone.locator('summary').click();
   await expect(page.getByRole('heading', { name: 'Delete contractor profile' })).toBeVisible();
   await expect(page.getByTestId('profile-danger-confirm-label')).toHaveCSS('color', 'rgb(127, 29, 29)');
+  const deleteProfileButton = page.getByRole('button', { name: 'Delete my profile' });
+  await page.getByPlaceholder('DELETE').fill('DELETE');
+  await expect(deleteProfileButton).toBeDisabled();
+  await page.getByLabel('I understand this permanently deletes only my contractor profile').check();
+  await expect(deleteProfileButton).toBeEnabled();
   await page.screenshot({ path: 'test-results/profile-account-danger-zone.png', fullPage: true });
 
   await expect(page.getByRole('button', { name: /Plan & Billing/ })).toBeVisible();

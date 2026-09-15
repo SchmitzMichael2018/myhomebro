@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
-from projects.models import Contractor, Skill
+from projects.models import Agreement, Contractor, Homeowner, Invoice, Project, Skill
 from projects.services.compliance import get_profile_compliance_snapshot, sync_legacy_contractor_compliance_records
 from projects.services.contractor_capabilities import get_contractor_capability_flags
 from projects.services.contractor_reviews import contractor_performance_summary
@@ -413,6 +413,52 @@ class ContractorMeView(APIView):
             update_onboarding_progress(c)
 
         return Response({"detail": "Profile updated."}, status=200)
+
+    def delete(self, request, *args, **kwargs):
+        """Permanently remove an unused contractor role without deleting its user."""
+        contractor = _contractor_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+
+        hard_delete = str(request.query_params.get("hard", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if not hard_delete:
+            return Response(
+                {
+                    "detail": (
+                        "Permanent contractor-profile deletion must be explicitly confirmed. "
+                        "Your login and other workspaces will not be deleted."
+                    )
+                },
+                status=400,
+            )
+
+        related_counts = {
+            "customers": Homeowner.objects.filter(created_by=contractor).count(),
+            "projects": Project.objects.filter(contractor=contractor).count(),
+            "agreements": Agreement.objects.filter(contractor=contractor).count(),
+            "invoices": Invoice.objects.filter(agreement__contractor=contractor).count(),
+        }
+        if any(related_counts.values()):
+            return Response(
+                {
+                    "detail": (
+                        "Contractor profile deletion is blocked because related business "
+                        "records exist."
+                    ),
+                    "related_counts": related_counts,
+                },
+                status=409,
+            )
+
+        with transaction.atomic():
+            contractor.delete()
+
+        return Response(status=204)
 
 
 ContractorMe = ContractorMeView
