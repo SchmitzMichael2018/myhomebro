@@ -644,7 +644,7 @@ function ContactActionButton({ kind, href, disabledReason, children, testId, onC
       data-testid={testId}
       href={href}
       onClick={onClick}
-      className={`${baseClass} border-blue-300/35 bg-blue-500/15 text-blue-50 hover:bg-blue-500/25`}
+      className={`${baseClass} border-sky-300 bg-sky-50 text-sky-950 shadow-sm hover:border-sky-400 hover:bg-sky-100`}
     >
       {icon}
       {children}
@@ -943,14 +943,16 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled, incrementMinut
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
               {result?.appointment ? "Close" : "Cancel"}
             </button>
-            <button
-              type="submit"
-              data-testid="schedule-estimate-submit"
-              disabled={loading || Boolean(result?.appointment) || !futureValidation.valid}
-              className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? "Scheduling..." : result?.appointment ? "Scheduled" : "Schedule Estimate"}
-            </button>
+            {!result?.appointment ? (
+              <button
+                type="submit"
+                data-testid="schedule-estimate-submit"
+                disabled={loading || !futureValidation.valid}
+                className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? "Scheduling..." : "Schedule Estimate"}
+              </button>
+            ) : null}
           </div>
         </form>
       </div>
