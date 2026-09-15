@@ -206,6 +206,14 @@ export default function LandingPage() {
             </button>
             <button
               type="button"
+              data-testid="landing-guided-help-link"
+              onClick={() => scrollTo('guided-help')}
+              className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
+            >
+              Guided Help
+            </button>
+            <button
+              type="button"
               onClick={() => scrollTo('frequently-asked-questions')}
               className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
@@ -778,7 +786,10 @@ function VideoPreview({ navigate }) {
 
   return (
     <>
-      <section className="mx-auto px-4 pb-16 sm:px-6 lg:px-8">
+      <section
+        id="guided-help"
+        className="mx-auto scroll-mt-28 px-4 pb-16 sm:px-6 lg:px-8"
+      >
         <script
           type="application/ld+json"
           data-testid="landing-faq-jsonld"
@@ -787,14 +798,14 @@ function VideoPreview({ navigate }) {
         <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
           <div className="p-3 sm:p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
-              Platform Preview
+              Guided Help
             </div>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              See MyHomeBro in Action
+              Choose your role and learn MyHomeBro
             </h2>
             <p className="mt-4 max-w-xl text-base leading-7 text-sky-50/72">
-              A quick look at how we help you plan, connect, and manage with
-              confidence.
+              Select customer, contractor, or property manager to see the
+              videos and answers built for your workflow.
             </p>
             <div className="mt-7 space-y-3">
               {previewBullets.map((item) => (
@@ -828,13 +839,13 @@ function VideoPreview({ navigate }) {
                   <button
                     ref={triggerRef}
                     type="button"
-                    aria-label="Explore the interactive MyHomeBro product tour"
+                    aria-label="Open role-based MyHomeBro Guided Help"
                     data-testid="product-overview-trigger"
                     onClick={openOverview}
                     className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-blue-800 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-amber-300/60 sm:text-base"
                   >
                     <Sparkles className="h-5 w-5" aria-hidden="true" />
-                    Explore Interactive Tour
+                    Open Guided Help
                     <ArrowRight className="h-5 w-5" aria-hidden="true" />
                   </button>
                 </div>

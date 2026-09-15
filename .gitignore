@@ -47,6 +47,7 @@ backups/
 /output/
 /qa-artifacts/
 /tmp/
+/.tmp/
 *.sqlite3.metadata.json
 *.sqlite3.sha256
 

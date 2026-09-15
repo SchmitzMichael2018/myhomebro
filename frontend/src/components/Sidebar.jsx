@@ -30,6 +30,7 @@ import {
   Users,
   UserRound,
   Wrench,
+  Home,
 } from "lucide-react";
 
 const NAV_HINTS = {
@@ -58,6 +59,7 @@ const NAV_HINTS = {
   "/app/onboarding": "Manage your account, preferences, and payment setup",
   "/app/guided-onboarding": "Open role-based walkthroughs, workspace help, setup checklists, and Project Assistant tips",
   "/app/onboarding/stripe": "Complete Stripe Connect onboarding inside MyHomeBro",
+  "/portal": "Open your personal customer and property workspace with this same login",
   "/app/intake/new": "Capture new leads and start projects quickly",
 };
 
@@ -626,6 +628,7 @@ export default function Sidebar({ variant = "desktop" }) {
             </NavGroup>
 
             <NavGroup label="Tools" className="pt-1">
+              <Item to="/portal" label="Customer Portal" icon={Home} />
               <Item to={`${APP_BASE}/marketing`} label="Marketing" icon={Globe} />
               <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
               <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />

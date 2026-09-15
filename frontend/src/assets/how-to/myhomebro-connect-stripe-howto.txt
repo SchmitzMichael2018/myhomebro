@@ -1,0 +1,19 @@
+Connect Stripe and Get Paid
+
+
+
+Complete secure contractor payment onboarding inside MyHomeBro.
+
+
+
+This walkthrough shows contractors how to connect Stripe securely so they can accept customer payments and receive payouts through MyHomeBro.
+
+Open Stripe Onboarding from MyHomeBro. Stripe securely collects the business, identity, and payout details required for payment processing.
+
+Enter accurate legal business and identity information, then connect a payout bank account you control. Never use fictional details in a live Stripe account.
+
+Review each required section before submitting. Stripe may ask for supporting information. Keep bank, tax, and identity details inside the secure Stripe form.
+
+After submission, return to MyHomeBro and confirm that charges and payouts are enabled. If Stripe needs more information, follow the status prompt to finish setup.
+
+Once the account shows payment setup complete, Stripe is connected. You can now use eligible Direct Pay, protected funding, and progress payment workflows.

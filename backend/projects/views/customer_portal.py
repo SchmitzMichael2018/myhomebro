@@ -4063,7 +4063,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
             "email": email,
             **_customer_profile_payload(email),
         },
-        "account": _customer_account_payload(email),
+        "account": _customer_account_payload(email, request=request),
         "summary": summary,
         "requests": request_rows,
         "bid_comparisons": bid_comparison_rows,
@@ -4306,7 +4306,7 @@ def _customer_profile_payload(email: str) -> dict:
     }
 
 
-def _customer_account_payload(email: str) -> dict:
+def _customer_account_payload(email: str, request=None) -> dict:
     user = User.objects.filter(email__iexact=email).first()
     homeowner = _primary_homeowner_for_email(email)
     profile = _customer_profile_payload(email)
@@ -4324,11 +4324,20 @@ def _customer_account_payload(email: str) -> dict:
         company = None
     rental_operations = rental_operations_subscription_metadata(company)
     rental_operations["checkout_endpoint"] = f"/projects/customer-portal/{_portal_token(email)}/rental-operations/checkout/" if company else ""
+    request_user = getattr(request, "user", None)
+    authenticated_email = _safe_text(getattr(request_user, "email", "")).lower()
+    can_access_contractor_workspace = bool(
+        request_user
+        and getattr(request_user, "is_authenticated", False)
+        and authenticated_email == email.lower().strip()
+        and Contractor.objects.filter(user=request_user).exists()
+    )
     return {
         "email": email,
         "has_user": bool(user),
         "has_usable_password": bool(user and user.has_usable_password()),
         "portal_token": _portal_token(email),
+        "can_access_contractor_workspace": can_access_contractor_workspace,
         "account_type": profile["account_type"],
         "is_property_management_company": is_property_management_company,
         "has_rental_properties": has_rental_properties,

@@ -23,6 +23,14 @@ import propertyManagerWalkthroughPoster from '../assets/product-overview/myhomeb
 import propertyManagerWalkthroughSource from '../assets/product-overview/myhomebro-property-manager-walkthrough.mp4?url';
 import propertyManagerWalkthroughTranscript from '../assets/product-overview/myhomebro-property-manager-walkthrough.txt?no-inline';
 import propertyManagerWalkthroughCaptions from '../assets/product-overview/myhomebro-property-manager-walkthrough.vtt?no-inline';
+import createProfilePoster from '../assets/how-to/myhomebro-create-profile-howto-poster.jpg?url';
+import createProfileSource from '../assets/how-to/myhomebro-create-profile-howto.mp4?url';
+import createProfileTranscript from '../assets/how-to/myhomebro-create-profile-howto.txt?no-inline';
+import createProfileCaptions from '../assets/how-to/myhomebro-create-profile-howto.vtt?no-inline';
+import connectStripePoster from '../assets/how-to/myhomebro-connect-stripe-howto-poster.jpg?url';
+import connectStripeSource from '../assets/how-to/myhomebro-connect-stripe-howto.mp4?url';
+import connectStripeTranscript from '../assets/how-to/myhomebro-connect-stripe-howto.txt?no-inline';
+import connectStripeCaptions from '../assets/how-to/myhomebro-connect-stripe-howto.vtt?no-inline';
 import { PUBLIC_FAQ_ITEMS } from '../lib/publicFaq.js';
 import Modal from './Modal.jsx';
 
@@ -215,7 +223,7 @@ const AUDIENCES = [
   {
     id: 'homeowner',
     icon: Home,
-    title: 'For homeowners',
+    title: 'For customers',
     text: 'Review documents, follow progress, communicate, and keep property records.',
   },
   {
@@ -248,7 +256,8 @@ const AUDIENCE_CTA = {
 // without changing the tour. A video is shown only when both its source and
 // captions are configured; posters and transcripts are optional enhancements.
 const AUDIENCE_VIDEOS = {
-  contractor: {
+  contractor: [{
+    id: 'contractor-overview',
     title: 'From customer request to paid project',
     description:
       'A contractor-focused tour of estimates, agreements, milestones, team coordination, and payments.',
@@ -266,8 +275,31 @@ const AUDIENCE_VIDEOS = {
       import.meta.env.VITE_PRODUCT_TOUR_CONTRACTOR_TRANSCRIPT_URL ||
       contractorWalkthroughTranscript,
     aiNarration: true,
-  },
-  homeowner: {
+  }, {
+    id: 'create-contractor-profile',
+    title: 'Create Your Contractor Profile',
+    description:
+      'Create your account, describe your services, and review your suggested business setup.',
+    duration: 'About 1 minute',
+    source: createProfileSource,
+    poster: createProfilePoster,
+    captions: createProfileCaptions,
+    transcript: createProfileTranscript,
+    aiNarration: true,
+  }, {
+    id: 'connect-stripe-and-get-paid',
+    title: 'Connect Stripe and Get Paid',
+    description:
+      'Securely verify your business and enable eligible payments and payouts.',
+    duration: 'About 1 minute',
+    source: connectStripeSource,
+    poster: connectStripePoster,
+    captions: connectStripeCaptions,
+    transcript: connectStripeTranscript,
+    aiNarration: true,
+  }],
+  homeowner: [{
+    id: 'customer-overview',
     title: 'From project idea to organized closeout',
     description:
       'A homeowner-focused tour of requests, estimates, agreements, progress reviews, payments, and records.',
@@ -285,8 +317,9 @@ const AUDIENCE_VIDEOS = {
       import.meta.env.VITE_PRODUCT_TOUR_HOMEOWNER_TRANSCRIPT_URL ||
       homeownerWalkthroughTranscript,
     aiNarration: true,
-  },
-  property_manager: {
+  }],
+  property_manager: [{
+    id: 'property-manager-overview',
     title: 'From resident request to permanent property record',
     description:
       'A property-management tour of resident intake, manager review, vendor coordination, completion evidence, and lasting maintenance history.',
@@ -304,7 +337,7 @@ const AUDIENCE_VIDEOS = {
       import.meta.env.VITE_PRODUCT_TOUR_PROPERTY_MANAGER_TRANSCRIPT_URL ||
       propertyManagerWalkthroughTranscript,
     aiNarration: true,
-  },
+  }],
 };
 
 const QUICK_ANSWER_IDS = {
@@ -421,11 +454,11 @@ function WorkflowDetail({ step, testId }) {
   );
 }
 
-function VideoCard({ audienceId, video }) {
+function VideoCard({ audienceId, video, primary = false }) {
   const ready = Boolean(video.source && video.captions);
   return (
     <article
-      data-testid={`product-video-${audienceId}`}
+      data-testid={`product-video-${primary ? audienceId : `${audienceId}-${video.id}`}`}
       className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900"
     >
       {ready ? (
@@ -574,7 +607,7 @@ export default function ProductOverviewModal({
   return (
     <Modal
       visible={visible}
-      title="Explore MyHomeBro"
+      title="MyHomeBro Guided Help"
       onClose={onClose}
       testId="product-overview-modal"
       hideHeader
@@ -591,13 +624,13 @@ export default function ProductOverviewModal({
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
-                Product tour
+                Guided Help
               </div>
               <h2
                 id="product-overview-title"
                 className="mt-1 text-xl font-semibold text-white sm:text-2xl"
               >
-                Explore MyHomeBro
+                Choose your role
               </h2>
             </div>
             <button
@@ -822,13 +855,14 @@ export default function ProductOverviewModal({
               className={`mt-5 grid gap-3 ${activeAudience ? 'max-w-2xl' : 'md:grid-cols-3'}`}
             >
               {(activeAudience
-                ? [[activeAudience, AUDIENCE_VIDEOS[activeAudience]]]
-                : Object.entries(AUDIENCE_VIDEOS)
-              ).map(([audienceId, video]) => (
+                ? AUDIENCE_VIDEOS[activeAudience].map((video, index) => ({ audienceId: activeAudience, video, primary: index === 0 }))
+                : Object.entries(AUDIENCE_VIDEOS).flatMap(([audienceId, videos]) => videos.map((video, index) => ({ audienceId, video, primary: index === 0 })))
+              ).map(({ audienceId, video, primary }) => (
                 <VideoCard
-                  key={audienceId}
+                  key={`${audienceId}-${video.id}`}
                   audienceId={audienceId}
                   video={video}
+                  primary={primary}
                 />
               ))}
             </div>

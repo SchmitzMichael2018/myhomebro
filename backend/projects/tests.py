@@ -13219,6 +13219,7 @@ class ContractorWhoAmIReviewQueueCountTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["type"], "contractor")
+        self.assertEqual(payload["available_workspaces"], ["contractor", "customer"])
         self.assertEqual(payload["review_queue_count"], 1)
 
     def test_whoami_includes_team_attention_counts(self):
@@ -13270,6 +13271,7 @@ class ContractorWhoAmIReviewQueueCountTests(TestCase):
         self.assertEqual(payload["type"], "homeowner")
         self.assertEqual(payload["role"], "homeowner")
         self.assertEqual(payload["identity_type"], "homeowner")
+        self.assertEqual(payload["available_workspaces"], ["customer"])
         self.assertEqual(payload["review_queue_count"], 0)
         self.assertEqual(payload["attention_counts"]["total_attention_count"], 0)
 

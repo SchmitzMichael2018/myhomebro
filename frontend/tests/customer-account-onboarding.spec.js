@@ -105,3 +105,24 @@ test("landing page exposes Create Free Account separately from Start a Project",
   await expect(page).toHaveURL(/\/create-account$/);
   await expect(page.getByTestId("customer-account-create-form")).toBeVisible();
 });
+
+test("an existing contractor account is invited to sign in instead of creating a duplicate", async ({ page }) => {
+  await page.route("**/api/accounts/auth/customer-register/", async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ email: ["A MyHomeBro account with this email already exists."] }),
+    });
+  });
+
+  await page.goto("/create-account", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-account-name").fill("Pat Contractor");
+  await page.getByTestId("customer-account-email").fill("pat@example.com");
+  await page.getByTestId("customer-account-password").fill("StrongPass123!");
+  await page.getByTestId("customer-account-password-confirm").fill("StrongPass123!");
+  await page.getByTestId("customer-account-create-submit").click();
+
+  await expect(page.getByTestId("customer-account-signin-form")).toBeVisible();
+  await expect(page.getByTestId("customer-account-signin-email")).toHaveValue("pat@example.com");
+  await expect(page.getByTestId("customer-account-error")).toContainText("no second account is needed");
+});

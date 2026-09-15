@@ -15,6 +15,19 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 });
 
+test("landing page exposes role-based Guided Help", async ({ page }) => {
+  await expect(page.getByTestId("landing-guided-help-link")).toBeVisible();
+  await page.getByTestId("landing-guided-help-link").click();
+  await expect(page.locator("#guided-help")).toBeInViewport();
+
+  const modal = await openOverview(page);
+  await expect(modal.getByRole("tab", { name: "Tour" })).toHaveAttribute("aria-selected", "true");
+  await modal.getByTestId("product-audience-contractor").click();
+  await modal.getByRole("tab", { name: "Videos" }).click();
+  await expect(modal.getByTestId("product-video-contractor-create-contractor-profile")).toContainText("Create Your Contractor Profile");
+  await expect(modal.getByTestId("product-video-contractor-connect-stripe-and-get-paid")).toContainText("Connect Stripe and Get Paid");
+});
+
 test("interactive tour entry opens role selection and restores focus on close", async ({ page }) => {
   const trigger = page.getByTestId("product-overview-trigger");
   const modal = await openOverview(page);
@@ -209,9 +222,9 @@ test("Videos show all role walkthroughs and Quick Answers", async ({ page }) => 
 
   await modal.getByRole("tab", { name: "Videos" }).click();
   await expect(modal.getByTestId("product-video-library")).toBeVisible();
-  await expect(modal.locator('[data-testid^="product-video-"]')).toHaveCount(4);
+  await expect(modal.locator('[data-testid^="product-video-"]')).toHaveCount(6);
   await expect(modal.getByText("Video in preparation")).toHaveCount(0);
-  await expect(modal.locator("video")).toHaveCount(3);
+  await expect(modal.locator("video")).toHaveCount(5);
 
   const contractorVideo = modal.getByTestId("product-video-contractor");
   await expect(contractorVideo.locator("video")).toHaveAttribute(

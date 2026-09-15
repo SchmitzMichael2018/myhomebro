@@ -21,6 +21,7 @@ const portalPayload = {
     email: "customer@example.com",
     has_user: true,
     has_usable_password: true,
+    can_access_contractor_workspace: true,
     portal_token: "customer-token",
     account_type: "individual",
     rental_operations: {
@@ -2282,6 +2283,52 @@ test("customer portal recommended supplies retailer links and actions are isolat
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
 });
 
+test("customer portal lists customer How-To videos", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "customer-portal-token");
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(portalPayload),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await page.getByTestId("customer-dashboard-tab-how-to").click();
+
+  const library = page.getByTestId("guided-video-library-customer");
+  await expect(library).toBeVisible();
+  await expect(library).toContainText("Your Customer Portal Overview");
+  await library.getByRole("button", { name: "Watch video" }).click();
+  await expect(page.getByTestId("guided-video-player")).toBeVisible();
+  await expect(page.getByTestId("guided-video-media")).toHaveAttribute("src", /myhomebro-homeowner-walkthrough/);
+});
+
+test("a contractor can switch from the customer portal back to the contractor workspace", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "dual-role-token");
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(portalPayload),
+    });
+  });
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("customer-dashboard-switch-contractor")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-switch-contractor")).toContainText("Contractor Workspace");
+});
+
 test("customer portal is reachable from the landing page and loads secure records", async ({ page }) => {
   test.setTimeout(60000);
   const consoleErrors = [];
@@ -4512,11 +4559,12 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
   await expect(page.getByTestId("customer-dashboard-header-logout")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-switch-contractor")).toBeVisible();
   await expect(page.getByTestId("customer-portal-create-password-prompt")).not.toBeVisible();
   await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
   await expect(page.getByText("track projects, payments, documents, warranties, and property records in one place.")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText(["Home", "Projects", "Payments", "Property", "Updates"]);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText(["Home", "Projects", "Payments", "Property", "Updates", "How-To"]);
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
@@ -4669,7 +4717,7 @@ test("customer portal is reachable from the landing page and loads secure record
   });
   expect(savedProfilePayload).toMatchObject(profileSavePayload);
   await expect(page.getByRole("heading", { name: "Property Manager Portal" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates"]);
+  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates", "How-To"]);
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("property-management-command-center")).toBeVisible();
   await expect(page.getByTestId("property-management-summary")).toContainText("Open Requests");
@@ -6538,7 +6586,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await page.goto("/portal/empty-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
   await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).getByRole("button")).toHaveCount(5);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).getByRole("button")).toHaveCount(6);
   await expect(page.getByTestId("customer-mobile-primary-action")).toHaveCount(1);
   await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new notifications");
   await expect(page.getByTestId("customer-overview-projects-empty")).toContainText("No active projects yet");
@@ -6632,7 +6680,16 @@ test("property manager portal presents a role-aware operations command center", 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Property Manager Portal" })).toBeVisible();
   await expect(page.getByText("coordinate properties, tenants, maintenance, vendors, approvals, payments, and history in one place.")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates"]);
+  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates", "How-To"]);
+  await page.getByTestId("customer-dashboard-tab-how-to").click();
+  const propertyManagerHowTo = page.getByTestId("guided-video-library-property_manager");
+  await expect(propertyManagerHowTo).toBeVisible();
+  await expect(propertyManagerHowTo).toContainText("Your Property Manager Portal Overview");
+  await propertyManagerHowTo.getByRole("button", { name: "Watch video" }).click();
+  await expect(page.getByTestId("guided-video-player")).toBeVisible();
+  await expect(page.getByTestId("guided-video-media")).toHaveAttribute("src", /myhomebro-property-manager-walkthrough/);
+  await page.getByRole("button", { name: "Close tutorial" }).click();
+  await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("pm-summary-open-requests")).toContainText("1");
   await expect(page.getByTestId("pm-summary-work-orders")).toContainText("1");
   await expect(page.getByTestId("pm-summary-properties")).toContainText("1");

@@ -125,7 +125,17 @@ export default function CustomerAccountOnboardingPage() {
       setLoginForm({ email: accountForm.email.trim().toLowerCase(), password: "" });
       setStep("verify");
     } catch (err) {
-      setError(extractApiErrorMessage(err));
+      const message = extractApiErrorMessage(err);
+      const accountExists =
+        err?.response?.status === 400 &&
+        /account.*email.*already exists|email.*already exists/i.test(String(message || ""));
+      if (accountExists) {
+        setLoginForm({ email: accountForm.email.trim().toLowerCase(), password: "" });
+        setStep("signin");
+        setError("This email already has a MyHomeBro login. Sign in with the same password to add or open your Customer Portal—no second account is needed.");
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -301,6 +311,9 @@ export default function CustomerAccountOnboardingPage() {
 
           {step === "signin" ? (
             <form data-testid="customer-account-signin-form" className="space-y-4" onSubmit={submitLogin}>
+              <div className="rounded-2xl border border-sky-300/28 bg-sky-400/10 p-4 text-sm leading-6 text-sky-50/80">
+                Existing contractors and customers use their current MyHomeBro email and password. We&apos;ll add the Customer Portal to the same login.
+              </div>
               <Field label="Email">
                 <TextInput data-testid="customer-account-signin-email" type="email" value={loginForm.email} onChange={(e) => updateLogin("email", e.target.value)} required autoComplete="email" />
               </Field>

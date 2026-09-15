@@ -3,7 +3,7 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from projects.models import Homeowner
+from projects.models import Contractor, Homeowner
 from projects.services.public_intake_customers import get_or_create_customer_for_public_intake
 
 
@@ -90,6 +90,25 @@ class CustomerAccountRegistrationTests(TestCase):
         self.assertEqual(len(response.data["property_profiles"]), 1)
         self.assertEqual(response.data["property_profiles"][0]["display_name"], "Primary Property")
         self.assertTrue(Homeowner.objects.filter(email__iexact="empty-customer@example.com").exists())
+
+    def test_contractor_login_can_also_create_and_access_customer_portal(self):
+        user = get_user_model().objects.create_user(
+            email="dual-role@example.com",
+            password="StrongPass123!",
+            first_name="Dual",
+            last_name="Role",
+            is_active=True,
+            is_verified=True,
+        )
+        Contractor.objects.create(user=user, business_name="Dual Role Builders")
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get("/api/projects/customer-portal/account/", secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["customer"]["email"], "dual-role@example.com")
+        self.assertTrue(response.data["account"]["can_access_contractor_workspace"])
+        self.assertTrue(Homeowner.objects.filter(email__iexact="dual-role@example.com").exists())
 
     def test_later_public_intake_links_existing_customer_account_by_email(self):
         created = self.client.post(

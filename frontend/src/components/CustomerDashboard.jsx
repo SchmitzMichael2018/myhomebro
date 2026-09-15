@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Bell, Building2, CheckCircle2, Circle, CreditCard, ExternalLink, FolderKanban, Home, LayoutDashboard, LogOut, Pencil, Route, UserRound, Users, Wrench } from "lucide-react";
+import { Bell, Building2, CheckCircle2, Circle, Clapperboard, CreditCard, ExternalLink, FolderKanban, Home, LayoutDashboard, LogOut, Pencil, Route, UserRound, Users, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -11,6 +11,7 @@ import CustomerProjectWorkspace from "./CustomerProjectWorkspace.jsx";
 import CustomerPropertyProfile from "./CustomerPropertyProfile.jsx";
 import CustomerRequests from "./CustomerRequests.jsx";
 import DIYProjectPlanner from "./DIYProjectPlanner.jsx";
+import GuidedVideoLibrary from "../guided-video/GuidedVideoLibrary.jsx";
 
 const PRIMARY_TABS = [
   ["overview", "Home", LayoutDashboard],
@@ -18,6 +19,7 @@ const PRIMARY_TABS = [
   ["payments", "Payments", CreditCard],
   ["property", "Property", Home],
   ["notifications", "Updates", Bell],
+  ["how-to", "How-To", Clapperboard],
 ];
 
 const PROPERTY_MANAGER_PRIMARY_TABS = [
@@ -27,6 +29,7 @@ const PROPERTY_MANAGER_PRIMARY_TABS = [
   ["projects", "Projects", FolderKanban],
   ["payments", "Payments", CreditCard],
   ["notifications", "Updates", Bell],
+  ["how-to", "How-To", Clapperboard],
 ];
 
 const PROJECT_TABS = [
@@ -53,6 +56,7 @@ const VALID_PORTAL_TABS = new Set([
   "payments",
   "notifications",
   "account",
+  "how-to",
 ]);
 
 const MAINTENANCE_TAB = ["maintenance", "Maintenance", Wrench];
@@ -3991,6 +3995,16 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (activeTab === "notifications") {
       return <NotificationsCenter notifications={notifications} unreadCount={unreadCount} preferences={portal?.notification_cleanup_preferences || {}} notificationPreferences={portal?.notification_preferences || {}} markingId={markingNotificationId} archivingId={archivingNotificationId} restoringId={restoringNotificationId} savingPreferences={savingNotificationPreferences} savingNotificationPreferences={savingDeliveryPreferences} preferenceError={notificationPreferenceError} notificationPreferenceError={deliveryPreferenceError} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} onArchive={archiveNotification} onRestore={restoreNotification} onSavePreferences={saveNotificationCleanupPreferences} onSaveNotificationPreferences={saveCustomerNotificationPreferences} onOpenTab={openWorkspaceTab} onOpenReminder={openReminderDetail} />;
     }
+    if (activeTab === "how-to") {
+      return (
+        <GuidedVideoLibrary
+          audience={isPropertyManagementAccount ? "property_manager" : "customer"}
+          eyebrow={isPropertyManagementAccount ? "Property Manager How-To" : "Customer How-To"}
+          title={isPropertyManagementAccount ? "Get comfortable with your property manager portal" : "Get comfortable with your customer portal"}
+          description={isPropertyManagementAccount ? "Learn how to coordinate maintenance, vendors, completion records, and property history." : "Learn how to review project details, follow progress and payments, and keep your records organized."}
+        />
+      );
+    }
     if (activeTab === "account") {
       return (
         <AccountPanel
@@ -4081,6 +4095,17 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
                   <UserRound size={13} />
                   Account
                 </button>
+                {portal?.account?.can_access_contractor_workspace ? (
+                  <button
+                    type="button"
+                    data-testid="customer-dashboard-switch-contractor"
+                    onClick={() => window.location.assign("/app/dashboard")}
+                    className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-100 transition hover:bg-sky-400/20"
+                  >
+                    <Wrench size={13} />
+                    Contractor Workspace
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   data-testid="customer-dashboard-header-logout"
