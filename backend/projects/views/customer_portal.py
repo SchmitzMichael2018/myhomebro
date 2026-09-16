@@ -7211,7 +7211,7 @@ class CustomerPortalVendorContractorSearchView(APIView):
                 | Q(directory_entries__state__icontains=location)
             )
         rows = (
-            Contractor.objects.filter(query)
+            Contractor.objects.filter(query, is_active=True)
             .exclude(business_name="")
             .prefetch_related("skills")
             .distinct()

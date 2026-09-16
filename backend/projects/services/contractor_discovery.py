@@ -518,7 +518,13 @@ def _normalize_project_payload(intake=None, payload: dict[str, Any] | None = Non
 
 
 def _iter_contractors_for_public_profiles():
-    qs = Contractor.objects.select_related("public_profile", "user").prefetch_related("skills")
+    # Deactivated profiles retain their historical projects, agreements, and
+    # payments, but must never be offered to customers as available contractors.
+    qs = (
+        Contractor.objects.filter(is_active=True)
+        .select_related("public_profile", "user")
+        .prefetch_related("skills")
+    )
     for contractor in qs:
         profile = getattr(contractor, "public_profile", None)
         if profile is None:
