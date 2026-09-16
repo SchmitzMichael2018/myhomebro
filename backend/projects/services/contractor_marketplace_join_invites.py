@@ -71,39 +71,41 @@ def _sms_opted_out(phone: str) -> bool:
     return bool(status and not status.is_subscribed)
 
 
-def _email_body(*, invite: ContractorMarketplaceJoinInvite, claim_url: str) -> tuple[str, str, str]:
+def _email_body(*, invite: ContractorMarketplaceJoinInvite, claim_url: str, project_title: str = "") -> tuple[str, str, str]:
     business = invite.invited_business_name or "your business"
-    subject = "Claim your MyHomeBro marketplace profile"
-    text = (
-        f"Hello,\n\n"
-        f"MyHomeBro helps local contractors receive homeowner project opportunities, create structured agreements, "
-        f"and manage milestones, records, and payments in one workflow.\n\n"
-        f"An admin created a marketplace profile for {business}. Claim it here:\n{claim_url}\n\n"
-        "This is a marketplace join invitation, not a project-specific request.\n\n"
-        "If you did not expect this invitation, you can ignore this email.\n\n"
-        "-- MyHomeBro"
+    opportunity_text = (
+        f"A homeowner selected {business} to review a project: {project_title}.\n\n"
+        if project_title else ""
     )
-    html = (
-        "<div style='font-family:Arial,sans-serif;line-height:1.5;color:#0f172a'>"
-        "<h2 style='margin:0 0 12px'>Claim your MyHomeBro marketplace profile</h2>"
-        f"<p>MyHomeBro helps local contractors receive homeowner project opportunities, create structured agreements, "
-        "and manage milestones, records, and payments in one workflow.</p>"
-        f"<p>An admin created a marketplace profile for <strong>{business}</strong>.</p>"
-        f"<p><a href='{claim_url}' style='display:inline-block;background:#0f172a;color:white;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold'>Claim Marketplace Profile</a></p>"
-        "<p style='font-size:13px;color:#475569'>This is a marketplace join invitation, not a project-specific request.</p>"
-        "<p style='font-size:13px;color:#475569'>If you did not expect this invitation, you can ignore this email.</p>"
-        "<p>-- MyHomeBro</p>"
-        "</div>"
-    )
+    subject = "A homeowner selected your business on MyHomeBro" if project_title else "Claim your MyHomeBro marketplace profile"
+    context_text = "Claim your profile to review the opportunity and respond through MyHomeBro." if project_title else "This is a marketplace join invitation, not a project-specific request."
+    text = "".join([
+        "Hello,\n\n",
+        opportunity_text,
+        "MyHomeBro helps local contractors receive homeowner project opportunities, create structured agreements, ",
+        "build a MyHomeBro-powered business website, and manage milestones, records, and payments in one workflow.\n\n",
+        f"A marketplace profile is ready for {business}. Claim it here:\n{claim_url}\n\n",
+        f"{context_text}\n\n",
+        "If you did not expect this invitation, you can ignore this email.\n\n-- MyHomeBro",
+    ])
+    context_html = "Claim your profile to review and respond to this opportunity through MyHomeBro." if project_title else "This is a marketplace join invitation, not a project-specific request."
+    html = "".join([
+        "<div style='font-family:Arial,sans-serif;line-height:1.5;color:#0f172a'>",
+        f"<h2 style='margin:0 0 12px'>{'A homeowner selected your business' if project_title else 'Claim your MyHomeBro marketplace profile'}</h2>",
+        f"<p>A homeowner selected <strong>{business}</strong> to review <strong>{project_title}</strong>.</p>" if project_title else "",
+        "<p>MyHomeBro helps local contractors receive homeowner project opportunities, create structured agreements, build a MyHomeBro-powered business website, and manage milestones, records, and payments in one workflow.</p>",
+        f"<p>A marketplace profile is ready for <strong>{business}</strong>.</p>",
+        f"<p><a href='{claim_url}' style='display:inline-block;background:#0f172a;color:white;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold'>Claim Marketplace Profile</a></p>",
+        f"<p style='font-size:13px;color:#475569'>{context_html}</p>",
+        "<p style='font-size:13px;color:#475569'>If you did not expect this invitation, you can ignore this email.</p><p>-- MyHomeBro</p></div>",
+    ])
     return subject, text, html
 
 
-def _sms_body(*, invite: ContractorMarketplaceJoinInvite, claim_url: str) -> str:
+def _sms_body(*, invite: ContractorMarketplaceJoinInvite, claim_url: str, project_title: str = "") -> str:
     business = invite.invited_business_name or "your business"
-    return (
-        f"MyHomeBro: claim the marketplace profile for {business}: {claim_url} "
-        "Reply STOP to opt out."
-    )[:1500]
+    prefix = f"MyHomeBro: a homeowner selected {business} to review {project_title}. Claim your profile: {claim_url} " if project_title else f"MyHomeBro: claim the marketplace profile for {business}: {claim_url} "
+    return f"{prefix}Reply STOP to opt out."[:1500]
 
 
 def _derive_status(invite: ContractorMarketplaceJoinInvite) -> str:
@@ -153,6 +155,7 @@ def send_marketplace_join_invite(
     request=None,
     preferred_channel: str = "",
     resend: bool = False,
+    project_title: str = "",
 ) -> ContractorMarketplaceJoinInvite:
     if entry.claimed:
         raise ValueError("This contractor profile is already claimed.")
@@ -199,7 +202,7 @@ def send_marketplace_join_invite(
 
     if wants_email:
         if invite.email:
-            subject, text, html = _email_body(invite=invite, claim_url=claim_url)
+            subject, text, html = _email_body(invite=invite, claim_url=claim_url, project_title=_safe_text(project_title))
             ok, message = send_postmark_email(to_email=invite.email, subject=subject, text_body=text, html_body=html)
             invite.email_status = "sent" if ok else "failed"
             invite.email_error = "" if ok else message
@@ -227,7 +230,7 @@ def send_marketplace_join_invite(
             invite.sms_status = "suppressed"
             invite.sms_error = "Marketplace join invite SMS is disabled."
         else:
-            ok, message = send_twilio_sms(to_phone=invite.phone, body=_sms_body(invite=invite, claim_url=claim_url))
+            ok, message = send_twilio_sms(to_phone=invite.phone, body=_sms_body(invite=invite, claim_url=claim_url, project_title=_safe_text(project_title)))
             invite.sms_status = "sent" if ok else "failed"
             invite.sms_error = "" if ok else message
             ContractorDirectoryOutreachLog.objects.create(

@@ -155,6 +155,7 @@ class PublicIntakeContractorSearchView(APIView):
             return error
 
         query = _safe_text(request.query_params.get("query"))
+        manual_search = _safe_text(request.query_params.get("search_mode")).lower() == "manual"
         latitude = request.query_params.get("lat")
         longitude = request.query_params.get("lng")
         radius_miles = request.query_params.get("radius_miles")
@@ -187,6 +188,7 @@ class PublicIntakeContractorSearchView(APIView):
             intake=intake,
             payload=project_context,
             query=query,
+            manual_search=manual_search,
             latitude=latitude,
             longitude=longitude,
             radius_miles=radius_miles,

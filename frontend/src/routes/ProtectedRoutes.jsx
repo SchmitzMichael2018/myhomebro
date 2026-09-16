@@ -84,6 +84,7 @@ const GuidedOnboardingPage = lazy(() => import("../pages/GuidedOnboardingPage.js
 const SupportTicketsPage = lazy(() => import("../pages/SupportTicketsPage.jsx"));
 const NotificationsPage = lazy(() => import("../pages/NotificationsPage.jsx"));
 const WarrantyDashboardPage = lazy(() => import("../pages/WarrantyDashboardPage.jsx"));
+const ReferralDashboardPage = lazy(() => import("../pages/ReferralDashboardPage.jsx"));
 const CaptureInboxPage = lazy(() => import("../pages/CaptureInboxPage.jsx"));
 const CaptureDetailPage = lazy(() => import("../pages/CaptureDetailPage.jsx"));
 const CaptureQrManagementPage = lazy(() => import("../pages/CaptureQrManagementPage.jsx"));
@@ -144,6 +145,7 @@ export function protectedRoutes() {
         <Route index element={<AppHomeRedirect />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="guided-onboarding" element={<GuidedOnboardingPage />} />
+        <Route path="referrals" element={<ReferralDashboardPage />} />
 
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>

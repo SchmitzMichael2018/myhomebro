@@ -37,6 +37,7 @@ const NAV_HINTS = {
   "/app/dashboard": "See what needs attention and what to do next",
   "/app/assistant": "Start new work with Project Assistant guidance across agreements, templates, leads, and setup",
   "/app/business": "View revenue, activity, and business performance",
+  "/app/referrals": "Share your personal contractor referral link and track eligible rewards",
   "/app/team": "Manage employees, subcontractors, roles, capabilities, and organization health",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
@@ -357,6 +358,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
         <Item to={`${APP_BASE}/marketing`} label="Marketing" icon={Globe} />
+        <Item to={`${APP_BASE}/referrals`} label="Referrals" icon={Users} />
         <Item to={`${APP_BASE}/payments`} label="Payments" icon={CreditCard} />
         <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
         <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
@@ -630,6 +632,7 @@ export default function Sidebar({ variant = "desktop" }) {
             <NavGroup label="Tools" className="pt-1">
               <Item to="/portal" label="Customer Portal" icon={Home} />
               <Item to={`${APP_BASE}/marketing`} label="Marketing" icon={Globe} />
+              <Item to={`${APP_BASE}/referrals`} label="Referrals" icon={Users} />
               <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
               <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
               <Item to={`${APP_BASE}/guided-onboarding`} label="Guided Help" icon={BookOpen} />

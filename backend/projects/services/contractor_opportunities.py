@@ -134,6 +134,26 @@ def _entry_from_contractor(contractor: Contractor) -> ContractorDirectoryEntry:
 
 
 def resolve_directory_entry_from_selection(selection: dict[str, Any]) -> ContractorDirectoryEntry | None:
+    if _safe_text(selection.get("source")) == ContractorDirectoryEntry.SOURCE_MANUAL:
+        business_name = _safe_text(selection.get("business_name") or selection.get("name"))
+        phone = _safe_text(selection.get("phone") or selection.get("phone_number"))
+        email = _safe_text(selection.get("email") or selection.get("public_email"))
+        if not business_name or not (phone or email):
+            raise ValueError("Enter the contractor name and either a phone number or email address.")
+        manual_payload = {
+            **selection,
+            "id": "",
+            "google_place_id": "",
+            "business_name": business_name,
+            "phone": phone,
+            "public_email": email,
+            "source": ContractorDirectoryEntry.SOURCE_MANUAL,
+        }
+        return upsert_directory_entry_from_place(
+            manual_payload,
+            context={"source_type": ContractorDirectoryDiscovery.SOURCE_PUBLIC_INTAKE},
+        )
+
     directory_entry_id = _safe_text(selection.get("directory_entry_id"))
     if directory_entry_id.isdigit():
         entry = ContractorDirectoryEntry.objects.filter(pk=int(directory_entry_id)).first()

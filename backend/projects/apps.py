@@ -23,3 +23,8 @@ class ProjectsConfig(AppConfig):
             import projects.models_support  # noqa
         except Exception:
             pass
+
+        try:
+            import projects.signals_referrals  # noqa
+        except Exception:
+            pass

@@ -43,6 +43,13 @@ def _safe_text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+def _business_name_matches_query(name: Any, query: Any) -> bool:
+    normalize = lambda value: " ".join(re.findall(r"[a-z0-9]+", _safe_text(value).lower()))
+    name_text = normalize(name)
+    query_words = [word for word in normalize(query).split() if word not in {"llc", "inc", "corp", "company", "co"}]
+    return bool(name_text and query_words and all(word in name_text for word in query_words))
+
+
 def _has_value(value: Any) -> bool:
     return value not in (None, "", [])
 
@@ -991,6 +998,7 @@ def build_contractor_recommendations(
     longitude: Any = None,
     radius_miles: Any = None,
     limit: int = 40,
+    manual_search: bool = False,
 ) -> dict[str, Any]:
     project = _normalize_project_payload(intake=intake, payload=payload)
     normalized_classification = normalize_project_classification(
@@ -1009,7 +1017,8 @@ def build_contractor_recommendations(
         description=project.get("description"),
         project_scope_summary=project.get("project_scope_summary"),
     )
-    search_query = _sanitize_search_query_for_project(search_query, project)
+    if not manual_search:
+        search_query = _sanitize_search_query_for_project(search_query, project)
     project["contractor_search_query"] = search_query
     try:
         requested_radius = int(float(radius_miles or 25))
@@ -1093,7 +1102,9 @@ def build_contractor_recommendations(
 
     for contractor, profile in _iter_contractors_for_public_profiles():
         card = _build_card_from_contractors(contractor, profile, project)
-        if trade_intent and int(card.get("compatibility_score", 0) or 0) <= 0:
+        if manual_search and not _business_name_matches_query(card.get("business_name"), search_query):
+            continue
+        if not manual_search and trade_intent and int(card.get("compatibility_score", 0) or 0) <= 0:
             continue
         if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
             continue
@@ -1107,7 +1118,9 @@ def build_contractor_recommendations(
 
     for listing in ContractorDirectoryListing.objects.all().order_by("-claimed_profile", "-google_review_count", "-google_rating", "business_name")[:100]:
         card = _build_card_from_listing(listing, project)
-        if card.get("recommendation_tier") == "Excluded":
+        if manual_search and not _business_name_matches_query(card.get("business_name"), search_query):
+            continue
+        if not manual_search and card.get("recommendation_tier") == "Excluded":
             continue
         if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
             continue
@@ -1116,7 +1129,7 @@ def build_contractor_recommendations(
         if card.get("distance_miles") is not None and float(card.get("distance_miles")) > radius:
             continue
         # Filter unclaimed cached listings by trade relevance to the search query.
-        if not card.get("claimed") and _search_stems:
+        if not manual_search and not card.get("claimed") and _search_stems:
             _trade_text = " ".join([
                 _safe_text(listing.primary_trade).replace("_", " "),
                 " ".join(listing.trade_categories or []).replace("_", " "),
@@ -1144,7 +1157,7 @@ def build_contractor_recommendations(
         enforce_radius=True,
     )
     google_diag = google_search.get("diagnostic") or {}
-    if not google_search.get("results") and int(google_diag.get("google_raw_count") or 0) <= 0:
+    if not manual_search and not google_search.get("results") and int(google_diag.get("google_raw_count") or 0) <= 0:
         attempted_queries = {_safe_text(search_query).lower()}
         retried = False
         for fallback_query in _broader_contractor_queries(search_query):
@@ -1196,7 +1209,7 @@ def build_contractor_recommendations(
         if listing is None:
             continue
         card = _build_card_from_listing(listing, project)
-        if card.get("recommendation_tier") == "Excluded":
+        if not manual_search and card.get("recommendation_tier") == "Excluded":
             continue
         if card.get("distance_miles") is None or float(card.get("distance_miles")) > radius:
             continue

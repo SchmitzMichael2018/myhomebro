@@ -34,6 +34,13 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
       return "";
     }
   }, [location.search]);
+  const referralCode = useMemo(() => {
+    try {
+      return (new URLSearchParams(location.search || "").get("ref") || "").trim().toUpperCase();
+    } catch {
+      return "";
+    }
+  }, [location.search]);
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -92,6 +99,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         phone_number: form.phone,
+        referral_code: referralCode,
       };
 
       const { data, __used_url } = await registerContractor(payload);
@@ -123,6 +131,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
       const msg =
         err2?.response?.data?.detail ||
         err2?.response?.data?.email ||
+        err2?.response?.data?.referral_code ||
         (Array.isArray(err2?.response?.data?.password) ? err2.response.data.password[0] : null) ||
         err2?.message ||
         "Registration failed.";
@@ -143,6 +152,11 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
       {subcontractorInviteToken ? (
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
           Create your account with the invited email address to continue to the subcontractor invitation.
+        </div>
+      ) : null}
+      {referralCode ? (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-testid="referral-signup-banner">
+          Your contractor referral has been recognized. Rewards begin only after eligibility and a qualifying paid project.
         </div>
       ) : null}
 

@@ -149,62 +149,53 @@ export default function EmployeeMilestones() {
         ))}
       </div>
 
-      <div className="mhb-operational-inner mt-4 rounded-2xl border">
+      <div className="mhb-operational-inner mt-4 overflow-hidden rounded-2xl border">
         <div className="px-4 py-3 border-b border-slate-200 text-sm text-slate-600">
           {loading ? "Loading…" : `${filtered.length} milestone(s)`}
         </div>
 
-        <div className="divide-y divide-slate-200 md:hidden">
-          {!loading && filtered.length === 0 ? (
-            <div className="px-4 py-10 text-center text-slate-500">No milestones found.</div>
-          ) : (
-            filtered.map((m) => {
-              const due = (m.completion_date || m.due_date || m.start_date || "—").toString().slice(0, 10);
-              const agNo = m.agreement_number || m.agreement_id || "—";
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setActiveId(m.id)}
-                  className="block w-full px-4 py-4 text-left transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300"
-                  data-testid={`employee-milestone-card-${m.id}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 text-base font-bold text-slate-900">{m.title || `Milestone #${m.id}`}</div>
-                    <span className="shrink-0 rounded-full border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                      {m.completed ? "Completed" : "Assigned"}
-                    </span>
+        {!loading && filtered.length === 0 ? (
+          <div className="px-4 py-10 text-center text-slate-500">No milestones found.</div>
+        ) : null}
+
+        <div className="divide-y divide-slate-200 md:hidden" data-testid="employee-milestones-mobile-list">
+          {filtered.map((m) => {
+            const due = (m.completion_date || m.due_date || m.start_date || "—").toString().slice(0, 10);
+            const agNo = m.agreement_number || m.agreement_id || "—";
+            const status = m.completed ? "Completed" : "Assigned";
+
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setActiveId(m.id)}
+                className="block w-full px-4 py-4 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
+                data-testid={`employee-milestone-mobile-card-${m.id}`}
+                aria-label={`Open milestone ${m.title || `#${m.id}`} for agreement #${agNo}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="break-words font-semibold text-slate-900">{m.title || `Milestone #${m.id}`}</div>
+                    <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Agreement #{agNo}</div>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project</div>
-                      <div className="mt-0.5 text-slate-800">{m.project_title || `Agreement #${agNo}`}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due</div>
-                      <div className="mt-0.5 text-slate-800">{due}</div>
-                    </div>
-                    {m.customer_name ? (
-                      <div className="col-span-2">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer</div>
-                        <div className="mt-0.5 text-slate-800">{m.customer_name}</div>
-                      </div>
-                    ) : null}
-                    {m.project_address ? (
-                      <div className="col-span-2">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Jobsite</div>
-                        <div className="mt-0.5 break-words text-slate-800">{m.project_address}</div>
-                      </div>
-                    ) : null}
-                  </div>
-                  {m.is_late && !m.completed ? (
-                    <div className="mt-3 text-xs font-semibold text-red-700">Past due</div>
-                  ) : null}
-                  <div className="mt-4 text-sm font-bold text-blue-700">Open milestone →</div>
-                </button>
-              );
-            })
-          )}
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${m.completed ? "bg-emerald-100 text-emerald-800" : "bg-sky-100 text-sky-800"}`}>
+                    {status}
+                  </span>
+                </div>
+                {m.is_late && !m.completed ? (
+                  <div className="mt-2 inline-flex rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Late</div>
+                ) : null}
+                <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                  <dt className="font-medium text-slate-500">Project</dt>
+                  <dd className="min-w-0 break-words text-slate-800">{m.project_title || "—"}</dd>
+                  {m.customer_name ? <><dt className="font-medium text-slate-500">Customer</dt><dd className="min-w-0 break-words text-slate-800">{m.customer_name}</dd></> : null}
+                  {m.project_address ? <><dt className="font-medium text-slate-500">Location</dt><dd className="min-w-0 break-words text-slate-800">{m.project_address}</dd></> : null}
+                  <dt className="font-medium text-slate-500">Due</dt>
+                  <dd className="text-slate-800">{due}</dd>
+                </dl>
+              </button>
+            );
+          })}
         </div>
 
         <div className="hidden overflow-x-auto md:block">
@@ -228,14 +219,7 @@ export default function EmployeeMilestones() {
           </thead>
 
           <tbody>
-            {!loading && filtered.length === 0 ? (
-              <tr>
-                <td colSpan={showContextCols ? 7 : 4} className="px-4 py-10 text-center text-slate-500">
-                  No milestones found.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((m) => {
+            {filtered.map((m) => {
                 const due = (m.completion_date || m.due_date || m.start_date || "—").toString().slice(0, 10);
                 const agNo = m.agreement_number || m.agreement_id || "—";
 
@@ -269,8 +253,7 @@ export default function EmployeeMilestones() {
                     <td className="px-4 py-3">{due}</td>
                   </tr>
                 );
-              })
-            )}
+              })}
           </tbody>
         </table>
         </div>

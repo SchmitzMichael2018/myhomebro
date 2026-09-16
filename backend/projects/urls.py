@@ -21,6 +21,7 @@ from .views.milestone import (
     MilestoneCommentViewSet,
 )
 from .views.homeowner import HomeownerViewSet, customer_records
+from .views.referrals import ReferralDashboardView
 from .views.project import ProjectViewSet
 from .views.diy_planner import (
     DIYAIProposalApplyView,
@@ -578,6 +579,7 @@ agreements_router.register(
 )
 
 urlpatterns = [
+    path("referrals/dashboard/", ReferralDashboardView.as_view(), name="referral-dashboard"),
     path("customer-portal/<str:token>/diy-projects/", DIYProjectListCreateView.as_view(), name="customer-diy-projects"),
     path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/", DIYProjectDetailView.as_view(), name="customer-diy-project-detail"),
     path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/phases/", DIYPhaseListCreateView.as_view(), name="customer-diy-phase-create"),

@@ -199,10 +199,13 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(
         write_only=True, required=False, allow_blank=True, default=""
     )
+    referral_code = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, default="", max_length=20
+    )
 
     class Meta:
         model = User
-        fields = ("email", "password", "first_name", "last_name", "phone_number")
+        fields = ("email", "password", "first_name", "last_name", "phone_number", "referral_code")
         extra_kwargs = {"email": {"required": True}}
 
     def validate(self, attrs):
@@ -219,6 +222,7 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         phone = validated_data.pop("phone_number", "").strip()
+        referral_code = validated_data.pop("referral_code", "").strip()
         email = validated_data.get("email")
 
         try:
@@ -244,7 +248,13 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
                 create_kwargs = {"user": user}
                 if hasattr(Contractor, "phone"):
                     create_kwargs["phone"] = phone
-                Contractor.objects.create(**create_kwargs)
+                contractor = Contractor.objects.create(**create_kwargs)
+                if referral_code:
+                    from projects.services.referrals import attribute_contractor_registration
+                    try:
+                        attribute_contractor_registration(contractor=contractor, referral_code=referral_code)
+                    except ValueError as exc:
+                        raise serializers.ValidationError({"referral_code": [str(exc)]}) from exc
 
         except IntegrityError:
             raise serializers.ValidationError(

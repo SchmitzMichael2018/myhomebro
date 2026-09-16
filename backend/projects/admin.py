@@ -1958,3 +1958,79 @@ if DisputeAIArtifact is not None:
         def input_digest_short(self, obj):
             d = getattr(obj, "input_digest", "") or ""
             return d[:10] + ("…" if len(d) > 10 else "")
+
+
+# Referral rewards are reviewed and paid by operations; no automatic money movement.
+from .models_referrals import (  # noqa: E402
+    ContractorReferral,
+    FoundingContractorAward,
+    ReferralEarning,
+    ReferralInvitation,
+    ReferralParticipant,
+    ReferralPayout,
+)
+
+
+@admin.register(ReferralParticipant)
+class ReferralParticipantAdmin(admin.ModelAdmin):
+    list_display = ("user", "code", "is_eligible", "created_at")
+    list_filter = ("is_eligible",)
+    search_fields = ("user__email", "code")
+    readonly_fields = ("code", "created_at", "updated_at")
+
+
+@admin.register(FoundingContractorAward)
+class FoundingContractorAwardAdmin(admin.ModelAdmin):
+    list_display = ("contractor", "slot_number", "status", "qualification_deadline", "promotion_ends_at")
+    list_filter = ("status",)
+    search_fields = ("contractor__business_name", "contractor__user__email")
+
+
+@admin.register(ContractorReferral)
+class ContractorReferralAdmin(admin.ModelAdmin):
+    list_display = ("referred_contractor", "referrer", "status", "program_code", "registered_at", "earning_ends_at")
+    list_filter = ("status", "program_code")
+    search_fields = ("referred_contractor__business_name", "referred_contractor__user__email", "referrer__email")
+    readonly_fields = ("referrer", "participant", "referred_contractor", "attributed_code", "registered_at")
+
+
+@admin.register(ReferralEarning)
+class ReferralEarningAdmin(admin.ModelAdmin):
+    list_display = ("referral", "receipt", "qualifying_platform_fee_cents", "reward_cents", "status", "available_at")
+    list_filter = ("status",)
+    readonly_fields = ("referral", "receipt", "qualifying_platform_fee_cents", "reward_rate_bps", "reward_cents", "created_at")
+
+
+@admin.register(ReferralPayout)
+class ReferralPayoutAdmin(admin.ModelAdmin):
+    list_display = ("participant", "amount_cents", "payout_method", "status", "stripe_transfer_id", "paid_at")
+    list_filter = ("status", "payout_method")
+    readonly_fields = ("stripe_transfer_id", "paid_at", "approved_by", "approved_at", "created_at", "updated_at")
+    actions = ("execute_contractor_stripe_payouts",)
+
+    @admin.action(description="Execute selected contractor Stripe referral payouts")
+    def execute_contractor_stripe_payouts(self, request, queryset):
+        from .services.referral_payouts import execute_contractor_referral_payout
+
+        paid = 0
+        failed = []
+        for payout_id in queryset.values_list("id", flat=True):
+            try:
+                payout = execute_contractor_referral_payout(payout_id, approved_by=request.user)
+                if payout.status == ReferralPayout.STATUS_PAID:
+                    paid += 1
+                else:
+                    failed.append(f"#{payout_id}: {payout.failure_reason or 'Stripe transfer failed'}")
+            except Exception as exc:
+                failed.append(f"#{payout_id}: {exc}")
+        if paid:
+            self.message_user(request, f"Executed {paid} contractor referral payout(s).", level=messages.SUCCESS)
+        if failed:
+            self.message_user(request, " | ".join(failed), level=messages.ERROR)
+
+
+@admin.register(ReferralInvitation)
+class ReferralInvitationAdmin(admin.ModelAdmin):
+    list_display = ("participant", "channel", "created_at")
+    list_filter = ("channel",)
+    readonly_fields = ("participant", "channel", "created_at")

@@ -514,6 +514,7 @@ test("public intake contractor search supports explicit specialty search from pr
 }) => {
   const requestedQueries = [];
   const requestedRadii = [];
+  const requestedSearchModes = [];
 
   await page.route("**/api/projects/public-intake/**", async (route) => {
     const requestUrl = route.request().url();
@@ -539,6 +540,7 @@ test("public intake contractor search supports explicit specialty search from pr
       const requestedRadius = url.searchParams.get("radius_miles") || "25";
       requestedQueries.push(url.searchParams.get("query") || "");
       requestedRadii.push(requestedRadius);
+      requestedSearchModes.push(url.searchParams.get("search_mode") || "");
       if (requestedRadius === "5") {
         await route.fulfill({
           status: 200,
@@ -745,6 +747,7 @@ test("public intake contractor search supports explicit specialty search from pr
   await expect(page.getByTestId("public-intake-contractor-card-listing:111")).toBeVisible();
   await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-12 of 12 contractors");
   expect(requestedQueries).toContain("kitchen remodeling contractor");
+  expect(requestedSearchModes).toContain("manual");
   expect(requestedRadii).toContain("25");
 
   await page.getByTestId("public-intake-contractor-radius-select").selectOption("5");

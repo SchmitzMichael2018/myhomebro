@@ -260,6 +260,7 @@ export default function ContractorDiscoveryStep({
   const [summary, setSummary] = useState(null);
   const [userSearchInput, setUserSearchInput] = useState("");
   const [submittedSearchQuery, setSubmittedSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState("project");
   const [hasUserEditedSearch, setHasUserEditedSearch] = useState(false);
   const [searchInitKey, setSearchInitKey] = useState("");
   const [radiusMiles, setRadiusMiles] = useState("25");
@@ -327,6 +328,7 @@ export default function ContractorDiscoveryStep({
 
     setUserSearchInput("");
     setSubmittedSearchQuery(suggestedSearchQuery);
+    setSearchMode("project");
     setHasUserEditedSearch(false);
     setSearchInitKey(projectSearchKey);
   }, [active, token, suggestedSearchQuery, projectSearchKey, searchInitKey]);
@@ -350,6 +352,7 @@ export default function ContractorDiscoveryStep({
           params: {
             token,
             query: searchTerm,
+            search_mode: searchMode,
             project_title: safeText(form?.ai_project_title) || undefined,
             project_type: safeText(form?.ai_project_type) || undefined,
             project_subtype: safeText(form?.ai_project_subtype) || undefined,
@@ -415,6 +418,7 @@ export default function ContractorDiscoveryStep({
     form?.customer_state,
     form?.customer_postal_code,
     submittedSearchQuery,
+    searchMode,
     radiusMiles,
   ]);
 
@@ -425,12 +429,14 @@ export default function ContractorDiscoveryStep({
       return;
     }
     setSubmittedSearchQuery(nextQuery);
+    setSearchMode("manual");
   }
 
   function handleUseSuggestedSearch() {
     if (!suggestedSearchQuery) return;
     setUserSearchInput("");
     setSubmittedSearchQuery(suggestedSearchQuery);
+    setSearchMode("project");
     setHasUserEditedSearch(false);
     setSearchInitKey(projectSearchKey);
   }
@@ -497,8 +503,12 @@ export default function ContractorDiscoveryStep({
       </div>
 
       <div className={matchPanelClass} data-testid="public-intake-contractor-match-label">
-        <div className={`text-sm font-semibold ${portalMode ? "text-amber-50" : "text-indigo-950"}`}>Showing contractors that match your project</div>
-        <div className={`mt-1 text-sm ${portalMode ? "text-amber-100/80" : "text-indigo-900/80"}`}>{friendlyMatchLabel}</div>
+        <div className={`text-sm font-semibold ${portalMode ? "text-amber-50" : "text-indigo-950"}`}>
+          {searchMode === "manual" ? "Showing contractors matching your search" : "Showing contractors that match your project"}
+        </div>
+        <div className={`mt-1 text-sm ${portalMode ? "text-amber-100/80" : "text-indigo-900/80"}`}>
+          {searchMode === "manual" ? submittedSearchQuery : friendlyMatchLabel}
+        </div>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -704,7 +714,20 @@ export default function ContractorDiscoveryStep({
           })
         ) : (
           <div className={portalMode ? "rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-6 text-sm text-slate-300 lg:col-span-2" : "rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 lg:col-span-2"}>
-            {emptyStateMessage(summary, radiusMiles)}
+            <div>{emptyStateMessage(summary, radiusMiles)}</div>
+            {searchMode === "manual" && submittedSearchQuery ? (
+              <div className="mt-4">
+                <p className="text-sm">Some real businesses only appear on Yelp, Nextdoor, or other local directories and may not have a Google Places listing.</p>
+                <button
+                  type="button"
+                  onClick={() => onSkipToManual?.(submittedSearchQuery)}
+                  data-testid="public-intake-add-searched-contractor-manually"
+                  className={portalMode ? "mt-3 rounded-full border border-sky-300/40 bg-slate-900 px-4 py-2 font-semibold text-sky-100" : "mt-3 rounded-full border border-indigo-200 bg-white px-4 py-2 font-semibold text-indigo-700"}
+                >
+                  Add {submittedSearchQuery} manually
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
@@ -753,7 +776,7 @@ export default function ContractorDiscoveryStep({
         </div>
         <button
           type="button"
-          onClick={onSkipToManual}
+          onClick={() => onSkipToManual?.("")}
           data-testid="public-intake-skip-to-manual-contractor"
           className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
         >

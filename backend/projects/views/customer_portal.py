@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import re
 import secrets
 from io import BytesIO
@@ -28,6 +29,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from receipts.models import Receipt
+
+logger = logging.getLogger(__name__)
 from projects.models import (
     Agreement,
     AgreementFundingLink,
@@ -6326,7 +6329,22 @@ class CustomerPortalRequestContractorSelectView(APIView):
                 estimate_result, estimate_status = create_customer_estimate_request_for_opportunity(opportunity, estimate_request)
                 if estimate_status >= 400:
                     return Response(estimate_result, status=estimate_status)
-            created.append({"opportunity_id": opportunity.id, "status": opportunity.status})
+            created_row = {"opportunity_id": opportunity.id, "status": opportunity.status}
+            directory_entry = opportunity.directory_entry
+            if not directory_entry.claimed and (directory_entry.public_email or directory_entry.phone):
+                from projects.services.contractor_marketplace_join_invites import send_marketplace_join_invite
+                try:
+                    join_invite = send_marketplace_join_invite(
+                        entry=directory_entry,
+                        request=request,
+                        project_title=customer_request.title,
+                    )
+                    created_row["onboarding_invite_status"] = join_invite.status
+                    created_row["claim_url"] = join_invite.claim_url_path
+                except Exception:
+                    logger.exception("Could not send marketplace onboarding invite for directory_entry_id=%s", directory_entry.id)
+                    created_row["onboarding_invite_status"] = "failed"
+            created.append(created_row)
         source_intake.post_submit_flow = "multi_contractor" if len(created) > 1 else "single_contractor"
         source_intake.post_submit_flow_selected_at = source_intake.post_submit_flow_selected_at or timezone.now()
         source_intake.save(update_fields=["post_submit_flow", "post_submit_flow_selected_at", "updated_at"])

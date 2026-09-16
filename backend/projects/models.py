@@ -3354,6 +3354,14 @@ class MilestoneCollaboratorAssignment(models.Model):
 
 
 # ensure related models are registered
+from .models_referrals import (  # noqa: E402,F401
+    ContractorReferral,
+    FoundingContractorAward,
+    ReferralEarning,
+    ReferralInvitation,
+    ReferralParticipant,
+    ReferralPayout,
+)
 from .models_attachments import AgreementAttachment, ExpenseRequestAttachment  # noqa: E402,F401
 from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401
 from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401

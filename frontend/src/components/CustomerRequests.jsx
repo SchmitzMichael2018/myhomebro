@@ -1859,6 +1859,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
   const [editingRequest, setEditingRequest] = useState(null);
   const [contractorSearchRequest, setContractorSearchRequest] = useState(null);
   const [selectedContractors, setSelectedContractors] = useState([]);
+  const [manualContractor, setManualContractor] = useState(null);
   const [estimatePreferences, setEstimatePreferences] = useState({});
   const [routingContractors, setRoutingContractors] = useState(false);
   const [contractorSearchLoading, setContractorSearchLoading] = useState(false);
@@ -2191,6 +2192,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
   const closeContractorSearch = () => {
     setContractorSearchRequest(null);
     setSelectedContractors([]);
+    setManualContractor(null);
     setEstimatePreferences({});
     setContractorSearchError("");
     setContractorSearchLoading(false);
@@ -2201,6 +2203,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
     setSelectedRequest(null);
     setEditingRequest(null);
     setSelectedContractors([]);
+    setManualContractor(null);
     setEstimatePreferences({});
     setContractorSearchError("");
     setContractorSearchRequest({
@@ -2869,10 +2872,47 @@ I need help installing shelves and patching drywall.`}
                     Preparing contractor matches for this request...
                   </div>
                 ) : contractorSearchRequest.source_intake_token ? (
-                  <ContractorDiscoveryStep token={contractorSearchRequest.source_intake_token} form={discoveryFormForRequest(contractorSearchRequest)} active variant="portal" selectedTargets={selectedContractors} setSelectedTargets={setSelectedContractors} onSkipToManual={() => setSelectedContractors([])} />
+                  <ContractorDiscoveryStep token={contractorSearchRequest.source_intake_token} form={discoveryFormForRequest(contractorSearchRequest)} active variant="portal" selectedTargets={selectedContractors} setSelectedTargets={setSelectedContractors} onSkipToManual={(name = "") => setManualContractor({ name, phone: "", email: "" })} />
                 ) : (
                   <EmptyState title="Contractor search is not ready yet">Save this request and try again. We need a request record before showing contractor matches.</EmptyState>
                 )}
+                {manualContractor ? (
+                  <div className="rounded-2xl border border-amber-300/35 bg-amber-300/10 p-4" data-testid="customer-request-manual-contractor-form">
+                    <div className="font-bold text-amber-50">Add a contractor from another directory</div>
+                    <p className="mt-1 text-sm text-amber-100/80">Use a public phone number or email from Yelp, Nextdoor, a business card, or another trusted source. MyHomeBro will send this project opportunity and invite the contractor to claim their profile, create their MyHomeBro website, and build their public presence.</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <input value={manualContractor.name} onChange={(event) => setManualContractor((current) => ({ ...current, name: event.target.value }))} placeholder="Business name" className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-white" data-testid="customer-request-manual-contractor-name" />
+                      <input value={manualContractor.phone} onChange={(event) => setManualContractor((current) => ({ ...current, phone: event.target.value }))} placeholder="Public phone" className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-white" data-testid="customer-request-manual-contractor-phone" />
+                      <input type="email" value={manualContractor.email} onChange={(event) => setManualContractor((current) => ({ ...current, email: event.target.value }))} placeholder="Public email" className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-white" data-testid="customer-request-manual-contractor-email" />
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={!manualContractor.name.trim() || (!manualContractor.phone.trim() && !manualContractor.email.trim())}
+                        onClick={() => {
+                          const manualSelection = {
+                            id: `manual:${manualContractor.name.trim().toLowerCase()}`,
+                            source: "manual",
+                            business_name: manualContractor.name.trim(),
+                            phone: manualContractor.phone.trim(),
+                            email: manualContractor.email.trim(),
+                            city: contractorSearchRequest.city || contractorSearchRequest.project_city || "",
+                            state: contractorSearchRequest.state || contractorSearchRequest.project_state || "",
+                            postal_code: contractorSearchRequest.postal_code || contractorSearchRequest.project_postal_code || "",
+                            primary_trade: contractorSearchRequest.project_type || contractorSearchRequest.project_category || "",
+                          };
+                          setSelectedContractors((current) => [...current.filter((item) => item.source !== "manual"), manualSelection]);
+                          setManualContractor(null);
+                        }}
+                        className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 disabled:opacity-50"
+                        data-testid="customer-request-add-manual-contractor"
+                      >
+                        Add to this request
+                      </button>
+                      <button type="button" onClick={() => setManualContractor(null)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200">Cancel</button>
+                    </div>
+                  </div>
+                ) : null}
                 {selectedContractors.some((contractor) => contractor?.contractor_id) ? <EstimateSlotPicker contractors={selectedContractors} preferences={estimatePreferences} onChange={setEstimatePreferences} variant="portal" testId="customer-portal-estimate-slot-picker" /> : null}
                 <div className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-slate-300">{selectedContractors.length ? `${selectedContractors.length} contractor${selectedContractors.length === 1 ? "" : "s"} selected for review.` : "Choose contractor cards above before sending this request."}</div>
