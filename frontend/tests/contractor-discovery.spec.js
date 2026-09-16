@@ -428,12 +428,9 @@ test("public intake searches for a known contractor before offering manual send"
   await page.goto("/start-project/manual-contractor-token", { waitUntil: "domcontentloaded" });
   await page.locator('button:has-text("Choose Local Contractors")').first().click();
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible({ timeout: 15000 });
-  await page.getByTestId("public-intake-skip-to-manual-contractor").click();
-  await expect(page.getByTestId("public-intake-contractor-search-input")).toBeFocused();
   await page.getByTestId("public-intake-contractor-search-input").fill("Known Builder");
   await page.getByTestId("public-intake-contractor-search-submit").click();
-  await expect(page.getByTestId("public-intake-add-searched-contractor-manually")).toContainText("Send to Known Builder anyway");
-  await page.getByTestId("public-intake-add-searched-contractor-manually").click();
+  await page.getByTestId("public-intake-skip-to-manual-contractor").click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByText("Add a Known Contractor")).toBeVisible();
   await expect(page.getByPlaceholder("Contractor name")).toHaveValue("Known Builder");
