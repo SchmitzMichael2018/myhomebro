@@ -95,14 +95,20 @@ test("customer can create a free account, verify, add property, and reach dashbo
   await expect(page.getByText("link it to this account automatically")).toBeVisible();
 });
 
-test("landing page exposes Create Free Account separately from Start a Project", async ({ page }) => {
+test("landing page lets the user choose an account role", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("landing-start-project-intake-button")).toBeVisible();
   await expect(page.getByTestId("landing-create-free-account-button")).toBeVisible();
 
   await page.getByTestId("landing-create-free-account-button").click();
-  await expect(page).toHaveURL(/\/create-account$/);
+  await expect(page.getByTestId("landing-account-role-selector")).toBeVisible();
+  await expect(page.getByTestId("landing-account-role-customer")).toBeVisible();
+  await expect(page.getByTestId("landing-account-role-contractor")).toBeVisible();
+  await expect(page.getByTestId("landing-account-role-property_manager")).toBeVisible();
+
+  await page.getByTestId("landing-account-role-customer").click();
+  await expect(page).toHaveURL(/\/create-account\?role=customer$/);
   await expect(page.getByTestId("customer-account-create-form")).toBeVisible();
 });
 
@@ -122,7 +128,51 @@ test("an existing contractor account is invited to sign in instead of creating a
   await page.getByTestId("customer-account-password-confirm").fill("StrongPass123!");
   await page.getByTestId("customer-account-create-submit").click();
 
-  await expect(page.getByTestId("customer-account-signin-form")).toBeVisible();
-  await expect(page.getByTestId("customer-account-signin-email")).toHaveValue("pat@example.com");
-  await expect(page.getByTestId("customer-account-error")).toContainText("no second account is needed");
+  await expect(page.getByTestId("customer-account-existing-step")).toBeVisible();
+  await page.getByTestId("customer-account-open-existing-portal").click();
+  await expect(page).toHaveURL(/\/portal\?email=pat%40example\.com$/);
+  await expect(page.getByTestId("customer-portal-login-email-input")).toHaveValue("pat@example.com");
+});
+
+test("property manager role uses the property-management registration path", async ({ page }) => {
+  let registrationPayload;
+  await page.route("**/api/accounts/auth/customer-register/", async (route) => {
+    registrationPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, next_step: "verify_email" }),
+    });
+  });
+
+  await page.goto("/create-account?role=property_manager", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Create your Property Manager account." })).toBeVisible();
+  await page.getByTestId("customer-account-name").fill("Pat Manager");
+  await page.getByTestId("customer-account-email").fill("manager@example.com");
+  await page.getByTestId("customer-account-password").fill("StrongPass123!");
+  await page.getByTestId("customer-account-password-confirm").fill("StrongPass123!");
+  await page.getByTestId("customer-account-create-submit").click();
+
+  await expect.poll(() => registrationPayload?.account_type).toBe("property_management_company");
+});
+
+test("an existing login preserves the property manager role through portal sign-in", async ({ page }) => {
+  await page.route("**/api/accounts/auth/customer-register/", async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ email: ["A MyHomeBro account with this email already exists."] }),
+    });
+  });
+
+  await page.goto("/create-account?role=property_manager", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-account-name").fill("Pat Manager");
+  await page.getByTestId("customer-account-email").fill("manager@example.com");
+  await page.getByTestId("customer-account-password").fill("StrongPass123!");
+  await page.getByTestId("customer-account-password-confirm").fill("StrongPass123!");
+  await page.getByTestId("customer-account-create-submit").click();
+  await page.getByTestId("customer-account-open-existing-portal").click();
+
+  await expect(page).toHaveURL(/\/portal\?email=manager%40example\.com&role=property_manager$/);
+  await expect(page.getByTestId("customer-portal-login-email-input")).toHaveValue("manager@example.com");
 });

@@ -75,6 +75,29 @@ class CustomerAccountRegistrationTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("/api/accounts/auth/verify-email/", mail.outbox[0].body)
 
+    def test_property_manager_registration_creates_property_management_account(self):
+        response = self.client.post(
+            self.url,
+            self._payload(
+                email="manager@example.com",
+                full_name="Pat Manager",
+                account_type=Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY,
+            ),
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        homeowner = Homeowner.objects.get(email__iexact="manager@example.com")
+        self.assertEqual(
+            homeowner.account_type,
+            Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY,
+        )
+        self.assertEqual(
+            response.data["customer"]["account_type"],
+            Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY,
+        )
+
     def test_customer_registration_reuses_existing_homeowner_identity(self):
         existing = Homeowner.objects.create(
             full_name="Existing Customer",
@@ -141,6 +164,27 @@ class CustomerAccountRegistrationTests(TestCase):
         self.assertEqual(response.data["customer"]["email"], "dual-role@example.com")
         self.assertTrue(response.data["account"]["can_access_contractor_workspace"])
         self.assertTrue(Homeowner.objects.filter(email__iexact="dual-role@example.com").exists())
+
+    def test_contractor_login_can_add_property_manager_role(self):
+        user = get_user_model().objects.create_user(
+            email="dual-manager@example.com",
+            password="StrongPass123!",
+            first_name="Dual",
+            last_name="Manager",
+            is_active=True,
+            is_verified=True,
+        )
+        Contractor.objects.create(user=user, business_name="Dual Manager Builders")
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get(
+            "/api/projects/customer-portal/account/?account_type=property_management_company",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        customer = Homeowner.objects.get(email__iexact="dual-manager@example.com")
+        self.assertEqual(customer.account_type, Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY)
 
     def test_later_public_intake_links_existing_customer_account_by_email(self):
         created = self.client.post(

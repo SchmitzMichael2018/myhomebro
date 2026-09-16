@@ -63,6 +63,9 @@ export default function CustomerAccountOnboardingPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const verifiedParam = searchParams.get("verified") === "1";
+  const isPropertyManager = searchParams.get("role") === "property_manager";
+  const accountType = isPropertyManager ? "property_management_company" : "individual";
+  const accountLabel = isPropertyManager ? "Property Manager" : "Customer";
 
   const [step, setStep] = useState(verifiedParam ? "signin" : "account");
   const [accountForm, setAccountForm] = useState({
@@ -88,7 +91,7 @@ export default function CustomerAccountOnboardingPage() {
   const [error, setError] = useState("");
 
   const activeStepIndex = useMemo(() => {
-    if (step === "account") return 0;
+    if (step === "account" || step === "existing") return 0;
     if (step === "verify" || step === "signin") return 1;
     if (step === "property") return 2;
     return 3;
@@ -121,6 +124,7 @@ export default function CustomerAccountOnboardingPage() {
         email: accountForm.email,
         phone_number: accountForm.phone_number,
         password: accountForm.password,
+        account_type: accountType,
       });
       setLoginForm({ email: accountForm.email.trim().toLowerCase(), password: "" });
       setStep("verify");
@@ -131,8 +135,8 @@ export default function CustomerAccountOnboardingPage() {
         /account.*email.*already exists|email.*already exists/i.test(String(message || ""));
       if (accountExists) {
         setLoginForm({ email: accountForm.email.trim().toLowerCase(), password: "" });
-        setStep("signin");
-        setError("This email already has a MyHomeBro login. Sign in with the same password to add or open your Customer Portal—no second account is needed.");
+        setStep("existing");
+        setError("");
       } else {
         setError(message);
       }
@@ -185,6 +189,12 @@ export default function CustomerAccountOnboardingPage() {
     }
   };
 
+  const openExistingPortal = () => {
+    const email = loginForm.email.trim().toLowerCase();
+    const roleQuery = isPropertyManager ? "&role=property_manager" : "";
+    navigate(email ? `/portal?email=${encodeURIComponent(email)}${roleQuery}` : "/portal");
+  };
+
   const submitProperty = async (event) => {
     event.preventDefault();
     setError("");
@@ -231,12 +241,14 @@ export default function CustomerAccountOnboardingPage() {
         <section className="space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/45 bg-amber-300/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">
             <ShieldCheck className="h-4 w-4" />
-            Free customer account
+            Free {accountLabel.toLowerCase()} account
           </div>
           <div>
-            <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">Create your MyHomeBro account.</h1>
+            <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">Create your {accountLabel} account.</h1>
             <p className="mt-5 max-w-xl text-lg leading-8 text-sky-50/76">
-              Set up your customer portal, add your first property, and keep documents, requests, estimates, and project updates organized when you need them.
+              {isPropertyManager
+                ? "Set up your property manager portal, add your first property, and keep maintenance, vendors, documents, and property history organized."
+                : "Set up your customer portal, add your first property, and keep documents, requests, estimates, and project updates organized when you need them."}
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -309,10 +321,36 @@ export default function CustomerAccountOnboardingPage() {
             </div>
           ) : null}
 
+          {step === "existing" ? (
+            <div data-testid="customer-account-existing-step" className="space-y-5">
+              <div className="rounded-2xl border border-sky-300/28 bg-sky-400/10 p-4 text-sm leading-6 text-sky-50/82">
+                <div className="font-semibold text-white">This email already has a MyHomeBro login.</div>
+                <p className="mt-2">
+                  Open the Customer Portal and use your existing email and password. Your customer and contractor workspaces can share the same login.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="customer-account-open-existing-portal"
+                onClick={openExistingPortal}
+                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-950/25 hover:from-blue-500 hover:to-indigo-500"
+              >
+                Open Customer Portal Login
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep("account")}
+                className="w-full rounded-xl border border-white/16 px-5 py-3 font-semibold text-sky-50 hover:bg-white/8"
+              >
+                Use a different email
+              </button>
+            </div>
+          ) : null}
+
           {step === "signin" ? (
             <form data-testid="customer-account-signin-form" className="space-y-4" onSubmit={submitLogin}>
               <div className="rounded-2xl border border-sky-300/28 bg-sky-400/10 p-4 text-sm leading-6 text-sky-50/80">
-                Existing contractors and customers use their current MyHomeBro email and password. We&apos;ll add the Customer Portal to the same login.
+                Your email is verified. Sign in with the password you just created to finish {accountLabel.toLowerCase()} setup.
               </div>
               <Field label="Email">
                 <TextInput data-testid="customer-account-signin-email" type="email" value={loginForm.email} onChange={(e) => updateLogin("email", e.target.value)} required autoComplete="email" />

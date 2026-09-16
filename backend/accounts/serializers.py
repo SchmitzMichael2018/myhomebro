@@ -11,7 +11,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from projects.models import Contractor
+from projects.models import Contractor, Homeowner
 from projects.services.customer_accounts import (
     get_or_create_customer_account_identity,
     split_customer_name,
@@ -282,6 +282,10 @@ class CustomerRegistrationSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=255)
     email = serializers.EmailField()
     phone_number = serializers.CharField(required=False, allow_blank=True, default="")
+    account_type = serializers.ChoiceField(
+        choices=Homeowner.ACCOUNT_TYPE_CHOICES,
+        default=Homeowner.ACCOUNT_TYPE_INDIVIDUAL,
+    )
     password = serializers.CharField(
         write_only=True,
         validators=[validate_password],
@@ -328,6 +332,7 @@ class CustomerRegistrationSerializer(serializers.Serializer):
                     full_name=full_name,
                     email=email,
                     phone=phone,
+                    account_type=validated_data["account_type"],
                 )
         except IntegrityError:
             raise serializers.ValidationError(
@@ -356,6 +361,11 @@ class CustomerRegistrationSerializer(serializers.Serializer):
                 "full_name": getattr(homeowner, "full_name", ""),
                 "email": getattr(homeowner, "email", getattr(user, "email", "")),
                 "phone_number": getattr(homeowner, "phone_number", ""),
+                "account_type": getattr(
+                    homeowner,
+                    "account_type",
+                    Homeowner.ACCOUNT_TYPE_INDIVIDUAL,
+                ),
                 "created": bool(getattr(self, "homeowner_created", False)),
             },
         }

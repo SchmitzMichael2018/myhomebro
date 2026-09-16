@@ -133,6 +133,7 @@ const featureChips = [
 export default function LandingPage() {
   const navigate = useNavigate();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [accountRoleOpen, setAccountRoleOpen] = useState(false);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -142,7 +143,10 @@ export default function LandingPage() {
     }
 
     function onKeyDown(event) {
-      if (event.key === 'Escape') setLoginOpen(false);
+      if (event.key === 'Escape') {
+        setLoginOpen(false);
+        setAccountRoleOpen(false);
+      }
     }
 
     document.addEventListener('pointerdown', onPointerDown);
@@ -343,10 +347,11 @@ export default function LandingPage() {
             <button
               type="button"
               data-testid="landing-create-free-account-button"
-              onClick={() => navigate('/create-account')}
+              onClick={() => setAccountRoleOpen(true)}
+              aria-haspopup="dialog"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300/35 bg-amber-300/10 px-6 py-4 text-base font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
-              Create Free Account
+              Create an Account
             </button>
           </div>
 
@@ -440,6 +445,92 @@ export default function LandingPage() {
           </a>
         </div>
       </footer>
+      {accountRoleOpen ? (
+        <AccountRoleSelector
+          onClose={() => setAccountRoleOpen(false)}
+          onSelect={(role) => {
+            setAccountRoleOpen(false);
+            if (role === 'contractor') {
+              window.dispatchEvent(new CustomEvent('mhb:open-signup'));
+              return;
+            }
+            navigate(`/create-account?role=${role}`);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AccountRoleSelector({ onClose, onSelect }) {
+  const roles = [
+    {
+      id: 'customer',
+      icon: Home,
+      title: 'Customer',
+      text: 'Plan projects, review estimates and agreements, track work, and keep property records.',
+    },
+    {
+      id: 'contractor',
+      icon: BriefcaseBusiness,
+      title: 'Contractor',
+      text: 'Manage customers, estimates, agreements, projects, teams, and payments.',
+    },
+    {
+      id: 'property_manager',
+      icon: Building2,
+      title: 'Property Manager',
+      text: 'Organize properties, maintenance, vendors, documents, warranties, and history.',
+    },
+  ];
+
+  return (
+    <div
+      data-testid="landing-account-role-selector"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-role-selector-title"
+        className="relative w-full max-w-3xl rounded-3xl border border-white/14 bg-[#071a3a] p-6 shadow-2xl shadow-slate-950/55 sm:p-8"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close account role selector"
+          className="absolute right-4 top-4 rounded-xl border border-white/12 p-2 text-sky-100/70 hover:bg-white/8 hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <div className="pr-12">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Create an account</div>
+          <h2 id="account-role-selector-title" className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
+            How will you use MyHomeBro?
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-sky-50/72">Choose a role to open the correct account setup. One email can support more than one role.</p>
+        </div>
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          {roles.map(({ id, icon: Icon, title, text }) => (
+            <button
+              key={id}
+              type="button"
+              data-testid={`landing-account-role-${id}`}
+              onClick={() => onSelect(id)}
+              className="group rounded-2xl border border-white/12 bg-white/[0.04] p-5 text-left transition hover:border-amber-300/55 hover:bg-amber-300/10 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+            >
+              <span className="inline-flex rounded-xl border border-sky-300/25 bg-sky-400/10 p-2 text-sky-200 group-hover:border-amber-300/35 group-hover:text-amber-200">
+                <Icon className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <span className="mt-4 block text-lg font-semibold text-white">{title}</span>
+              <span className="mt-2 block text-sm leading-6 text-sky-50/68">{text}</span>
+            </button>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

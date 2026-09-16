@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ExternalLink, FileText, FolderKanban, Home, Mail, ShieldCheck, WalletCards } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -189,12 +189,16 @@ function canAcceptCustomerBid(row) {
 export default function CustomerPortalPage() {
   const { token = "" } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const suggestedEmail = String(searchParams.get("email") || "").trim().toLowerCase();
+  const requestedAccountType =
+    searchParams.get("role") === "property_manager" ? "property_management_company" : "";
 
   const [requestEmail, setRequestEmail] = useState("");
   const [requestingLink, setRequestingLink] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
   const [requestError, setRequestError] = useState("");
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginForm, setLoginForm] = useState({ email: suggestedEmail, password: "" });
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [passwordForm, setPasswordForm] = useState({ password: "", password_confirm: "" });
@@ -223,6 +227,7 @@ export default function CustomerPortalPage() {
         try {
           const { data } = await api.get("/projects/customer-portal/account/", {
             skipAuthRedirect: true,
+            params: requestedAccountType ? { account_type: requestedAccountType } : undefined,
           });
           if (!mounted) return;
           setPortal(data);
@@ -257,7 +262,7 @@ export default function CustomerPortalPage() {
     return () => {
       mounted = false;
     };
-  }, [token]);
+  }, [requestedAccountType, token]);
 
   const summary = portal?.summary || {};
   const requests = Array.isArray(portal?.requests) ? portal.requests : [];
@@ -553,7 +558,9 @@ export default function CustomerPortalPage() {
       const refresh = loginResponse.data?.refresh || loginResponse.data?.refresh_token;
       if (!access) throw new Error("Login succeeded but no token was returned.");
       setTokens(access, refresh || null, true);
-      const { data } = await api.get("/projects/customer-portal/account/");
+      const { data } = await api.get("/projects/customer-portal/account/", {
+        params: requestedAccountType ? { account_type: requestedAccountType } : undefined,
+      });
       setPortal(data);
       toast.success("Welcome back to your Customer Portal.");
     } catch (error) {

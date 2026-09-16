@@ -27,12 +27,18 @@ def get_or_create_customer_account_identity(
     full_name: str,
     email: str,
     phone: str = "",
+    account_type: str = Homeowner.ACCOUNT_TYPE_INDIVIDUAL,
 ) -> tuple[Homeowner, bool]:
     """Return the email-linked customer identity without creating duplicates."""
     normalized_email = normalize_customer_email(email)
     normalized_phone = normalize_customer_phone(phone)
     clean_phone = str(phone or "").strip()
     clean_name = str(full_name or "").strip()
+    clean_account_type = (
+        account_type
+        if account_type in dict(Homeowner.ACCOUNT_TYPE_CHOICES)
+        else Homeowner.ACCOUNT_TYPE_INDIVIDUAL
+    )
 
     homeowner = None
     if normalized_email:
@@ -54,6 +60,7 @@ def get_or_create_customer_account_identity(
                 full_name=clean_name or normalized_email or clean_phone or "Customer",
                 email=normalized_email,
                 phone_number=clean_phone,
+                account_type=clean_account_type,
                 status="active",
             ),
             True,
@@ -72,16 +79,28 @@ def get_or_create_customer_account_identity(
     if str(getattr(homeowner, "status", "") or "").lower() not in {"active", "vip"}:
         homeowner.status = "active"
         update_fields.append("status")
+    if clean_account_type == Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY and homeowner.account_type != clean_account_type:
+        homeowner.account_type = clean_account_type
+        update_fields.append("account_type")
     if update_fields:
         homeowner.save(update_fields=[*dict.fromkeys(update_fields), "updated_at"])
 
     return homeowner, False
 
 
-def ensure_customer_identity_for_user(user) -> tuple[Homeowner | None, bool]:
+def ensure_customer_identity_for_user(
+    user,
+    *,
+    account_type: str = Homeowner.ACCOUNT_TYPE_INDIVIDUAL,
+) -> tuple[Homeowner | None, bool]:
     email = normalize_customer_email(getattr(user, "email", ""))
     if not email:
         return None, False
     full_name = str(getattr(user, "get_full_name", lambda: "")() or "").strip()
     phone = str(getattr(user, "phone_number", "") or "").strip()
-    return get_or_create_customer_account_identity(full_name=full_name, email=email, phone=phone)
+    return get_or_create_customer_account_identity(
+        full_name=full_name,
+        email=email,
+        phone=phone,
+        account_type=account_type,
+    )

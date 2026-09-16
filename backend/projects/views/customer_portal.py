@@ -5572,7 +5572,11 @@ class CustomerPortalAccountView(APIView):
         email = _safe_text(getattr(request.user, "email", "")).lower()
         if not email:
             return Response({"detail": "Your account does not have an email address."}, status=status.HTTP_400_BAD_REQUEST)
-        if not _request_has_records(email):
+        requested_account_type = _safe_text(request.query_params.get("account_type"))
+        valid_account_types = dict(Homeowner.ACCOUNT_TYPE_CHOICES)
+        if requested_account_type in valid_account_types:
+            ensure_customer_identity_for_user(request.user, account_type=requested_account_type)
+        elif not _request_has_records(email):
             ensure_customer_identity_for_user(request.user)
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
