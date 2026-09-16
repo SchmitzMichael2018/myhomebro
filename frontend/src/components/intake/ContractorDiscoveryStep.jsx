@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { MapPin, ShieldCheck } from "lucide-react";
 import api from "../../api";
@@ -265,6 +265,7 @@ export default function ContractorDiscoveryStep({
   const [searchInitKey, setSearchInitKey] = useState("");
   const [radiusMiles, setRadiusMiles] = useState("25");
   const [visibleCount, setVisibleCount] = useState(RESULTS_PER_PAGE);
+  const manualSearchInputRef = useRef(null);
   const suggestedSearchQuery = useMemo(() => buildInferredSearchQuery(form), [
     form?.accomplishment_text,
     form?.original_description,
@@ -441,6 +442,11 @@ export default function ContractorDiscoveryStep({
     setSearchInitKey(projectSearchKey);
   }
 
+  function focusManualSearch() {
+    manualSearchInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    manualSearchInputRef.current?.focus({ preventScroll: true });
+  }
+
   function toggleSelection(card) {
     const key = cardSelectionKey(card);
     if (!key) return;
@@ -513,14 +519,15 @@ export default function ContractorDiscoveryStep({
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <label className={`text-sm font-medium ${portalMode ? "text-slate-200" : "text-slate-700"}`}>
-          Manual search
+          Search Google and MyHomeBro
           <input
+            ref={manualSearchInputRef}
             value={userSearchInput}
             onChange={(e) => {
               setUserSearchInput(e.target.value);
               setHasUserEditedSearch(true);
             }}
-            placeholder="Search a contractor type manually"
+            placeholder="Search by contractor or business name"
             data-testid="public-intake-contractor-search-input"
             className={inputClass}
           />
@@ -724,7 +731,7 @@ export default function ContractorDiscoveryStep({
                   data-testid="public-intake-add-searched-contractor-manually"
                   className={portalMode ? "mt-3 rounded-full border border-sky-300/40 bg-slate-900 px-4 py-2 font-semibold text-sky-100" : "mt-3 rounded-full border border-indigo-200 bg-white px-4 py-2 font-semibold text-indigo-700"}
                 >
-                  Add {submittedSearchQuery} manually
+                  Send to {submittedSearchQuery} anyway
                 </button>
               </div>
             ) : null}
@@ -776,11 +783,11 @@ export default function ContractorDiscoveryStep({
         </div>
         <button
           type="button"
-          onClick={() => onSkipToManual?.("")}
+          onClick={focusManualSearch}
           data-testid="public-intake-skip-to-manual-contractor"
           className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
         >
-          Skip contractor selection and add a contractor manually
+          Search Google and MyHomeBro for a specific contractor
         </button>
       </div>
     </div>

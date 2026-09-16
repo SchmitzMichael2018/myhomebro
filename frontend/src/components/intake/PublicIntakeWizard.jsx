@@ -2515,7 +2515,7 @@ export default function PublicIntakeWizard() {
           onSkipToManual={(contractorName = "") => {
             setDiscoveryTargets([]);
             if (contractorName) {
-              setBranchContacts([{ name: contractorName, email: "", phone: "" }]);
+              setSingleContractor({ name: contractorName, email: "", phone: "" });
             }
             setBranchMode("single_contractor");
             setCurrentStep(7);

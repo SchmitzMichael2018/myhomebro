@@ -2878,8 +2878,8 @@ I need help installing shelves and patching drywall.`}
                 )}
                 {manualContractor ? (
                   <div className="rounded-2xl border border-amber-300/35 bg-amber-300/10 p-4" data-testid="customer-request-manual-contractor-form">
-                    <div className="font-bold text-amber-50">Add a contractor from another directory</div>
-                    <p className="mt-1 text-sm text-amber-100/80">Use a public phone number or email from Yelp, Nextdoor, a business card, or another trusted source. MyHomeBro will send this project opportunity and invite the contractor to claim their profile, create their MyHomeBro website, and build their public presence.</p>
+                    <div className="font-bold text-amber-50">No listing match? Send to this contractor anyway</div>
+                    <p className="mt-1 text-sm text-amber-100/80">Confirm a public phone number or email from Yelp, Nextdoor, a business card, or another trusted source. MyHomeBro will send this project opportunity and invite the contractor to claim their profile, create their MyHomeBro website, and build their public presence.</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
                       <input value={manualContractor.name} onChange={(event) => setManualContractor((current) => ({ ...current, name: event.target.value }))} placeholder="Business name" className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-white" data-testid="customer-request-manual-contractor-name" />
                       <input value={manualContractor.phone} onChange={(event) => setManualContractor((current) => ({ ...current, phone: event.target.value }))} placeholder="Public phone" className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-white" data-testid="customer-request-manual-contractor-phone" />
@@ -2907,7 +2907,7 @@ I need help installing shelves and patching drywall.`}
                         className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 disabled:opacity-50"
                         data-testid="customer-request-add-manual-contractor"
                       >
-                        Add to this request
+                        Use this contractor anyway
                       </button>
                       <button type="button" onClick={() => setManualContractor(null)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200">Cancel</button>
                     </div>
