@@ -1862,6 +1862,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
   const [manualContractor, setManualContractor] = useState(null);
   const [estimatePreferences, setEstimatePreferences] = useState({});
   const [routingContractors, setRoutingContractors] = useState(false);
+  const [contractorRouteReviewOpen, setContractorRouteReviewOpen] = useState(false);
   const [contractorSearchLoading, setContractorSearchLoading] = useState(false);
   const [contractorSearchError, setContractorSearchError] = useState("");
   const [cancelRequest, setCancelRequest] = useState(null);
@@ -2197,6 +2198,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
     setContractorSearchError("");
     setContractorSearchLoading(false);
     setRoutingContractors(false);
+    setContractorRouteReviewOpen(false);
   };
 
   const beginContractorSearch = async (request) => {
@@ -2205,6 +2207,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
     setSelectedContractors([]);
     setManualContractor(null);
     setEstimatePreferences({});
+    setContractorRouteReviewOpen(false);
     setContractorSearchError("");
     setContractorSearchRequest({
       ...request,
@@ -2916,11 +2919,51 @@ I need help installing shelves and patching drywall.`}
                 {selectedContractors.some((contractor) => contractor?.contractor_id) ? <EstimateSlotPicker contractors={selectedContractors} preferences={estimatePreferences} onChange={setEstimatePreferences} variant="portal" testId="customer-portal-estimate-slot-picker" /> : null}
                 <div className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-slate-300">{selectedContractors.length ? `${selectedContractors.length} contractor${selectedContractors.length === 1 ? "" : "s"} selected for review.` : "Choose contractor cards above before sending this request."}</div>
-                  <button type="button" data-testid="customer-request-route-contractors" onClick={routeSelectedContractors} disabled={routingContractors || contractorSearchLoading || !selectedContractors.length} className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50">
-                    {routingContractors ? "Sending..." : "Send Request to Selected Contractors"}
+                  <button type="button" data-testid="customer-request-route-contractors" onClick={() => setContractorRouteReviewOpen(true)} disabled={routingContractors || contractorSearchLoading || !selectedContractors.length} className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50">
+                    Review Selected Contractors
                   </button>
                 </div>
               </div>
+
+              {contractorRouteReviewOpen ? (
+                <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/85 p-3 sm:items-center" data-testid="customer-request-contractor-route-review" role="dialog" aria-modal="true" aria-label="Review selected contractors">
+                  <div className="max-h-[88vh] w-full max-w-2xl overflow-auto rounded-3xl border border-amber-300/35 bg-slate-950 p-5 shadow-2xl">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-xs font-bold uppercase tracking-[0.2em] text-amber-200">Final Review</div>
+                        <h3 className="mt-1 text-2xl font-extrabold text-white">Review selected contractors</h3>
+                        <p className="mt-2 text-sm text-slate-300">Confirm every selected and manually entered contractor before sending this project request.</p>
+                      </div>
+                      <button type="button" onClick={() => setContractorRouteReviewOpen(false)} className="rounded-full border border-slate-700 px-3 py-1 text-sm font-bold text-slate-200 hover:bg-slate-800" aria-label="Close contractor review">Close</button>
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+                      {selectedContractors.map((contractor) => {
+                        const key = contractorSelectionKey(contractor);
+                        const contact = joinPresent([contractor.phone, contractor.public_email || contractor.email]);
+                        const location = contractor.address || contractor.formatted_address || joinPresent([contractor.city, contractor.state, contractor.postal_code || contractor.zip_code]);
+                        return (
+                          <article key={key} className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4" data-testid={`customer-request-contractor-review-${key}`}>
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="text-base font-bold text-white">{contractor.business_name || contractor.name || "Selected contractor"}</div>
+                              <span className="rounded-full border border-sky-300/30 bg-sky-300/10 px-2.5 py-1 text-xs font-semibold text-sky-100">{contractor.source === "manual" ? "Manually entered" : contractor.source === "directory" ? "MyHomeBro directory" : "Google/local listing"}</span>
+                            </div>
+                            <div className="mt-2 space-y-1 text-sm text-slate-300">
+                              <div>{contact || "No public contact information listed"}</div>
+                              {location ? <div>{location}</div> : null}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                      <button type="button" data-testid="customer-request-contractor-review-back" onClick={() => setContractorRouteReviewOpen(false)} disabled={routingContractors} className="rounded-xl border border-slate-600 px-4 py-3 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-50">Back to Edit</button>
+                      <button type="button" data-testid="customer-request-contractor-review-send" onClick={routeSelectedContractors} disabled={routingContractors} className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">{routingContractors ? "Sending..." : `Send Request to ${selectedContractors.length} Contractor${selectedContractors.length === 1 ? "" : "s"}`}</button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}

@@ -5438,6 +5438,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("estimate-slot-flexible-directory:17").check();
   await expect(page.getByTestId("customer-request-route-contractors")).toBeEnabled();
   await page.getByTestId("customer-request-route-contractors").click();
+  await expect(page.getByTestId("customer-request-contractor-route-review")).toBeVisible();
+  await expect(page.getByTestId("customer-request-contractor-route-review")).toContainText("Austin HVAC Pros");
+  await expect(page.getByTestId("customer-request-contractor-route-review")).toContainText("MyHomeBro directory");
+  await page.getByTestId("customer-request-contractor-review-send").click();
   await expect(page.getByTestId("customer-request-contractor-search-modal")).toHaveCount(0);
   await expect(submittedContractorSelectionPayload?.selected_contractors?.[0]?.estimate_request).toMatchObject({
     preference: "flexible",
