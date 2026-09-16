@@ -12,6 +12,15 @@ function safeText(value) {
   return String(value ?? "").trim();
 }
 
+function normalizeBusinessName(value) {
+  return safeText(value)
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function formatDistance(value) {
   if (value === null || value === undefined || value === "") return "";
   const number = Number(value);
@@ -321,6 +330,12 @@ export default function ContractorDiscoveryStep({
     ? `Showing ${resultStart}-${resultEnd} of ${results.length} contractors`
     : "Matches will appear here once loaded.";
   const activeRadiusLabel = radiusWithinLabel(summary?.radius_miles || radiusMiles);
+  const hasExactBusinessNameMatch = useMemo(() => {
+    if (searchMode !== "manual") return false;
+    const normalizedQuery = normalizeBusinessName(submittedSearchQuery);
+    if (!normalizedQuery) return false;
+    return results.some((card) => normalizeBusinessName(card?.business_name || card?.name) === normalizedQuery);
+  }, [results, searchMode, submittedSearchQuery]);
 
   useEffect(() => {
     if (!active || !token) return;
@@ -571,6 +586,27 @@ export default function ContractorDiscoveryStep({
           {selectedTargets.length ? `${selectedTargets.length} selected` : "Select up to 5 contractors"}
         </div>
       </div>
+
+      {!loading && searchMode === "manual" && safeText(submittedSearchQuery) ? (
+        <div
+          data-testid="public-intake-contractor-name-search-status"
+          className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            hasExactBusinessNameMatch
+              ? portalMode
+                ? "border-emerald-300/35 bg-emerald-300/10 text-emerald-100"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : portalMode
+                ? "border-amber-300/35 bg-amber-300/10 text-amber-100"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+          }`}
+        >
+          {hasExactBusinessNameMatch
+            ? `Exact match found for ${submittedSearchQuery}.`
+            : results.length
+              ? `No exact match found for ${submittedSearchQuery}. Showing similar results.`
+              : `No results found for ${submittedSearchQuery}. You can enter the contractor information manually below.`}
+        </div>
+      ) : null}
 
       {!loading && results.length ? (
         <div className={`mt-5 flex flex-wrap items-center justify-between gap-3 text-sm ${portalMode ? "text-slate-300" : "text-slate-600"}`}>

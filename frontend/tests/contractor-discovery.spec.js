@@ -341,9 +341,16 @@ test("public intake searches for a known contractor before offering manual send"
           summary: {
             search_query: "general contractor",
             radius_miles: 25,
-            results_count: 0,
+            results_count: 1,
           },
-          results: [],
+          results: [{
+            id: "google:similar-builder",
+            source: "google_places",
+            business_name: "Similar Builder Services",
+            phone: "555-000-1212",
+            address: "10 Nearby Road, Austin, TX",
+            distance_miles: 4.2,
+          }],
         }),
       });
       return;
@@ -430,6 +437,9 @@ test("public intake searches for a known contractor before offering manual send"
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible({ timeout: 15000 });
   await page.getByTestId("public-intake-contractor-search-input").fill("Known Builder");
   await page.getByTestId("public-intake-contractor-search-submit").click();
+  await expect(page.getByTestId("public-intake-contractor-name-search-status")).toContainText(
+    "No exact match found for Known Builder. Showing similar results."
+  );
   await page.getByTestId("public-intake-skip-to-manual-contractor").click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByText("Add a Known Contractor")).toBeVisible();
