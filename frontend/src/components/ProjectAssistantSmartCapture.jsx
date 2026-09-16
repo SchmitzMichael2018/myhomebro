@@ -33,6 +33,7 @@ export default function ProjectAssistantSmartCapture({
   endpoints = null,
   propertyOptions = [],
   defaultPropertyId = "",
+  onPropertyPhotoUpload,
   onComplete,
 }) {
   const customerMode = mode === "customer";
@@ -46,6 +47,8 @@ export default function ProjectAssistantSmartCapture({
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [photoSaved, setPhotoSaved] = useState(false);
+  const directPropertyPhoto = customerMode && captureType === "property_photo";
 
   const fields = useMemo(() => smartCaptureFieldsForType(session?.capture_type || captureType), [session?.capture_type, captureType]);
   const approvalSummary = smartCaptureApprovalSummary(session || {});
@@ -65,8 +68,18 @@ export default function ProjectAssistantSmartCapture({
 
   function selectFile(nextFile) {
     setFile(nextFile || null);
+    setPhotoSaved(false);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(nextFile && nextFile.type?.startsWith("image/") ? URL.createObjectURL(nextFile) : "");
+  }
+
+  function selectCaptureType(nextType) {
+    setCaptureType(nextType);
+    setSession(null);
+    setDraft({});
+    setError("");
+    setPhotoSaved(false);
+    selectFile(null);
   }
 
   async function uploadCapture(event) {
@@ -75,6 +88,19 @@ export default function ProjectAssistantSmartCapture({
     setBusy(true);
     setError("");
     try {
+      if (directPropertyPhoto) {
+        if (!onPropertyPhotoUpload) throw new Error("Property photo upload is not available.");
+        const uploaded = await onPropertyPhotoUpload({
+          file,
+          title: file.name || "Property photo",
+          kind: "photo",
+          propertyProfileId: propertyId,
+        });
+        if (uploaded === false) return;
+        selectFile(null);
+        setPhotoSaved(true);
+        return;
+      }
       const form = new FormData();
       form.append("capture_type", captureType);
       if (customerMode) form.append("property_id", propertyId || "");
@@ -85,7 +111,7 @@ export default function ProjectAssistantSmartCapture({
       setSession(response.data);
       setDraft(response.data.structured_payload || {});
     } catch (err) {
-      setError(err?.response?.data?.detail || "Smart Capture could not process this file.");
+      setError(err?.response?.data?.detail || err?.message || (directPropertyPhoto ? "Could not upload that property photo." : "Smart Capture could not process this file."));
     } finally {
       setBusy(false);
     }
@@ -170,19 +196,19 @@ export default function ProjectAssistantSmartCapture({
   const sourceUrl = previewUrl || session?.source_url || "";
 
   return (
-    <ProjectAssistantSection title="Smart Capture" testId="project-assistant-smart-capture">
+    <ProjectAssistantSection title={directPropertyPhoto ? "Property Photo" : "Smart Capture"} testId="project-assistant-smart-capture">
       <div className={`grid gap-4 ${compact ? "" : "lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]"}`}>
         <form onSubmit={uploadCapture} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4" data-testid="smart-capture-upload-form">
           <div className="flex items-center gap-2 text-sm font-black text-slate-950">
             <Camera className="h-4 w-4" />
-            {customerMode ? "Add to My Home" : "Scan or upload a business record"}
+            {directPropertyPhoto ? "Add a photo to this property" : customerMode ? "Add to My Home" : "Scan or upload a business record"}
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
             {Object.entries(typeOptions).map(([key, label]) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => setCaptureType(key)}
+                onClick={() => selectCaptureType(key)}
                 className={`min-h-[44px] rounded-xl border px-3 py-2 text-sm font-black ${captureType === key ? "border-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700"}`}
                 data-testid={`smart-capture-type-${key}`}
               >
@@ -213,7 +239,7 @@ export default function ProjectAssistantSmartCapture({
             <span>{file ? file.name : "Upload Existing Photo or Take Photo"}</span>
             <input
               type="file"
-              accept="image/*,application/pdf"
+              accept={directPropertyPhoto ? "image/*" : "image/*,application/pdf"}
               capture="environment"
               className="sr-only"
               onChange={(event) => selectFile(event.target.files?.[0])}
@@ -227,18 +253,26 @@ export default function ProjectAssistantSmartCapture({
             data-testid="smart-capture-upload"
           >
             <Upload className="h-4 w-4" />
-            {busy ? "Processing..." : "Extract Fields"}
+            {busy ? (directPropertyPhoto ? "Uploading..." : "Processing...") : directPropertyPhoto ? "Save Property Photo" : "Extract Fields"}
           </button>
         </form>
 
         <div className="grid gap-3">
           {error ? (
-            <ProjectAssistantCard title="Smart Capture needs attention" tone="danger" testId="smart-capture-error">
+            <ProjectAssistantCard title={directPropertyPhoto ? "Photo upload needs attention" : "Smart Capture needs attention"} tone="danger" testId="smart-capture-error">
               {error}
             </ProjectAssistantCard>
           ) : null}
 
-          {session ? (
+          {directPropertyPhoto ? (
+            <ProjectAssistantCard title={photoSaved ? "Property photo saved" : "Simple photo upload"} tone={photoSaved ? "success" : "default"} testId={photoSaved ? "property-photo-uploaded" : "property-photo-direct-upload-info"}>
+              {photoSaved
+                ? "The photo was added directly to this property's photo records."
+                : "Choose an image and save it directly to the selected property. No field extraction or Smart Capture fee applies."}
+            </ProjectAssistantCard>
+          ) : null}
+
+          {!directPropertyPhoto && session ? (
             <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4" data-testid="smart-capture-review">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -375,11 +409,11 @@ export default function ProjectAssistantSmartCapture({
                 </ProjectAssistantCard>
               ) : null}
             </div>
-          ) : (
+          ) : !directPropertyPhoto ? (
             <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600" data-testid="smart-capture-empty">
-              {customerMode ? "Upload a label, receipt, warranty, manual, or home photo to prepare an editable home record draft. Manual entry remains available." : "Upload a receipt or product label to prepare an editable draft. Manual entry remains available in the normal workspace."}
+              {customerMode ? "Upload a label, receipt, warranty, or manual to prepare an editable home record draft. Manual entry remains available." : "Upload a receipt or product label to prepare an editable draft. Manual entry remains available in the normal workspace."}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </ProjectAssistantSection>

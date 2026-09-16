@@ -3381,7 +3381,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
   };
 
-  const uploadPropertyFile = async ({ file, title, documentType, kind }) => {
+  const uploadPropertyFile = async ({ file, title, documentType, kind, propertyProfileId }) => {
     if (!file) return false;
     setUploadError("");
     setUploadingPropertyFile(true);
@@ -3390,6 +3390,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       formData.append("file", file);
       formData.append("title", title || file.name || "Property file");
       if (documentType) formData.append("document_type", documentType);
+      if (propertyProfileId) formData.append("property_profile_id", propertyProfileId);
       const uploadKind = kind === "photo" ? "photos" : "documents";
       const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`, formData);
       onPortalUpdate?.(data);

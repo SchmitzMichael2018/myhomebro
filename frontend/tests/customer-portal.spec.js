@@ -2329,6 +2329,58 @@ test("a contractor can switch from the customer portal back to the contractor wo
   await expect(page.getByTestId("customer-dashboard-switch-contractor")).toContainText("Contractor Workspace");
 });
 
+test("property photos upload directly without Smart Capture extraction or fees", async ({ page }) => {
+  test.setTimeout(60000);
+  let propertyPhotoPosted = false;
+  let smartCapturePosted = false;
+  let propertyPhotoBody = "";
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "customer-portal-token");
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+    if (method === "GET" && /\/customer-portal\/customer-token\/$/.test(requestUrl)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(portalPayload) });
+      return;
+    }
+    if (method === "POST" && requestUrl.includes("/property/photos/")) {
+      propertyPhotoPosted = true;
+      propertyPhotoBody = route.request().postData() || "";
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(uploadedPhotoPortalPayload) });
+      return;
+    }
+    if (method === "POST" && requestUrl.includes("/smart-capture/sessions/")) {
+      smartCapturePosted = true;
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "Smart Capture should not run." }) });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await page.getByTestId("smart-capture-type-property_photo").click();
+
+  await expect(page.getByTestId("property-photo-direct-upload-info")).toContainText("No field extraction or Smart Capture fee applies");
+  await expect(page.getByTestId("smart-capture-price-disclosure")).toHaveCount(0);
+  await expect(page.getByTestId("smart-capture-fields")).toHaveCount(0);
+  await expect(page.getByTestId("smart-capture-upload")).toHaveText("Save Property Photo");
+
+  await page.getByTestId("smart-capture-file-input").setInputFiles({
+    name: "front-exterior.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("property-photo"),
+  });
+  await page.getByTestId("smart-capture-upload").click();
+
+  await expect(page.getByTestId("property-photo-uploaded")).toContainText("added directly");
+  await expect.poll(() => propertyPhotoPosted).toBe(true);
+  expect(smartCapturePosted).toBe(false);
+  expect(propertyPhotoBody).toContain('name="property_profile_id"');
+  expect(propertyPhotoBody).toContain("1");
+});
+
 test("customer portal is reachable from the landing page and loads secure records", async ({ page }) => {
   test.setTimeout(60000);
   const consoleErrors = [];

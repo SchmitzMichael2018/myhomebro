@@ -2440,7 +2440,7 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, portalToken = "", projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onReviewTenantMaintenanceRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation, onScanSystem, onPortalUpdate }) {
+function HomeRecordsDashboard({ profile, portalToken = "", projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onReviewTenantMaintenanceRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation, onScanSystem, onUploadPropertyPhoto, onPortalUpdate }) {
   const [timelineShowAll, setTimelineShowAll] = useState(false);
   const [timelineCollapsed, setTimelineCollapsed] = useState(true);
   const [highlightedRecommendationSystemId, setHighlightedRecommendationSystemId] = useState("");
@@ -2490,6 +2490,7 @@ function HomeRecordsDashboard({ profile, portalToken = "", projects, requests, a
               approve: (id) => `${smartCaptureBase}${id}/approve/`,
               cancel: (id) => `${smartCaptureBase}${id}/cancel/`,
             }}
+            onPropertyPhotoUpload={onUploadPropertyPhoto}
             onComplete={(data) => {
               if (data?.portal) onPortalUpdate?.(data.portal);
             }}
@@ -2513,7 +2514,7 @@ function HomeRecordsDashboard({ profile, portalToken = "", projects, requests, a
           </div>
         ) : (
           <EmptyState title="No home intelligence records yet" testId="property-intelligence-records-empty">
-            Scan an appliance, receipt, warranty, paint label, flooring label, manual, or property photo to create the first structured home record.
+            Scan an appliance, receipt, warranty, paint label, flooring label, or manual to create the first structured home record.
           </EmptyState>
         )}
       </Section>
@@ -2687,6 +2688,7 @@ export default function CustomerPropertyProfile({
   onMarkTenantFormer,
   onCreateSystemServiceRequest,
   onReviewTenantMaintenanceRequest,
+  onUpload,
   onUploadSystemDocument,
   onCreateSystemUploadSession,
   onApplySystemDocumentExtraction,
@@ -2904,6 +2906,7 @@ export default function CustomerPropertyProfile({
           await onRestoreSystemRecommendation?.(recommendation.systemRecord?.id || recommendation.system_id, recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id);
         }}
         onScanSystem={(system) => setScanSystem(system)}
+        onUploadPropertyPhoto={onUpload}
       />
 
       <HomeSystemScanModal

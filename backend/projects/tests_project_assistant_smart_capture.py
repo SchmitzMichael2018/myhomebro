@@ -12,6 +12,7 @@ from projects.models import (
     ExpenseRequestAttachment,
     ProjectAssistantSmartCaptureSession,
 )
+from projects.services.project_assistant_smart_capture import smart_capture_price
 
 
 @override_settings(SECURE_SSL_REDIRECT=False, DEFAULT_FILE_STORAGE="django.core.files.storage.InMemoryStorage")
@@ -55,6 +56,12 @@ class ProjectAssistantSmartCaptureApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 201, response.data)
         return response
+
+    def test_plain_property_photo_has_no_smart_capture_fee(self):
+        self.assertEqual(
+            smart_capture_price(ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO),
+            Decimal("0.00"),
+        )
 
     def test_receipt_upload_extracts_editable_expense_draft_without_creating_record(self):
         response = self.create_session()

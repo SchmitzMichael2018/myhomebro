@@ -173,6 +173,8 @@ def smart_capture_model() -> str:
 
 
 def smart_capture_price(capture_type: str) -> Decimal:
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO:
+        return Decimal("0.00")
     if capture_type in {ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT, ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_RECEIPT}:
         value = getattr(settings, "SMART_CAPTURE_RECEIPT_PRICE", "0.05")
     elif capture_type in {ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL, ProjectAssistantSmartCaptureSession.CAPTURE_HOME_SYSTEM_LABEL, ProjectAssistantSmartCaptureSession.CAPTURE_APPLIANCE_LABEL}:
