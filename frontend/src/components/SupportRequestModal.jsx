@@ -38,6 +38,7 @@ export default function SupportRequestModal({
   defaultEmail = "",
   defaultCategory = "general_question",
   defaultSubject = "",
+  defaultMessage = "",
   relatedObjectType = "",
   relatedObjectId = "",
   onSubmitted,
@@ -48,10 +49,10 @@ export default function SupportRequestModal({
       subject: defaultSubject || "",
       category: defaultCategory || "general_question",
       priority: "normal",
-      message: "",
+      message: defaultMessage || "",
       attachment: null,
     }),
-    [defaultEmail, defaultCategory, defaultSubject]
+    [defaultEmail, defaultCategory, defaultSubject, defaultMessage]
   );
 
   const [form, setForm] = useState(initialForm);
@@ -66,12 +67,12 @@ export default function SupportRequestModal({
       subject: defaultSubject || "",
       category: defaultCategory || "general_question",
       priority: "normal",
-      message: "",
+      message: defaultMessage || "",
       attachment: null,
     });
     setSubmittedTicket(null);
     setSubmitting(false);
-  }, [visible, defaultEmail, defaultCategory, defaultSubject]);
+  }, [visible, defaultEmail, defaultCategory, defaultSubject, defaultMessage]);
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));

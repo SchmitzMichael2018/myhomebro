@@ -37,6 +37,7 @@ import ContractorContextualGuideModal, { pickContextualGuide } from '../componen
 import { SmartEmptyState, WorkspaceWalkthroughCards } from '../components/guidance/GuidedExperience.jsx';
 import { buildMarketingAssistantContext, isAllowedMarketingNavigation, MARKETING_NAVIGATION_TARGETS } from '../lib/marketingAssistantContext.js';
 import ToggleSwitch from '../components/ToggleSwitch.jsx';
+import SupportRequestModal from '../components/SupportRequestModal.jsx';
 
 const ONLINE_PRESENCE_STEPS = [
   { key: 'profile', label: 'Business', eyebrow: 'Step 1' },
@@ -639,6 +640,7 @@ export default function ContractorPublicPresencePage() {
   const [selectedWebsitePageId, setSelectedWebsitePageId] = useState(null);
   const [websiteBusy, setWebsiteBusy] = useState(false);
   const [websitePublishMessage, setWebsitePublishMessage] = useState('');
+  const [websiteAssistanceOpen, setWebsiteAssistanceOpen] = useState(false);
   const [aiBusyTarget, setAiBusyTarget] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState({});
   const [distinctiveBrief, setDistinctiveBrief] = useState({
@@ -2061,6 +2063,16 @@ export default function ContractorPublicPresencePage() {
         guide={publicLeadsGuide}
         onDismiss={dismissActivationSection}
       />
+      <SupportRequestModal
+        visible={websiteAssistanceOpen}
+        onClose={() => setWebsiteAssistanceOpen(false)}
+        defaultEmail={websiteProfile?.contact?.email_public || profile.email_public || ''}
+        defaultCategory="contractor_profile"
+        defaultSubject="Help creating my MyHomeBro website"
+        defaultMessage="I would like assistance creating my MyHomeBro website. Please contact me to help complete the business information, branding, portfolio, website content, and review steps. I understand that I will review and approve the website before it is published."
+        relatedObjectType="contractor_website"
+        relatedObjectId={websiteData.id || ''}
+      />
       <Modal
         visible={generateProfileOpen}
         title="Generate My Profile"
@@ -2864,7 +2876,10 @@ export default function ContractorPublicPresencePage() {
 
           {activeTab === 'website' ? (
             <section className="space-y-4" data-testid="marketing-website-builder-tab">
-              <div><h2 className="text-2xl font-black text-slate-950">Content</h2><p className="mt-1 text-sm text-slate-600">Build your website pages and content that turns visitors into customers.</p></div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div><h2 className="text-2xl font-black text-slate-950">Content</h2><p className="mt-1 text-sm text-slate-600">Build your website pages and content that turns visitors into customers.</p></div>
+                <button type="button" onClick={() => setWebsiteAssistanceOpen(true)} className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-black text-blue-800 hover:bg-blue-100" data-testid="request-website-assistance-button">Request Website Assistance</button>
+              </div>
               {!canCustomizeWebsite ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{websiteBuilderGate.reason || 'Upgrade to customize website content.'}</div> : null}
               <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm" data-testid="ai-website-studio">
                 <div className="max-w-3xl"><div className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">Project Assistant Website Studio</div><h3 className="mt-1 text-xl font-black text-slate-950">Make my website distinctive</h3><p className="mt-2 text-sm leading-6 text-slate-600">Answer four short prompts. AI combines your answers with verified business details, approved reviews, and real projects to create a coordinated draft that sounds like your company—not a generic contractor template.</p></div>

@@ -518,6 +518,12 @@ test('Marketing Content step composes supported pages, styles, copy, and preview
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('SEO');
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Review');
   await expect(page.getByTestId('marketing-website-builder-tab')).toContainText('Build your website pages and content that turns visitors into customers.');
+  await page.getByTestId('request-website-assistance-button').click();
+  await expect(page.getByTestId('support-request-modal')).toBeVisible();
+  await expect(page.getByTestId('support-email-input')).toHaveValue('hello@bright.example.com');
+  await expect(page.getByTestId('support-subject-input')).toHaveValue('Help creating my MyHomeBro website');
+  await expect(page.getByTestId('support-message-input')).toContainText('I will review and approve the website before it is published');
+  await page.getByTestId('support-request-modal').getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByTestId('website-builder-design-tab')).not.toContainText('Developer Override Active');
   await expect(page.getByTestId('marketing-website-builder-tab')).not.toContainText(/Step \d+ of \d+/);
   await expect(page.getByTestId('marketing-website-builder-tab')).not.toContainText('FAQ generation coming soon');
