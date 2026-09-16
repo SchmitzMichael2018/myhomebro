@@ -2381,6 +2381,39 @@ test("property photos upload directly without Smart Capture extraction or fees",
   expect(propertyPhotoBody).toContain("1");
 });
 
+test("a standard customer request normalizes empty recommendation fields", async ({ page }) => {
+  test.setTimeout(60000);
+  let submittedRequestPayload = null;
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "customer-portal-token");
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+    if (method === "GET" && /\/customer-portal\/customer-token\/$/.test(requestUrl)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(portalPayload) });
+      return;
+    }
+    if (method === "POST" && requestUrl.endsWith("/requests/")) {
+      submittedRequestPayload = JSON.parse(route.request().postData() || "{}");
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(portalPayload) });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await page.getByTestId("customer-dashboard-tab-requests").click();
+  await page.getByLabel("Describe what you need help with").fill("Install vinyl plank flooring in the downstairs toyroom.");
+  await page.getByLabel("Project Title").last().fill("Vinyl Plank Flooring Installation");
+  await page.getByRole("button", { name: "Create Request" }).click();
+
+  await expect.poll(() => submittedRequestPayload).not.toBeNull();
+  expect(submittedRequestPayload.linked_home_system_id).toBeNull();
+  expect(submittedRequestPayload.recommendation_context).toBeNull();
+});
+
 test("customer portal is reachable from the landing page and loads secure records", async ({ page }) => {
   test.setTimeout(60000);
   const consoleErrors = [];
@@ -5358,6 +5391,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(submittedRequestPayload?.project_subtype).toBe("Seasonal Service");
   await expect(submittedRequestPayload?.preferred_timeline).toBe("As soon as possible");
   await expect(submittedRequestPayload?.payment_preference).toBe("escrow_milestones");
+  await expect(submittedRequestPayload?.linked_home_system_id).toBeNull();
+  await expect(submittedRequestPayload?.recommendation_context).toBeNull();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Seasonal HVAC maintenance");
   await expect(page.getByTestId("customer-request-badges-customer-request-9")).toContainText("HVAC");
   await expect(page.getByTestId("customer-request-badges-customer-request-9")).toContainText("Reviewing Request");

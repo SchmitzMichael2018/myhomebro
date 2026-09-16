@@ -3835,7 +3835,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               onPortalUpdate?.(data);
               toast.success("Request saved.");
             } catch (error) {
-              toast.error(error?.response?.data?.detail || "Could not save that request.");
+              const responseData = error?.response?.data || {};
+              const firstFieldError = Object.values(responseData).flat?.().find((value) => typeof value === "string");
+              toast.error(responseData.detail || firstFieldError || "Could not save that request.");
               throw error;
             } finally {
               setCreatingRequest(false);
@@ -3848,7 +3850,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               onPortalUpdate?.(data);
               toast.success("Request updated.");
             } catch (error) {
-              toast.error(error?.response?.data?.detail || "Could not update that request.");
+              const responseData = error?.response?.data || {};
+              const firstFieldError = Object.values(responseData).flat?.().find((value) => typeof value === "string");
+              toast.error(responseData.detail || firstFieldError || "Could not update that request.");
               throw error;
             } finally {
               setCreatingRequest(false);

@@ -2090,6 +2090,9 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
     if (!form.title.trim() || !form.description.trim()) return;
     const payload = {
       ...form,
+      property_id: form.property_id || null,
+      linked_home_system_id: form.linked_home_system_id || null,
+      recommendation_context: form.recommendation_context || null,
       project_title: form.title,
       project_scope: form.description,
       project_category: form.project_category || form.project_type,

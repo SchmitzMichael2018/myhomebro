@@ -5914,8 +5914,15 @@ CUSTOMER_PORTAL_TIMELINE_CHOICES = [
 ]
 
 
+class CustomerPortalOptionalIntegerField(serializers.IntegerField):
+    """Accept the empty value sent by older portal bundles as no selection."""
+
+    def run_validation(self, data=serializers.empty):
+        return super().run_validation(None if data == "" else data)
+
+
 class CustomerPortalRequestSerializer(serializers.Serializer):
-    property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    property_id = CustomerPortalOptionalIntegerField(required=False, allow_null=True, min_value=1)
     request_type = serializers.ChoiceField(choices=[choice[0] for choice in CustomerRequest.REQUEST_TYPE_CHOICES])
     project_mode = serializers.CharField(max_length=32, required=False, allow_blank=True)
     project_category = serializers.CharField(max_length=80, required=False, allow_blank=True)
@@ -5941,10 +5948,10 @@ class CustomerPortalRequestSerializer(serializers.Serializer):
     city = serializers.CharField(max_length=120, required=False, allow_blank=True)
     state = serializers.CharField(max_length=60, required=False, allow_blank=True)
     postal_code = serializers.CharField(max_length=24, required=False, allow_blank=True)
-    linked_home_system_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    linked_home_system_id = CustomerPortalOptionalIntegerField(required=False, allow_null=True, min_value=1)
     recommendation_key = serializers.CharField(max_length=160, required=False, allow_blank=True)
     recommendation_title = serializers.CharField(max_length=200, required=False, allow_blank=True)
-    recommendation_context = serializers.JSONField(required=False)
+    recommendation_context = serializers.JSONField(required=False, allow_null=True)
     status = serializers.ChoiceField(
         choices=[CustomerRequest.STATUS_DRAFT, CustomerRequest.STATUS_SUBMITTED],
         required=False,

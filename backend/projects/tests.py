@@ -27964,6 +27964,9 @@ class CustomerPortalAccessTests(TestCase):
                 "project_scope": "Kitchen sink is leaking under the cabinet.",
                 "urgency": "soon",
                 "preferred_timeline": "As soon as possible",
+                "property_id": "",
+                "linked_home_system_id": "",
+                "recommendation_context": None,
             },
             content_type="application/json",
         )
