@@ -48,6 +48,7 @@ export default function ProjectAssistantSmartCapture({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [photoSaved, setPhotoSaved] = useState(false);
+  const [quota, setQuota] = useState(null);
   const directPropertyPhoto = customerMode && captureType === "property_photo";
 
   const fields = useMemo(() => smartCaptureFieldsForType(session?.capture_type || captureType), [session?.capture_type, captureType]);
@@ -65,6 +66,18 @@ export default function ProjectAssistantSmartCapture({
     const nextId = defaultPropertyId || propertyOptions[0]?.id || "";
     if (nextId) setPropertyId(nextId);
   }, [customerMode, defaultPropertyId, propertyId, propertyOptions]);
+
+  useEffect(() => {
+    let active = true;
+    api.get(apiEndpoints.create)
+      .then((response) => {
+        if (active && response.data?.quota) setQuota(response.data.quota);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [apiEndpoints.create]);
 
   function selectFile(nextFile) {
     setFile(nextFile || null);
@@ -110,7 +123,9 @@ export default function ProjectAssistantSmartCapture({
       });
       setSession(response.data);
       setDraft(response.data.structured_payload || {});
+      if (response.data?.quota) setQuota(response.data.quota);
     } catch (err) {
+      if (err?.response?.data?.quota) setQuota(err.response.data.quota);
       setError(err?.response?.data?.detail || err?.message || (directPropertyPhoto ? "Could not upload that property photo." : "Smart Capture could not process this file."));
     } finally {
       setBusy(false);
@@ -165,7 +180,9 @@ export default function ProjectAssistantSmartCapture({
       const response = await api.post(apiEndpoints.retry(session.id), {});
       setSession(response.data);
       setDraft(response.data.structured_payload || {});
+      if (response.data?.quota) setQuota(response.data.quota);
     } catch (err) {
+      if (err?.response?.data?.quota) setQuota(err.response.data.quota);
       setError(err?.response?.data?.detail || "Smart Capture could not retry extraction.");
     } finally {
       setBusy(false);
@@ -194,6 +211,7 @@ export default function ProjectAssistantSmartCapture({
   const completed = session?.status === "completed";
   const cancelled = session?.status === "cancelled";
   const sourceUrl = previewUrl || session?.source_url || "";
+  const quotaExhausted = !directPropertyPhoto && Boolean(quota?.is_exhausted);
 
   return (
     <ProjectAssistantSection title={directPropertyPhoto ? "Property Photo" : "Smart Capture"} testId="project-assistant-smart-capture">
@@ -248,13 +266,23 @@ export default function ProjectAssistantSmartCapture({
           </label>
           <button
             type="submit"
-            disabled={busy || !file || (customerMode && !propertyId)}
+            disabled={busy || !file || (customerMode && !propertyId) || quotaExhausted}
             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-60"
             data-testid="smart-capture-upload"
           >
             <Upload className="h-4 w-4" />
             {busy ? (directPropertyPhoto ? "Uploading..." : "Processing...") : directPropertyPhoto ? "Save Property Photo" : "Extract Fields"}
           </button>
+          {!directPropertyPhoto && quota ? (
+            <div
+              className={`rounded-lg border px-3 py-2 text-sm ${quotaExhausted ? "border-amber-300 bg-amber-50 text-amber-950" : "border-sky-200 bg-sky-50 text-sky-950"}`}
+              data-testid="smart-capture-quota"
+            >
+              {quotaExhausted
+                ? `You have used all ${quota.limit} free Smart Captures for this month. Property photo uploads remain free.`
+                : `${quota.remaining} of ${quota.limit} free Smart Captures remaining this month. Only successful extractions count.`}
+            </div>
+          ) : null}
         </form>
 
         <div className="grid gap-3">
@@ -282,9 +310,9 @@ export default function ProjectAssistantSmartCapture({
                 <div className="text-xs font-semibold text-slate-500">{session.original_filename}</div>
               </div>
 
-              {session.billable_price ? (
+              {session.billable_price && quota ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" data-testid="smart-capture-price-disclosure">
-                  Smart Capture extraction: ${session.billable_price}. You will only be charged after a successful extraction.
+                  This successful extraction used one free monthly Smart Capture. No charge was made.
                 </div>
               ) : null}
 

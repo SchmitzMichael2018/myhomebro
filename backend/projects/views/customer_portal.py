@@ -136,10 +136,12 @@ from projects.services.home_system_reminders import build_home_system_reminder
 from projects.services.customer_lifecycle import sync_customer_request_agreement_links, upsert_pm_customer_for_property_work_order_opportunity
 from projects.services.home_system_document_extraction import extract_home_system_document
 from projects.services.project_assistant_smart_capture import (
+    SmartCaptureQuotaExceeded,
     approve_smart_capture,
     create_customer_smart_capture_session,
     run_extraction,
     smart_capture_price,
+    smart_capture_quota_status,
     update_smart_capture_draft,
 )
 from projects.views.project_assistant_smart_capture import smart_capture_payload
@@ -9580,7 +9582,11 @@ class CustomerPortalSmartCaptureView(APIView):
         else:
             qs = ProjectAssistantSmartCaptureSession.objects.filter(customer_email__iexact=email)
         qs = qs.order_by("-updated_at")[:20]
-        return Response({"results": [smart_capture_payload(row, request=request) for row in qs]}, status=status.HTTP_200_OK)
+        quota = smart_capture_quota_status(customer_email=email, actor=request.user)
+        return Response(
+            {"results": [smart_capture_payload(row, request=request, quota=quota) for row in qs], "quota": quota},
+            status=status.HTTP_200_OK,
+        )
 
     def post(self, request, token: str):
         email, error = self._email(token)
@@ -9604,6 +9610,8 @@ class CustomerPortalSmartCaptureView(APIView):
                 capture_type=_safe_text(request.data.get("capture_type")),
                 file_obj=file_obj,
             )
+        except SmartCaptureQuotaExceeded as exc:
+            return Response({"detail": str(exc), "quota": exc.quota}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(smart_capture_payload(session, request=request), status=status.HTTP_201_CREATED)
@@ -9640,7 +9648,10 @@ class CustomerPortalSmartCaptureRetryView(CustomerPortalSmartCaptureDetailView):
         if error:
             return error
         session = _customer_smart_capture_session_or_404(email, session_id)
-        session = run_extraction(session)
+        try:
+            session = run_extraction(session)
+        except SmartCaptureQuotaExceeded as exc:
+            return Response({"detail": str(exc), "quota": exc.quota}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         return Response(smart_capture_payload(session, request=request), status=status.HTTP_200_OK)
 
 

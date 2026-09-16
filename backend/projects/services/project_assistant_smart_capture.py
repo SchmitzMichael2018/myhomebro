@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_time
 
@@ -55,8 +56,13 @@ CUSTOMER_CAPTURE_TYPES = {
     ProjectAssistantSmartCaptureSession.CAPTURE_MANUAL_DOCUMENT,
     ProjectAssistantSmartCaptureSession.CAPTURE_PAINT_FINISH_LABEL,
     ProjectAssistantSmartCaptureSession.CAPTURE_FLOORING_MATERIAL_LABEL,
-    ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO,
 }
+
+
+class SmartCaptureQuotaExceeded(ValueError):
+    def __init__(self, message: str, *, quota: dict):
+        super().__init__(message)
+        self.quota = quota
 
 
 def clean_text(value) -> str:
@@ -182,6 +188,136 @@ def smart_capture_price(capture_type: str) -> Decimal:
     else:
         value = getattr(settings, "SMART_CAPTURE_PRODUCT_LABEL_PRICE", "0.05")
     return decimal_or_none(value) or Decimal("0.00")
+
+
+def _month_bounds(now=None):
+    current = timezone.localtime(now or timezone.now())
+    start = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    return start, end
+
+
+def _quota_identity_filter(*, contractor=None, customer_email: str = "", actor=None) -> Q:
+    identity = Q(pk__in=[])
+    email = clean_text(customer_email).lower()
+    actor_email = clean_text(getattr(actor, "email", "")).lower()
+    contractor_email = clean_text(getattr(getattr(contractor, "user", None), "email", "")).lower()
+    identity_email = email or actor_email or contractor_email
+    if contractor is not None:
+        identity |= Q(contractor=contractor)
+    if getattr(actor, "id", None):
+        identity |= Q(user_id=actor.id)
+    if identity_email:
+        identity |= Q(customer_email__iexact=identity_email)
+        identity |= Q(user__email__iexact=identity_email)
+        identity |= Q(contractor__user__email__iexact=identity_email)
+    return identity
+
+
+def smart_capture_quota_status(*, contractor=None, customer_email: str = "", actor=None, now=None) -> dict:
+    limit = max(0, int(getattr(settings, "SMART_CAPTURE_MONTHLY_FREE_LIMIT", 5) or 0))
+    month_start, resets_at = _month_bounds(now)
+    identity = _quota_identity_filter(contractor=contractor, customer_email=customer_email, actor=actor)
+    used = AIUsageLedger.objects.filter(
+        identity,
+        provider=PROVIDER_OPENAI,
+        success=True,
+        cache_hit=False,
+        created_at__gte=month_start,
+        created_at__lt=resets_at,
+    ).distinct().count()
+    return {
+        "limit": limit,
+        "used": used,
+        "remaining": max(0, limit - used),
+        "is_exhausted": used >= limit,
+        "resets_at": resets_at.isoformat(),
+    }
+
+
+def _cached_openai_extraction_exists(*, contractor=None, property_profile=None, cache_key: str, exclude_session_id=None) -> bool:
+    cached = ProjectAssistantSmartCaptureSession.objects.filter(
+        extraction_cache_key=cache_key,
+        extraction_provider=PROVIDER_OPENAI,
+        status__in=[
+            ProjectAssistantSmartCaptureSession.STATUS_REVIEW_READY,
+            ProjectAssistantSmartCaptureSession.STATUS_NEEDS_INFORMATION,
+            ProjectAssistantSmartCaptureSession.STATUS_COMPLETED,
+        ],
+    )
+    if exclude_session_id:
+        cached = cached.exclude(pk=exclude_session_id)
+    if contractor is not None:
+        cached = cached.filter(contractor=contractor)
+    elif property_profile is not None:
+        cached = cached.filter(property_profile=property_profile)
+    else:
+        return False
+    return cached.exists()
+
+
+def enforce_smart_capture_quota(
+    *,
+    contractor=None,
+    property_profile=None,
+    customer_email: str = "",
+    actor=None,
+    capture_type: str,
+    file_hash: str,
+    force_refresh: bool = False,
+    exclude_session_id=None,
+) -> dict:
+    if smart_capture_provider() != PROVIDER_OPENAI:
+        return smart_capture_quota_status(contractor=contractor, customer_email=customer_email, actor=actor)
+
+    cache_key = extraction_cache_key(
+        provider=PROVIDER_OPENAI,
+        model=smart_capture_model(),
+        file_hash=file_hash,
+        capture_type=capture_type,
+    )
+    if not force_refresh and _cached_openai_extraction_exists(
+        contractor=contractor,
+        property_profile=property_profile,
+        cache_key=cache_key,
+        exclude_session_id=exclude_session_id,
+    ):
+        return smart_capture_quota_status(contractor=contractor, customer_email=customer_email, actor=actor)
+
+    # Serialize quota decisions for an account while its provider request is in flight.
+    if contractor is not None:
+        contractor.__class__.objects.select_for_update().filter(pk=contractor.pk).exists()
+    elif property_profile is not None:
+        property_profile.__class__.objects.select_for_update().filter(
+            customer_email__iexact=clean_text(customer_email).lower()
+        ).exists()
+
+    quota = smart_capture_quota_status(contractor=contractor, customer_email=customer_email, actor=actor)
+    if quota["is_exhausted"]:
+        raise SmartCaptureQuotaExceeded(
+            f"You have used all {quota['limit']} free Smart Captures for this month. Your allowance resets next month; property photo uploads remain free.",
+            quota=quota,
+        )
+
+    daily_limit = max(0, int(getattr(settings, "SMART_CAPTURE_DAILY_PLATFORM_LIMIT", 100) or 0))
+    if daily_limit:
+        current = timezone.localtime(timezone.now())
+        day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+        platform_used = AIUsageLedger.objects.filter(
+            provider=PROVIDER_OPENAI,
+            success=True,
+            cache_hit=False,
+            created_at__gte=day_start,
+        ).count()
+        if platform_used >= daily_limit:
+            raise SmartCaptureQuotaExceeded(
+                "Smart Capture has reached today's processing limit. Please try again tomorrow; property photo uploads remain available.",
+                quota=quota,
+            )
+    return quota
 
 
 def smart_capture_feature(capture_type: str) -> str:
@@ -1195,9 +1331,19 @@ def create_smart_capture_session(*, contractor, actor, capture_type: str, file_o
     valid_types = {choice[0] for choice in ProjectAssistantSmartCaptureSession.CAPTURE_TYPE_CHOICES}
     if capture_type not in valid_types:
         raise ValueError("Choose a supported Smart Capture type.")
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO:
+        raise ValueError("Property photos use the free property photo uploader and do not require Smart Capture.")
     validate_upload(file_obj)
     file_bytes = file_obj.read()
     file_obj.seek(0)
+    upload_hash = file_sha256(file_bytes)
+    enforce_smart_capture_quota(
+        contractor=contractor,
+        actor=actor,
+        capture_type=capture_type,
+        file_hash=upload_hash,
+        force_refresh=force_refresh,
+    )
     session = ProjectAssistantSmartCaptureSession.objects.create(
         contractor=contractor,
         created_by=actor,
@@ -1206,7 +1352,7 @@ def create_smart_capture_session(*, contractor, actor, capture_type: str, file_o
         original_filename=getattr(file_obj, "name", "") or "upload",
         mime_type=getattr(file_obj, "content_type", "") or "",
         file_size=getattr(file_obj, "size", 0) or len(file_bytes),
-        file_sha256=file_sha256(file_bytes),
+        file_sha256=upload_hash,
         source_metadata={"upload_method": "project_assistant_smart_capture"},
         audit_metadata={
             "created_by": getattr(actor, "id", None),
@@ -1225,6 +1371,15 @@ def create_customer_smart_capture_session(*, property_profile, customer_email: s
     validate_upload(file_obj)
     file_bytes = file_obj.read()
     file_obj.seek(0)
+    upload_hash = file_sha256(file_bytes)
+    enforce_smart_capture_quota(
+        property_profile=property_profile,
+        customer_email=customer_email,
+        actor=actor,
+        capture_type=capture_type,
+        file_hash=upload_hash,
+        force_refresh=force_refresh,
+    )
     session = ProjectAssistantSmartCaptureSession.objects.create(
         contractor=None,
         property_profile=property_profile,
@@ -1235,7 +1390,7 @@ def create_customer_smart_capture_session(*, property_profile, customer_email: s
         original_filename=getattr(file_obj, "name", "") or "upload",
         mime_type=getattr(file_obj, "content_type", "") or "",
         file_size=getattr(file_obj, "size", 0) or len(file_bytes),
-        file_sha256=file_sha256(file_bytes),
+        file_sha256=upload_hash,
         source_metadata={"upload_method": "customer_portal_smart_capture"},
         structured_payload={"property_id": getattr(property_profile, "id", None)},
         audit_metadata={
@@ -1327,6 +1482,17 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
                 session.possible_matches = possible_matches_for_session(session)
                 session.save()
                 return session
+
+    enforce_smart_capture_quota(
+        contractor=session.contractor,
+        property_profile=session.property_profile,
+        customer_email=session.customer_email,
+        actor=session.created_by,
+        capture_type=session.capture_type,
+        file_hash=session.file_sha256,
+        force_refresh=force_refresh,
+        exclude_session_id=session.pk,
+    )
 
     extractor = SmartCaptureExtractor(session=session, actor=session.created_by, provider=provider)
     if file_bytes is None:

@@ -8,17 +8,19 @@ from rest_framework.views import APIView
 
 from projects.models import ProjectAssistantSmartCaptureSession
 from projects.services.project_assistant_smart_capture import (
+    SmartCaptureQuotaExceeded,
     approve_smart_capture,
     create_customer_smart_capture_session,
     create_smart_capture_session,
     run_extraction,
     smart_capture_price,
+    smart_capture_quota_status,
     update_smart_capture_draft,
 )
 from projects.views.homeowner import _get_contractor_for_user
 
 
-def smart_capture_payload(session: ProjectAssistantSmartCaptureSession, request=None) -> dict:
+def smart_capture_payload(session: ProjectAssistantSmartCaptureSession, request=None, quota=None) -> dict:
     source_url = ""
     if session.original_file and hasattr(session.original_file, "url"):
         source_url = session.original_file.url
@@ -41,6 +43,11 @@ def smart_capture_payload(session: ProjectAssistantSmartCaptureSession, request=
         "extraction_model": session.extraction_model,
         "extraction_prompt_version": session.extraction_prompt_version,
         "billable_price": str(smart_capture_price(session.capture_type)),
+        "quota": quota or smart_capture_quota_status(
+            contractor=session.contractor,
+            customer_email=session.customer_email,
+            actor=session.created_by,
+        ),
         "source_url": source_url,
         "source_metadata": session.source_metadata or {},
         "raw_extracted_text": session.raw_extracted_text,
@@ -71,7 +78,8 @@ class ProjectAssistantSmartCaptureListView(APIView):
         if contractor is None:
             return Response({"detail": "Contractor account required."}, status=status.HTTP_403_FORBIDDEN)
         qs = ProjectAssistantSmartCaptureSession.objects.filter(contractor=contractor).order_by("-updated_at")[:20]
-        return Response({"results": [smart_capture_payload(row, request=request) for row in qs]})
+        quota = smart_capture_quota_status(contractor=contractor, actor=request.user)
+        return Response({"results": [smart_capture_payload(row, request=request, quota=quota) for row in qs], "quota": quota})
 
     def post(self, request, *args, **kwargs):
         contractor = _get_contractor_for_user(request.user)
@@ -88,6 +96,8 @@ class ProjectAssistantSmartCaptureListView(APIView):
                 capture_type=capture_type,
                 file_obj=file_obj,
             )
+        except SmartCaptureQuotaExceeded as exc:
+            return Response({"detail": str(exc), "quota": exc.quota}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(smart_capture_payload(session, request=request), status=status.HTTP_201_CREATED)
@@ -130,7 +140,10 @@ class ProjectAssistantSmartCaptureRetryView(ProjectAssistantSmartCaptureDetailVi
         session, error = self.get_session(request, session_id)
         if error:
             return error
-        session = run_extraction(session)
+        try:
+            session = run_extraction(session)
+        except SmartCaptureQuotaExceeded as exc:
+            return Response({"detail": str(exc), "quota": exc.quota}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         return Response(smart_capture_payload(session, request=request))
 
 

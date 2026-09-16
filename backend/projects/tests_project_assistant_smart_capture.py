@@ -63,6 +63,16 @@ class ProjectAssistantSmartCaptureApiTests(TestCase):
             Decimal("0.00"),
         )
 
+    def test_property_photo_cannot_be_routed_through_ai_extraction_endpoint(self):
+        response = self.client.post(
+            "/api/projects/project-assistant/smart-capture/sessions/",
+            {"capture_type": "property_photo", "file": self.receipt_upload(name="home.jpg")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("free property photo uploader", response.data["detail"])
+        self.assertEqual(ProjectAssistantSmartCaptureSession.objects.count(), 0)
+
     def test_receipt_upload_extracts_editable_expense_draft_without_creating_record(self):
         response = self.create_session()
         self.assertEqual(response.data["capture_type"], "receipt")

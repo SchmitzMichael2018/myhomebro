@@ -242,6 +242,62 @@ class ProjectAssistantSmartCaptureOpenAIProviderTests(TestCase):
         self.assertEqual(usage.billing_status, AIUsageLedger.BILLING_UNBILLED)
         self.assertEqual(usage.input_units, 111)
 
+    @override_settings(SMART_CAPTURE_MONTHLY_FREE_LIMIT=5, SMART_CAPTURE_DAILY_PLATFORM_LIMIT=100)
+    def test_sixth_monthly_capture_is_blocked_before_provider_call_and_shares_email_usage(self):
+        for index in range(4):
+            AIUsageLedger.objects.create(
+                contractor=self.contractor,
+                user=self.user,
+                feature=AIUsageLedger.FEATURE_SMART_CAPTURE_RECEIPT,
+                provider="openai",
+                model="gpt-4.1-mini",
+                source_type="quota-test",
+                source_id=f"contractor-{index}",
+                billable_amount=Decimal("0.05"),
+                billing_status=AIUsageLedger.BILLING_UNBILLED,
+                success=True,
+            )
+        AIUsageLedger.objects.create(
+            customer_email=self.user.email,
+            feature=AIUsageLedger.FEATURE_SMART_CAPTURE_PROPERTY_RECEIPT,
+            provider="openai",
+            model="gpt-4.1-mini",
+            source_type="quota-test",
+            source_id="customer-shared-email",
+            billable_amount=Decimal("0.05"),
+            billing_status=AIUsageLedger.BILLING_UNBILLED,
+            success=True,
+        )
+
+        response, fake = self.post_session("receipt", file_obj=SimpleUploadedFile("new.jpg", b"new-image", content_type="image/jpeg"))
+
+        self.assertEqual(response.status_code, 429, response.data)
+        self.assertEqual(fake.calls, 0)
+        self.assertEqual(response.data["quota"]["used"], 5)
+        self.assertEqual(response.data["quota"]["remaining"], 0)
+        self.assertTrue(response.data["quota"]["is_exhausted"])
+        self.assertEqual(ProjectAssistantSmartCaptureSession.objects.count(), 0)
+
+    @override_settings(SMART_CAPTURE_MONTHLY_FREE_LIMIT=5, SMART_CAPTURE_DAILY_PLATFORM_LIMIT=1)
+    def test_platform_daily_limit_blocks_provider_spend_spike(self):
+        AIUsageLedger.objects.create(
+            customer_email="another-account@example.com",
+            feature=AIUsageLedger.FEATURE_SMART_CAPTURE_PROPERTY_RECEIPT,
+            provider="openai",
+            model="gpt-4.1-mini",
+            source_type="quota-test",
+            source_id="platform-daily-limit",
+            billable_amount=Decimal("0.05"),
+            billing_status=AIUsageLedger.BILLING_UNBILLED,
+            success=True,
+        )
+
+        response, fake = self.post_session("receipt", file_obj=SimpleUploadedFile("daily.jpg", b"daily-image", content_type="image/jpeg"))
+
+        self.assertEqual(response.status_code, 429, response.data)
+        self.assertEqual(fake.calls, 0)
+        self.assertIn("today's processing limit", response.data["detail"])
+
     def test_openai_provider_equipment_and_product_labels_normalize_without_ownership_inference(self):
         equipment, _ = self.post_session("equipment_label", fake=FakeResponses(label_payload()))
         self.assertEqual(equipment.status_code, 201, equipment.data)
