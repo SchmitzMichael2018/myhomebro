@@ -1157,6 +1157,45 @@ def build_contractor_recommendations(
         enforce_radius=True,
     )
     google_diag = google_search.get("diagnostic") or {}
+    # Places Text Search uses the circle as a ranking bias, so a wider circle can
+    # return a different top-20 set and accidentally drop strong nearby matches.
+    # Preserve the canonical 25-mile candidate set whenever the user expands the
+    # radius, then union it with the wider search before application filtering.
+    if not manual_search and radius > 25:
+        inner_google_search = search_google_places_contractors_with_diagnostics(
+            project_type=project.get("project_type"),
+            project_subtype=project.get("project_subtype"),
+            query=search_query,
+            latitude=latitude,
+            longitude=longitude,
+            radius_miles=25,
+            limit=max(limit, 20),
+            enforce_radius=True,
+        )
+        inner_diag = inner_google_search.get("diagnostic") or {}
+        merged_places: list[dict[str, Any]] = []
+        merged_place_keys: set[str] = set()
+        for place in [*(inner_google_search.get("results") or []), *(google_search.get("results") or [])]:
+            place_key = _safe_text(place.get("google_place_id")) or "|".join(
+                [_safe_text(place.get("business_name")).lower(), _safe_text(place.get("formatted_address")).lower()]
+            )
+            if place_key and place_key in merged_place_keys:
+                continue
+            if place_key:
+                merged_place_keys.add(place_key)
+            merged_places.append(place)
+        for count_key in (
+            "google_raw_count",
+            "pre_distance_filter_count",
+            "filtered_out_of_radius_count",
+            "filtered_unknown_location_count",
+            "missing_coordinates_count",
+            "after_distance_filter_count",
+        ):
+            google_diag[count_key] = int(google_diag.get(count_key) or 0) + int(inner_diag.get(count_key) or 0)
+        google_diag["inner_radius_search_miles"] = 25
+        google_diag["inner_radius_results_count"] = len(inner_google_search.get("results") or [])
+        google_search = {"results": merged_places, "diagnostic": google_diag}
     if not manual_search and not google_search.get("results") and int(google_diag.get("google_raw_count") or 0) <= 0:
         attempted_queries = {_safe_text(search_query).lower()}
         retried = False

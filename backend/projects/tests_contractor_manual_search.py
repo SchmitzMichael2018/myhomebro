@@ -77,6 +77,51 @@ class ContractorManualBusinessSearchTests(TestCase):
         self.assertIn("flooring", payload["summary"]["search_query"].lower())
         self.assertNotEqual(places_search.call_args.kwargs["query"], "Xxthetic Floors LLC")
 
+    @patch("projects.services.contractor_discovery._iter_contractors_for_public_profiles", return_value=[])
+    @patch("projects.services.contractor_discovery.upsert_directory_entry_from_place")
+    @patch("projects.services.contractor_discovery.upsert_directory_listing_from_google", return_value=None)
+    @patch("projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics")
+    def test_expanded_radius_preserves_inner_radius_google_candidates(
+        self,
+        places_search,
+        upsert_listing,
+        _upsert_entry,
+        _profiles,
+    ):
+        wider_place = {
+            "google_place_id": "wider",
+            "business_name": "Wider Floors",
+            "formatted_address": "40 Miles Away",
+            "distance_miles": 40,
+        }
+        nearby_place = {
+            "google_place_id": "nearby",
+            "business_name": "Nearby Floors",
+            "formatted_address": "10 Miles Away",
+            "distance_miles": 10,
+        }
+        places_search.side_effect = [
+            {"results": [wider_place], "diagnostic": {"google_raw_count": 1, "after_distance_filter_count": 1}},
+            {"results": [nearby_place], "diagnostic": {"google_raw_count": 1, "after_distance_filter_count": 1}},
+        ]
+
+        payload = build_contractor_recommendations(
+            payload={"project_type": "Flooring", "project_state": "TX"},
+            query="flooring contractor",
+            latitude=29.4241,
+            longitude=-98.4936,
+            radius_miles=50,
+            limit=40,
+        )
+
+        self.assertEqual([call.kwargs["radius_miles"] for call in places_search.call_args_list], [50, 25])
+        self.assertEqual(
+            [call.args[0]["google_place_id"] for call in upsert_listing.call_args_list],
+            ["nearby", "wider"],
+        )
+        self.assertEqual(payload["summary"]["google_raw_count"], 2)
+        self.assertEqual(payload["summary"]["after_distance_filter_count"], 2)
+
     def test_manual_directory_prospect_is_preserved_without_google_presence(self):
         entry = resolve_directory_entry_from_selection({
             "id": "manual:xxthetic-floors",
