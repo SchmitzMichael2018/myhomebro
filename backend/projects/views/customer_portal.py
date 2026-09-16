@@ -2705,6 +2705,7 @@ def _request_lifecycle_payload(request_row, *, source_intake=None, linked_agreem
 def _customer_request_rows(email: str) -> list[dict]:
     rows = []
     for request_row in CustomerRequest.objects.select_related(
+        "homeowner",
         "converted_project",
         "property_profile",
         "source_intake",
@@ -2729,6 +2730,18 @@ def _customer_request_rows(email: str) -> list[dict]:
         project_class = infer_project_class(project_type, project_scope, getattr(request_row, "preferred_timeline", ""), "")
         comparison_key = _comparison_key(email, project_address, project_class)
         source_intake = getattr(request_row, "source_intake", None)
+        homeowner = getattr(request_row, "homeowner", None) or _primary_homeowner_for_email(
+            request_row.customer_email
+        )
+        homeowner_name = (
+            _safe_text(getattr(homeowner, "full_name", ""))
+            or _safe_text(getattr(homeowner, "company_name", ""))
+            or _safe_text(getattr(source_intake, "customer_name", ""))
+        )
+        homeowner_phone = (
+            _safe_text(getattr(homeowner, "phone_number", ""))
+            or _safe_text(getattr(source_intake, "customer_phone", ""))
+        )
         diy_link = request_row.diy_project_links.select_related("diy_project").order_by("-created_at", "-id").first()
         routed_contractors = _customer_request_routed_contractors(source_intake)
         workflow_key, workflow_label, next_action = _customer_request_workflow_status(
@@ -2821,9 +2834,9 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "materials_preferences": "",
                 "scheduling_access_notes": "",
                 "special_instructions": "" if recommendation_payload else _safe_text(getattr(request_row, "internal_notes", "")),
-                "homeowner_name": "",
+                "homeowner_name": homeowner_name,
                 "homeowner_email": _safe_text(getattr(request_row, "customer_email", "")),
-                "homeowner_phone": "",
+                "homeowner_phone": homeowner_phone,
                 "converted_project_id": getattr(request_row.converted_project, "id", None),
                 "linked_home_system_id": getattr(linked_system, "id", None),
                 "linked_home_system_name": _safe_text(getattr(linked_system, "display_name", "")) if linked_system else "",
