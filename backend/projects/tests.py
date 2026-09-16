@@ -28088,6 +28088,30 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(rejected.status_code, 404)
         self.assertEqual(primary.customer_email, self.customer_email)
 
+    def test_customer_request_identity_falls_back_to_verified_portal_account(self):
+        portal_user = get_user_model().objects.create_user(
+            email="unlinked-customer@example.com",
+            password="CustomerPass123!",
+            first_name="Morgan",
+            last_name="Homeowner",
+        )
+        CustomerRequest.objects.create(
+            customer_email=portal_user.email,
+            request_type="repair",
+            title="Unlinked historical request",
+            description="Existing request created before homeowner linkage.",
+            status=CustomerRequest.STATUS_SUBMITTED,
+        )
+        token = signing.dumps({"email": portal_user.email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        request_row = next(
+            row for row in response.data["requests"] if row["project_title"] == "Unlinked historical request"
+        )
+        self.assertEqual(request_row["homeowner_name"], "Morgan Homeowner")
+
     def test_customer_portal_request_edit_matching_and_routing_flow(self):
         from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
 

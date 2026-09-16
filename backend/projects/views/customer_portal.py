@@ -2738,6 +2738,11 @@ def _customer_request_rows(email: str) -> list[dict]:
             or _safe_text(getattr(homeowner, "company_name", ""))
             or _safe_text(getattr(source_intake, "customer_name", ""))
         )
+        if not homeowner_name:
+            portal_user = User.objects.filter(email__iexact=request_row.customer_email).first()
+            homeowner_name = _safe_text(
+                getattr(portal_user, "get_full_name", lambda: "")()
+            )
         homeowner_phone = (
             _safe_text(getattr(homeowner, "phone_number", ""))
             or _safe_text(getattr(source_intake, "customer_phone", ""))
