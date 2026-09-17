@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, List, Tuple
 from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordResetForm
+from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -62,6 +63,7 @@ ContractorPublicProfile = _get_first_model([("projects", "ContractorPublicProfil
 PublicContractorLead = _get_first_model([("projects", "PublicContractorLead")])
 ContractorReview = _get_first_model([("projects", "ContractorReview")])
 ContractorGalleryItem = _get_first_model([("projects", "ContractorGalleryItem")])
+ContractorActivityEvent = _get_first_model([("projects", "ContractorActivityEvent")])
 Project = _get_first_model([("projects", "Project")])
 SubcontractorInvitation = _get_first_model([("projects", "SubcontractorInvitation")])
 ProjectIntake = _get_first_model([("projects", "ProjectIntake")])
@@ -327,6 +329,8 @@ def _homeowner_display(homeowner) -> str:
 def _account_status(contractor) -> str:
     if contractor is None:
         return "unknown"
+    if getattr(getattr(contractor, "user", None), "is_active", True) is False:
+        return "inactive"
     if getattr(contractor, "stripe_deauthorized_at", None):
         return "deauthorized"
     if bool(getattr(contractor, "charges_enabled", False)) and bool(
@@ -1377,6 +1381,7 @@ class AdminContractors(APIView):
                 "details_submitted": safe_get(c, ["details_submitted"], None),
                 "requirements_due_count": safe_get(c, ["requirements_due_count"], None),
                 "account_status": _account_status(c),
+                "is_active": bool(getattr(user, "is_active", True)),
                 "public_profile_status": _public_profile_status(profile),
                 "public_profile_slug": safe_get(profile, ["slug"], None) if profile else None,
                 "public_profile_is_public": bool(getattr(profile, "is_public", False)) if profile else False,
@@ -1527,6 +1532,98 @@ class AdminContractorDetail(APIView):
                 "created_at": _to_iso(row.created_at),
             } for row in projects],
         })
+
+
+class AdminContractorInactivate(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def post(self, request, contractor_id: int):
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            return Response(
+                {"reason": ["A reason is required to inactivate a contractor account."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(reason) > 1000:
+            return Response(
+                {"reason": ["Reason must be 1,000 characters or fewer."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            contractor = (
+                Contractor.objects.select_for_update().select_related("user").filter(pk=contractor_id).first()
+                if Contractor
+                else None
+            )
+            if contractor is None:
+                return Response({"detail": "Contractor not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            user = contractor.user
+            if not user.is_active:
+                return Response(
+                    {"detail": "Contractor account is already inactive.", "account_status": "inactive"},
+                    status=status.HTTP_200_OK,
+                )
+
+            profile = (
+                ContractorPublicProfile.objects.select_for_update().filter(contractor_id=contractor.id).first()
+                if ContractorPublicProfile
+                else None
+            )
+            prior_state = {
+                "user_is_active": bool(user.is_active),
+                "marketplace_verification_status": contractor.marketplace_verification_status,
+                "marketplace_preferred": bool(contractor.marketplace_preferred),
+                "public_profile_is_public": bool(getattr(profile, "is_public", False)) if profile else False,
+                "allow_public_intake": bool(getattr(profile, "allow_public_intake", False)) if profile else False,
+            }
+
+            user.is_active = False
+            user.save(update_fields=["is_active"])
+
+            contractor.marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+            contractor.marketplace_preferred = False
+            contractor.marketplace_suspended_at = now()
+            contractor.marketplace_suspended_by = request.user
+            contractor.save(
+                update_fields=[
+                    "marketplace_verification_status",
+                    "marketplace_preferred",
+                    "marketplace_suspended_at",
+                    "marketplace_suspended_by",
+                    "updated_at",
+                ]
+            )
+
+            if profile:
+                profile.is_public = False
+                profile.allow_public_intake = False
+                profile.save(update_fields=["is_public", "allow_public_intake", "updated_at"])
+
+            if ContractorActivityEvent:
+                ContractorActivityEvent.objects.create(
+                    contractor=contractor,
+                    actor_user=request.user,
+                    event_type="admin_contractor_inactivated",
+                    title="Contractor account inactivated",
+                    summary=reason,
+                    severity=ContractorActivityEvent.Severity.CRITICAL,
+                    related_entity_type="contractor",
+                    related_entity_id=str(contractor.id),
+                    related_label=_contractor_display(contractor),
+                    metadata={"reason": reason, "prior_state": prior_state},
+                )
+
+        return Response(
+            {
+                "detail": "Contractor account inactivated.",
+                "contractor_id": contractor.id,
+                "account_status": "inactive",
+                "is_active": False,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminHomeownerDetail(APIView):

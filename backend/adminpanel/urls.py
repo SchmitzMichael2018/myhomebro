@@ -3,6 +3,7 @@ from .views import (
     AdminOverview,
     AdminContractors,
     AdminContractorDetail,
+    AdminContractorInactivate,
     AdminContractorReviewModerate,
     AdminContractorReviews,
     AdminSubcontractors,
@@ -48,6 +49,7 @@ urlpatterns = [
 
     path("contractors/", AdminContractors.as_view(), name="admin-contractors"),
     path("contractors/<int:contractor_id>/", AdminContractorDetail.as_view(), name="admin-contractor-detail"),
+    path("contractors/<int:contractor_id>/inactivate/", AdminContractorInactivate.as_view(), name="admin-contractor-inactivate"),
     path("contractor-reviews/", AdminContractorReviews.as_view(), name="admin-contractor-reviews"),
     path("contractor-reviews/<int:review_id>/moderate/", AdminContractorReviewModerate.as_view(), name="admin-contractor-review-moderate"),
     path("subcontractors/", AdminSubcontractors.as_view(), name="admin-subcontractors"),

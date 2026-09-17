@@ -453,6 +453,10 @@ export default function AdminDashboard() {
   // Contractor query (optional persistence later)
   const [contractorQuery, setContractorQuery] = useState(view === "contractors" ? qFromUrl : "");
   const [contractorFilter, setContractorFilter] = useState("newest");
+  const [contractorToInactivate, setContractorToInactivate] = useState(null);
+  const [contractorInactivationReason, setContractorInactivationReason] = useState("");
+  const [contractorActionBusy, setContractorActionBusy] = useState(false);
+  const [contractorActionMessage, setContractorActionMessage] = useState("");
 
   // User tools
   const [pwResetEmail, setPwResetEmail] = useState("");
@@ -645,6 +649,47 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error("Password reset error:", err);
       setPwResetMsg("❌ Failed to send reset email.");
+    }
+  }
+
+  function openContractorInactivation(contractor) {
+    setContractorToInactivate(contractor);
+    setContractorInactivationReason("");
+    setContractorActionMessage("");
+  }
+
+  function closeContractorInactivation() {
+    if (contractorActionBusy) return;
+    setContractorToInactivate(null);
+    setContractorInactivationReason("");
+  }
+
+  async function inactivateContractor() {
+    const reason = contractorInactivationReason.trim();
+    if (!contractorToInactivate || !reason || contractorActionBusy) return;
+    setContractorActionBusy(true);
+    setContractorActionMessage("");
+    try {
+      const response = await api.post(
+        `${ADMIN_BASE}/contractors/${contractorToInactivate.id}/inactivate/`,
+        { reason }
+      );
+      setContractors((current) => current.map((row) => (
+        row.id === contractorToInactivate.id
+          ? { ...row, account_status: "inactive", is_active: false, public_profile_status: "private" }
+          : row
+      )));
+      setContractorActionMessage(response.data?.detail || "Contractor account inactivated.");
+      setContractorToInactivate(null);
+      setContractorInactivationReason("");
+    } catch (error) {
+      setContractorActionMessage(
+        error?.response?.data?.reason?.[0]
+          || error?.response?.data?.detail
+          || "Could not inactivate this contractor account."
+      );
+    } finally {
+      setContractorActionBusy(false);
     }
   }
 
@@ -1712,14 +1757,20 @@ export default function AdminDashboard() {
                 </label>
               </div>
 
+              {contractorActionMessage ? (
+                <div className="mb-4 rounded-xl border border-sky-300/30 bg-sky-300/10 px-4 py-3 text-sm font-semibold text-sky-50" role="status">
+                  {contractorActionMessage}
+                </div>
+              ) : null}
+
               <TableShell className="mhb-admin-contractors-table" testId="admin-contractors-table-panel">
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr><Th>Contractor</Th><Th>Signup</Th><Th>Status</Th><Th>Public Profile</Th><Th>Pipeline</Th><Th>Fee Revenue</Th><Th>Recent Activity</Th></tr>
+                    <tr><Th>Contractor</Th><Th>Signup</Th><Th>Status</Th><Th>Public Profile</Th><Th>Pipeline</Th><Th>Fee Revenue</Th><Th>Recent Activity</Th><Th>Actions</Th></tr>
                   </thead>
                   <tbody>
                     {contractorFiltered.length === 0 ? (
-                      <tr><Td colSpan={7} className={adminEmptyText}>No results.</Td></tr>
+                      <tr><Td colSpan={8} className={adminEmptyText}>No results.</Td></tr>
                     ) : (
                       contractorFiltered.map((c) => (
                         <tr
@@ -1753,12 +1804,74 @@ export default function AdminDashboard() {
                           <Td title={c.recent_activity_at || ""}>
                             {fmtDateTime(c.recent_activity_at)}
                           </Td>
+                          <Td>
+                            {c.is_active === false || c.account_status === "inactive" ? (
+                              <span className="inline-flex rounded-full border border-slate-300/30 bg-slate-300/10 px-3 py-1.5 text-xs font-extrabold text-slate-200">
+                                Inactive
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                data-testid={`admin-contractor-inactivate-${c.id}`}
+                                onClick={() => openContractorInactivation(c)}
+                                className="rounded-lg border border-rose-300/40 bg-rose-400/10 px-3 py-1.5 text-xs font-extrabold text-rose-100 hover:bg-rose-400/20"
+                              >
+                                Inactivate
+                              </button>
+                            )}
+                          </Td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
               </TableShell>
+
+              {contractorToInactivate ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" role="presentation">
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="contractor-inactivation-title"
+                    data-testid="admin-contractor-inactivation-dialog"
+                    className="w-full max-w-xl rounded-2xl border border-white/15 bg-[#071a38] p-6 text-white shadow-2xl"
+                  >
+                    <h2 id="contractor-inactivation-title" className="text-xl font-extrabold">Inactivate contractor account?</h2>
+                    <p className="mt-2 text-sm text-sky-100/80">
+                      {contractorToInactivate.business_name || contractorToInactivate.name || contractorToInactivate.email}
+                    </p>
+                    <p className="mt-4 text-sm text-sky-100/80">
+                      This immediately blocks account access, marketplace eligibility, public profile visibility, and new public intake. Existing agreements, projects, payment history, and audit records are preserved.
+                    </p>
+                    <label className="mt-5 block">
+                      <span className="mb-2 block text-sm font-extrabold">Reason for inactivation</span>
+                      <textarea
+                        data-testid="admin-contractor-inactivation-reason"
+                        value={contractorInactivationReason}
+                        onChange={(event) => setContractorInactivationReason(event.target.value)}
+                        maxLength={1000}
+                        rows={4}
+                        placeholder="Explain why this account is being inactivated. This is retained in the audit history."
+                        className="mhb-admin-control w-full resize-y"
+                      />
+                    </label>
+                    <div className="mt-5 flex flex-wrap justify-end gap-3">
+                      <button type="button" onClick={closeContractorInactivation} disabled={contractorActionBusy} className="rounded-xl border border-white/20 px-4 py-2 text-sm font-extrabold text-white disabled:opacity-50">
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="admin-contractor-confirm-inactivation"
+                        onClick={inactivateContractor}
+                        disabled={!contractorInactivationReason.trim() || contractorActionBusy}
+                        className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {contractorActionBusy ? "Inactivating…" : "Inactivate Contractor"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
           )}
 
