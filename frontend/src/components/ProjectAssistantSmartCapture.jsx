@@ -15,6 +15,7 @@ import {
   smartCaptureFieldsForType,
   smartCaptureStatusLabel,
   smartCaptureTypeLabel,
+  smartCaptureUsesCredit,
 } from "../lib/projectAssistantSmartCapture.js";
 
 function FieldConfidence({ value }) {
@@ -230,10 +231,23 @@ export default function ProjectAssistantSmartCapture({
                 className={`min-h-[44px] rounded-xl border px-3 py-2 text-sm font-black ${captureType === key ? "border-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700"}`}
                 data-testid={`smart-capture-type-${key}`}
               >
-                {label}
+                <span className="block">{label}</span>
+                {customerMode ? (
+                  <span
+                    className={`mt-1 block text-[11px] font-bold ${smartCaptureUsesCredit(key) ? "text-amber-700" : "text-emerald-700"}`}
+                    data-testid={`smart-capture-credit-label-${key}`}
+                  >
+                    {smartCaptureUsesCredit(key) ? "Uses 1 Smart Capture credit after successful extraction" : "No OCR · No Smart Capture credit"}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
+          {customerMode ? (
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-950" data-testid="smart-capture-credit-explainer">
+              Categories marked “Uses 1 Smart Capture credit” read labels, receipts, warranties, or documents. Ordinary property photos are saved without OCR and never use a credit.
+            </div>
+          ) : null}
           {customerMode ? (
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               Save to property

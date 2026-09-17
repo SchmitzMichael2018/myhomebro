@@ -281,6 +281,27 @@ export default function DIYProjectPlanner({
     await loadProject(selected.id);
     toast.success('File deleted.');
   };
+
+  const viewAsset = async (asset) => {
+    const previewWindow = window.open('', '_blank');
+    if (!previewWindow) {
+      toast.error('Allow pop-ups to view this project file.');
+      return;
+    }
+    previewWindow.opener = null;
+    try {
+      const response = await api.get(
+        `${base}/${selected.id}/assets/${asset.id}/`,
+        { responseType: 'blob' }
+      );
+      const objectUrl = URL.createObjectURL(response.data);
+      previewWindow.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      previewWindow.close();
+      toast.error(error?.response?.data?.detail || 'Could not open this project file.');
+    }
+  };
   const generateProposal = async () => {
     setBusy(true);
     try {
@@ -1663,12 +1684,14 @@ export default function DIYProjectPlanner({
               >
                 {a.caption || a.asset_type_label}
                 <span className="flex gap-2">
-                  <a
-                    href={`${base}/${selected.id}/assets/${a.id}/download/`}
+                  <button
+                    type="button"
+                    onClick={() => viewAsset(a)}
                     className="rounded-lg border border-slate-600 px-2 py-1"
+                    data-testid={`diy-asset-view-${a.id}`}
                   >
                     View
-                  </a>
+                  </button>
                   <button
                     type="button"
                     onClick={() => deleteAsset(a)}

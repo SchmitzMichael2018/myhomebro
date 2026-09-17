@@ -77,10 +77,31 @@ class DIYProjectPlannerTests(TestCase):
                 self.assertEqual(
                     self.client.get(
                         f"/api/projects/customer-portal/{role_token}/diy-projects/"
-                        f"{payload['id']}/assets/{upload.data['id']}/download/"
+                        f"{payload['id']}/assets/{upload.data['id']}/"
                     ).status_code,
                     404,
                 )
+
+    def test_homeowner_can_view_uploaded_asset_inline(self):
+        project = self.create_project()
+        upload = self.client.post(
+            f"{self.base}/{project['id']}/assets/",
+            {
+                "file": SimpleUploadedFile("bathroom.jpg", b"project-image", content_type="image/jpeg"),
+                "caption": "Bathroom before photo",
+            },
+            format="multipart",
+        )
+        self.assertEqual(upload.status_code, 201, upload.data)
+
+        response = self.client.get(
+            f"{self.base}/{project['id']}/assets/{upload.data['id']}/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("inline; filename=", response["Content-Disposition"])
+        self.assertTrue(response["Content-Disposition"].endswith('bathroom.jpg"'))
+        self.assertEqual(b"".join(response.streaming_content), b"project-image")
 
     def test_phases_tasks_reorder_and_status_progress_persist(self):
         project = self.create_project()

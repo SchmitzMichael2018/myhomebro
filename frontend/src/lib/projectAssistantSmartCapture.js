@@ -16,6 +16,12 @@ export const CUSTOMER_SMART_CAPTURE_TYPES = {
   property_photo: "Add Property Photo",
 };
 
+export const SMART_CAPTURE_CREDIT_FREE_TYPES = new Set(["property_photo"]);
+
+export function smartCaptureUsesCredit(type = "") {
+  return !SMART_CAPTURE_CREDIT_FREE_TYPES.has(type);
+}
+
 export const SMART_CAPTURE_STATUS_LABELS = {
   uploaded: "Uploaded",
   processing: "Processing",
