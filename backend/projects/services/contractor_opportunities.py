@@ -11,16 +11,24 @@ from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
     ContractorDirectoryListing,
+    ContractorMarketplaceJoinInvite,
     ContractorOpportunity,
 )
 from projects.models_customer_portal import PropertyWorkOrder, PropertyWorkOrderActivity
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
+from projects.services.contractor_marketplace_join_invites import build_join_claim_url, send_marketplace_join_invite
 from projects.services.customer_lifecycle import sync_customer_request_agreement_links, upsert_customer_for_contractor_opportunity
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.notification_center import create_notification
 from projects.services.project_titles import generate_project_title, normalize_project_classification
 from projects.services.sms_automation import evaluate_sms_automation
+from projects.services.sms_service import (
+    get_sms_consent,
+    normalize_phone_to_e164,
+    send_compliant_sms,
+    send_contractor_opportunity_opt_in_request,
+)
 from projects.utils import categorize_project, load_legal_text
 
 
@@ -272,6 +280,7 @@ def _notify_selected_contractor_opportunity(opportunity: ContractorOpportunity) 
     directory_entry = getattr(opportunity, "directory_entry", None)
     contractor = getattr(directory_entry, "claimed_by_contractor", None)
     if contractor is None:
+        _begin_unclaimed_contractor_outreach(opportunity)
         return
     project_title = _safe_text(getattr(opportunity, "project_title", "")) or "New project opportunity"
     homeowner_name = _safe_text(getattr(opportunity, "homeowner_name", "")) or "A homeowner"
@@ -295,6 +304,129 @@ def _notify_selected_contractor_opportunity(opportunity: ContractorOpportunity) 
             "source": "public_intake_selected_contractor",
         },
     )
+    opportunity.outreach_status = ContractorOpportunity.OUTREACH_DELIVERED
+    opportunity.outreach_attempted_at = timezone.now()
+    opportunity.outreach_delivered_at = timezone.now()
+    opportunity.save(update_fields=["outreach_status", "outreach_attempted_at", "outreach_delivered_at", "updated_at"])
+
+
+def _begin_unclaimed_contractor_outreach(opportunity: ContractorOpportunity) -> None:
+    entry = opportunity.directory_entry
+    phone = normalize_phone_to_e164(entry.phone)
+    preferred_channel = "email" if _safe_text(entry.public_email) else "manual"
+    invite = send_marketplace_join_invite(
+        entry=entry,
+        preferred_channel=preferred_channel,
+        project_title=_safe_text(opportunity.project_title),
+    )
+    now = timezone.now()
+    if phone:
+        consent = get_sms_consent(phone)
+        if consent and consent.can_send_sms and not consent.opted_out:
+            result = _deliver_unclaimed_opportunity_sms(opportunity, invite=invite)
+            opportunity.outreach_status = (
+                ContractorOpportunity.OUTREACH_DELIVERED if result.get("ok") else ContractorOpportunity.OUTREACH_FAILED
+            )
+            opportunity.outreach_delivered_at = now if result.get("ok") else None
+        elif consent and consent.opted_out:
+            opportunity.outreach_status = ContractorOpportunity.OUTREACH_SMS_OPTED_OUT
+        else:
+            result = send_contractor_opportunity_opt_in_request(
+                phone_number=phone,
+                business_name=entry.business_name,
+                dedupe_key=f"contractor-opportunity-opt-in:{entry.id}",
+            )
+            opportunity.outreach_status = (
+                ContractorOpportunity.OUTREACH_AWAITING_SMS_CONSENT
+                if result.get("ok") or result.get("status") == "duplicate"
+                else ContractorOpportunity.OUTREACH_FAILED
+            )
+            invite.phone = phone
+            invite.delivery_channel = (
+                invite.CHANNEL_BOTH if invite.email_status == "sent" else invite.CHANNEL_SMS
+            )
+            invite.sms_status = "consent_pending" if opportunity.outreach_status == ContractorOpportunity.OUTREACH_AWAITING_SMS_CONSENT else "failed"
+            invite.sms_error = "" if invite.sms_status == "consent_pending" else result.get("detail", "")
+            invite.save(update_fields=["phone", "delivery_channel", "sms_status", "sms_error", "updated_at"])
+    elif invite.email_status == "sent":
+        opportunity.outreach_status = ContractorOpportunity.OUTREACH_DELIVERED
+        opportunity.outreach_delivered_at = now
+    else:
+        opportunity.outreach_status = ContractorOpportunity.OUTREACH_FAILED
+    opportunity.outreach_attempted_at = now
+    opportunity.save(update_fields=["outreach_status", "outreach_attempted_at", "outreach_delivered_at", "updated_at"])
+
+
+def _deliver_unclaimed_opportunity_sms(opportunity: ContractorOpportunity, *, invite=None) -> dict[str, Any]:
+    entry = opportunity.directory_entry
+    if invite is None:
+        invite = send_marketplace_join_invite(entry=entry, preferred_channel="manual", project_title="")
+    claim_url = build_join_claim_url(invite)
+    title = _safe_text(opportunity.project_title) or "a new project opportunity"
+    body = (
+        f"MyHomeBro: You have a new project opportunity: {title}. "
+        f"Review it and claim your business profile securely: {claim_url} Reply STOP to opt out."
+    )
+    return send_compliant_sms(
+        entry.phone,
+        body,
+        related_object=opportunity,
+        category="customer_care",
+        dedupe_key=f"contractor-opportunity:{opportunity.id}",
+    )
+
+
+def release_pending_contractor_opportunity_sms(phone_number: str, *, message_sid: str = "") -> int:
+    normalized = normalize_phone_to_e164(phone_number)
+    if not normalized:
+        return 0
+    matching_ids = list(
+        ContractorMarketplaceJoinInvite.objects.filter(phone=normalized)
+        .values_list("directory_entry_id", flat=True)
+        .distinct()
+    )
+    opportunities = ContractorOpportunity.objects.select_related("directory_entry").filter(
+        directory_entry_id__in=matching_ids,
+        status=ContractorOpportunity.STATUS_PENDING,
+        outreach_status=ContractorOpportunity.OUTREACH_AWAITING_SMS_CONSENT,
+    )
+    delivered = 0
+    for opportunity in opportunities:
+        result = _deliver_unclaimed_opportunity_sms(opportunity)
+        opportunity.outreach_attempted_at = timezone.now()
+        if result.get("ok") or result.get("status") == "duplicate":
+            opportunity.outreach_status = ContractorOpportunity.OUTREACH_DELIVERED
+            opportunity.outreach_delivered_at = timezone.now()
+            delivered += 1
+            ContractorMarketplaceJoinInvite.objects.filter(
+                directory_entry_id=opportunity.directory_entry_id,
+                sms_status="consent_pending",
+            ).update(sms_status="sent", sms_error="", sent_at=timezone.now(), updated_at=timezone.now())
+        else:
+            opportunity.outreach_status = ContractorOpportunity.OUTREACH_FAILED
+        opportunity.save(update_fields=["outreach_status", "outreach_attempted_at", "outreach_delivered_at", "updated_at"])
+    return delivered
+
+
+def mark_pending_opportunity_sms_opt_out(phone_number: str) -> int:
+    normalized = normalize_phone_to_e164(phone_number)
+    if not normalized:
+        return 0
+    matching_ids = list(
+        ContractorMarketplaceJoinInvite.objects.filter(phone=normalized)
+        .values_list("directory_entry_id", flat=True)
+        .distinct()
+    )
+    updated = ContractorOpportunity.objects.filter(
+        directory_entry_id__in=matching_ids,
+        status=ContractorOpportunity.STATUS_PENDING,
+        outreach_status=ContractorOpportunity.OUTREACH_AWAITING_SMS_CONSENT,
+    ).update(outreach_status=ContractorOpportunity.OUTREACH_SMS_OPTED_OUT, outreach_attempted_at=timezone.now())
+    ContractorMarketplaceJoinInvite.objects.filter(
+        directory_entry_id__in=matching_ids,
+        sms_status="consent_pending",
+    ).update(sms_status="suppressed", sms_error="SMS opt-out is active for this phone number.", sms_opted_out=True, updated_at=timezone.now())
+    return updated
 
 
 def _find_or_create_customer(opportunity: ContractorOpportunity, contractor: Contractor) -> Homeowner:

@@ -683,6 +683,70 @@ def send_sms_opt_in_request(*, phone_number: str, company_name: str, contractor:
         return result
 
 
+def send_contractor_opportunity_opt_in_request(
+    *,
+    phone_number: str,
+    business_name: str,
+    dedupe_key: str = "",
+) -> dict[str, Any]:
+    """Send the single permitted pre-consent invitation without project details."""
+    normalized = normalize_phone_to_e164(phone_number)
+    consent = get_sms_consent(normalized)
+    result = {
+        "ok": False,
+        "status": "failed",
+        "reason_code": "",
+        "detail": "",
+        "twilio_sid": "",
+        "phone_number_e164": normalized,
+    }
+    if not normalized:
+        result.update({"reason_code": "invalid_phone", "detail": "A valid mobile number is required."})
+        return result
+    if consent and consent.opted_out:
+        result.update({"status": "opted_out", "reason_code": "opted_out", "detail": "This number opted out of SMS."})
+        return result
+    if consent and consent.can_send_sms:
+        result.update({"status": "already_consented", "reason_code": "already_consented", "detail": "SMS consent is already active."})
+        return result
+    if not _twilio_ready():
+        result.update({"reason_code": "twilio_config_missing", "detail": "Text delivery is temporarily unavailable."})
+        return result
+    cache_key = _sms_dedupe_cache_key(phone_number_e164=normalized, dedupe_key=dedupe_key)
+    try:
+        if cache_key and cache.get(cache_key):
+            result.update({"status": "duplicate", "reason_code": "duplicate_recent", "detail": "An opt-in request was recently sent."})
+            return result
+    except Exception:
+        pass
+    business = str(business_name or "your business").strip()[:80]
+    body = (
+        f"MyHomeBro: A homeowner selected {business} for a project opportunity. "
+        "Reply YES to receive the project details and messages from MyHomeBro. "
+        "Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out."
+    )
+    try:
+        message = _twilio_client().messages.create(**_twilio_send_kwargs(to=normalized, body=body))
+        sid = str(getattr(message, "sid", "") or "")
+        consent, _ = SMSConsent.objects.get_or_create(phone_number_e164=normalized)
+        consent.consent_text_snapshot = f"contractor_opportunity_opt_in_v1: {body}"
+        consent.consent_source_page = "contractor_opportunity"
+        consent.save(update_fields=["consent_text_snapshot", "consent_source_page", "updated_at"])
+        if cache_key:
+            cache.set(cache_key, True, timeout=60 * 60 * 24)
+        result.update({
+            "ok": True,
+            "status": "consent_request_sent",
+            "reason_code": "consent_pending",
+            "detail": "Opt-in request sent.",
+            "twilio_sid": sid,
+        })
+        return result
+    except Exception:
+        result.update({"reason_code": "twilio_error", "detail": "Opt-in request could not be delivered."})
+        return result
+
+
 def maybe_send_sms_for_activity_event(event) -> dict[str, Any] | None:
     trigger_map = {
         "payment_released": lambda e: f"Your payment for Agreement #{e.agreement_id} has been released.",
@@ -718,15 +782,35 @@ def handle_inbound_sms(*, from_phone: str, body: str, message_sid: str = "") -> 
         )
         from projects.services.proposal_customer_review import cancel_pending_estimate_sms
         cancel_pending_estimate_sms(normalized_phone)
+        try:
+            from projects.services.contractor_opportunities import mark_pending_opportunity_sms_opt_out
+            mark_pending_opportunity_sms_opt_out(normalized_phone)
+        except Exception:  # pragma: no cover - STOP acknowledgement must remain available
+            logger.exception("Failed to mark pending contractor opportunity SMS opt-out for %s", normalized_phone)
         return {"message": STOP_RESPONSE, "keyword": "STOP", "phone_number_e164": normalized_phone}
     if keyword in OPT_IN_KEYWORDS:
+        is_contractor_opportunity_opt_in = bool(
+            consent and consent.consent_source_page == "contractor_opportunity"
+        )
         set_sms_opt_in(
             phone_number=normalized_phone,
             contractor=contractor,
             homeowner=homeowner,
-            source=SMSConsent.OPT_IN_SOURCE_ESTIMATE_DELIVERY if keyword == "YES" else SMSConsent.OPT_IN_SOURCE_INBOUND_START,
+            source=(
+                SMSConsent.OPT_IN_SOURCE_CONTRACTOR_OPPORTUNITY
+                if is_contractor_opportunity_opt_in
+                else SMSConsent.OPT_IN_SOURCE_ESTIMATE_DELIVERY
+                if keyword == "YES"
+                else SMSConsent.OPT_IN_SOURCE_INBOUND_START
+            ),
             consent_text_snapshot=(consent.consent_text_snapshot if consent else ""),
-            consent_source_page=(consent.consent_source_page if consent else "customer_transactional_sms") if keyword == "YES" else "",
+            consent_source_page=(
+                "contractor_opportunity"
+                if is_contractor_opportunity_opt_in
+                else (consent.consent_source_page if consent else "customer_transactional_sms")
+                if keyword == "YES"
+                else ""
+            ),
         )
         from projects.services.proposal_customer_review import release_pending_estimate_sms
         release_pending_estimate_sms(normalized_phone, message_sid=message_sid)
@@ -735,6 +819,11 @@ def handle_inbound_sms(*, from_phone: str, body: str, message_sid: str = "") -> 
             release_pending_amendment_sms(normalized_phone, message_sid=message_sid)
         except Exception:  # pragma: no cover - opt-in acknowledgement must remain available
             logger.exception("Failed to release pending amendment SMS for %s", normalized_phone)
+        try:
+            from projects.services.contractor_opportunities import release_pending_contractor_opportunity_sms
+            release_pending_contractor_opportunity_sms(normalized_phone, message_sid=message_sid)
+        except Exception:  # pragma: no cover - opt-in acknowledgement must remain available
+            logger.exception("Failed to release pending contractor opportunity SMS for %s", normalized_phone)
         return {"message": START_RESPONSE, "keyword": "YES" if keyword == "YES" else "START", "phone_number_e164": normalized_phone}
     if keyword in HELP_KEYWORDS:
         if consent is not None:

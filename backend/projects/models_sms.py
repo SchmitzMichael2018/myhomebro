@@ -9,6 +9,7 @@ class SMSConsent(models.Model):
     OPT_IN_SOURCE_INBOUND_START = "inbound_start"
     OPT_IN_SOURCE_ADMIN = "admin"
     OPT_IN_SOURCE_ESTIMATE_DELIVERY = "estimate_delivery_opt_in"
+    OPT_IN_SOURCE_CONTRACTOR_OPPORTUNITY = "contractor_opportunity_opt_in"
 
     OPT_OUT_SOURCE_INBOUND_STOP = "inbound_stop"
     OPT_OUT_SOURCE_API = "api"
@@ -21,6 +22,7 @@ class SMSConsent(models.Model):
         (OPT_IN_SOURCE_INBOUND_START, "Inbound START"),
         (OPT_IN_SOURCE_ADMIN, "Admin"),
         (OPT_IN_SOURCE_ESTIMATE_DELIVERY, "Estimate delivery opt-in"),
+        (OPT_IN_SOURCE_CONTRACTOR_OPPORTUNITY, "Contractor opportunity opt-in"),
     )
     OPT_OUT_SOURCE_CHOICES = (
         (OPT_OUT_SOURCE_INBOUND_STOP, "Inbound STOP"),

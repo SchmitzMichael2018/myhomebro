@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from datetime import datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
@@ -10,6 +10,7 @@ from projects.models import Agreement, AgreementAssignment, Contractor, Homeowne
 from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
+    ContractorMarketplaceJoinInvite,
     ContractorEstimateAvailabilityWindow,
     ContractorOpportunity,
     OpportunityEstimateAppointment,
@@ -17,6 +18,7 @@ from projects.models_contractor_discovery import (
 from projects.models_project_intake import ProjectIntake
 from projects.models_sms import SMSAutomationDecision, SMSConsent
 from projects.services.contractor_directory import normalize_business_name
+from projects.services.sms_service import handle_inbound_sms
 from projects.views.public_estimate_availability import appointment_request_token
 
 
@@ -220,6 +222,83 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(decision.phone_number_e164, "+15125551111")
         self.assertEqual(decision.reason_code, "no_consent")
         self.assertFalse(decision.sent)
+
+    @override_settings(
+        TWILIO_ACCOUNT_SID="AC-test",
+        TWILIO_AUTH_TOKEN="test-token",
+        TWILIO_MESSAGING_SERVICE_SID="MG-test",
+        TWILIO_PHONE_NUMBER="",
+        TWILIO_FROM_NUMBER="",
+        SITE_URL="https://www.myhomebro.com",
+    )
+    @patch("projects.services.sms_service._twilio_client")
+    def test_unclaimed_contractor_receives_opt_in_then_project_after_yes(self, twilio_client):
+        twilio_client.return_value.messages.create.side_effect = [
+            MagicMock(sid="SM-OPT-IN"),
+            MagicMock(sid="SM-PROJECT"),
+        ]
+        self.entry.claimed = False
+        self.entry.claimed_by_contractor = None
+        self.entry.phone = "(512) 555-9191"
+        self.entry.public_email = ""
+        self.entry.save(update_fields=["claimed", "claimed_by_contractor", "phone", "public_email"])
+
+        response = self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        opportunity = ContractorOpportunity.objects.get()
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_PENDING)
+        self.assertEqual(opportunity.outreach_status, ContractorOpportunity.OUTREACH_AWAITING_SMS_CONSENT)
+        self.assertIsNotNone(opportunity.outreach_attempted_at)
+        first_body = twilio_client.return_value.messages.create.call_args_list[0].kwargs["body"]
+        self.assertIn("Reply YES", first_body)
+        self.assertNotIn("Concrete Patio Extension", first_body)
+        self.assertEqual(ContractorMarketplaceJoinInvite.objects.count(), 1)
+
+        result = handle_inbound_sms(from_phone="+15125559191", body="YES", message_sid="SM-INBOUND")
+
+        self.assertEqual(result["keyword"], "YES")
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.outreach_status, ContractorOpportunity.OUTREACH_DELIVERED)
+        self.assertIsNotNone(opportunity.outreach_delivered_at)
+        second_body = twilio_client.return_value.messages.create.call_args_list[1].kwargs["body"]
+        self.assertIn("Concrete Patio Extension", second_body)
+        self.assertIn("/contractors/directory-claim/", second_body)
+        consent = SMSConsent.objects.get(phone_number_e164="+15125559191")
+        self.assertEqual(consent.opted_in_source, SMSConsent.OPT_IN_SOURCE_CONTRACTOR_OPPORTUNITY)
+        self.assertEqual(consent.consent_source_page, "contractor_opportunity")
+
+    @override_settings(
+        TWILIO_ACCOUNT_SID="AC-test",
+        TWILIO_AUTH_TOKEN="test-token",
+        TWILIO_MESSAGING_SERVICE_SID="MG-test",
+        TWILIO_PHONE_NUMBER="",
+        TWILIO_FROM_NUMBER="",
+    )
+    @patch("projects.services.sms_service._twilio_client")
+    def test_unclaimed_contractor_stop_preserves_pending_opportunity(self, twilio_client):
+        twilio_client.return_value.messages.create.return_value = MagicMock(sid="SM-OPT-IN")
+        self.entry.claimed = False
+        self.entry.claimed_by_contractor = None
+        self.entry.phone = "512-555-9191"
+        self.entry.public_email = ""
+        self.entry.save(update_fields=["claimed", "claimed_by_contractor", "phone", "public_email"])
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+
+        handle_inbound_sms(from_phone="+15125559191", body="STOP", message_sid="SM-STOP")
+
+        opportunity = ContractorOpportunity.objects.get()
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_PENDING)
+        self.assertEqual(opportunity.outreach_status, ContractorOpportunity.OUTREACH_SMS_OPTED_OUT)
+        self.assertEqual(twilio_client.return_value.messages.create.call_count, 1)
 
     @override_settings(
         TWILIO_ACCOUNT_SID="",

@@ -512,6 +512,18 @@ class ContractorOpportunity(models.Model):
         (STATUS_EXPIRED, "Expired"),
         (STATUS_CONVERTED, "Converted"),
     ]
+    OUTREACH_NOT_STARTED = "not_started"
+    OUTREACH_AWAITING_SMS_CONSENT = "awaiting_contractor_sms_consent"
+    OUTREACH_DELIVERED = "delivered"
+    OUTREACH_SMS_OPTED_OUT = "sms_opted_out"
+    OUTREACH_FAILED = "failed"
+    OUTREACH_CHOICES = [
+        (OUTREACH_NOT_STARTED, "Not Started"),
+        (OUTREACH_AWAITING_SMS_CONSENT, "Awaiting Contractor SMS Consent"),
+        (OUTREACH_DELIVERED, "Delivered"),
+        (OUTREACH_SMS_OPTED_OUT, "SMS Opted Out"),
+        (OUTREACH_FAILED, "Failed"),
+    ]
     ESTIMATE_PREFERENCE_NONE = ""
     ESTIMATE_PREFERENCE_SLOT = "slot"
     ESTIMATE_PREFERENCE_FLEXIBLE = "flexible"
@@ -567,6 +579,14 @@ class ContractorOpportunity(models.Model):
     measurements = models.JSONField(default=list, blank=True)
     photos = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    outreach_status = models.CharField(
+        max_length=48,
+        choices=OUTREACH_CHOICES,
+        default=OUTREACH_NOT_STARTED,
+        db_index=True,
+    )
+    outreach_attempted_at = models.DateTimeField(null=True, blank=True)
+    outreach_delivered_at = models.DateTimeField(null=True, blank=True)
     estimate_preference = models.CharField(
         max_length=24,
         choices=ESTIMATE_PREFERENCE_CHOICES,
