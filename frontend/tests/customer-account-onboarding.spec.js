@@ -112,6 +112,30 @@ test("landing page lets the user choose an account role", async ({ page }) => {
   await expect(page.getByTestId("customer-account-create-form")).toBeVisible();
 });
 
+test("landing QR and universal registration route users into the correct signup flow", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("landing-registration-qr-section")).toBeVisible();
+  await expect(page.getByTestId("landing-registration-qr-image")).toHaveAttribute(
+    "src",
+    "/api/accounts/public/registration-qr/"
+  );
+
+  await page.getByTestId("landing-registration-qr-button").click();
+  await expect(page).toHaveURL(/\/register$/);
+  await expect(page.getByTestId("universal-registration-roles")).toBeVisible();
+
+  await page.getByTestId("register-role-property_manager").click();
+  await expect(page).toHaveURL(/\/create-account\?role=property_manager$/);
+});
+
+test("universal contractor registration preserves a referral code", async ({ page }) => {
+  await page.goto("/register?ref=FOUNDING100", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("universal-registration-referral")).toBeVisible();
+  await page.getByTestId("register-role-contractor").click();
+  await expect(page).toHaveURL(/\/signup\?ref=FOUNDING100$/);
+  await expect(page.getByTestId("referral-signup-banner")).toBeVisible();
+});
+
 test("an existing contractor account is invited to sign in instead of creating a duplicate", async ({ page }) => {
   await page.route("**/api/accounts/auth/customer-register/", async (route) => {
     await route.fulfill({

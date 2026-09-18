@@ -4,12 +4,38 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.http import HttpResponse
+from django.views import View
+from io import BytesIO
 import logging
 
 from .serializers import ContractorRegistrationSerializer, CustomerRegistrationSerializer
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+PUBLIC_REGISTRATION_URL = "https://www.myhomebro.com/register"
+
+
+class PublicRegistrationQrView(View):
+    """Return the fixed public registration QR; callers cannot choose its target."""
+
+    def get(self, request, *args, **kwargs):
+        import qrcode
+        import qrcode.image.svg
+
+        image = qrcode.make(
+            PUBLIC_REGISTRATION_URL,
+            image_factory=qrcode.image.svg.SvgPathImage,
+            box_size=8,
+            border=4,
+        )
+        output = BytesIO()
+        image.save(output)
+        response = HttpResponse(output.getvalue(), content_type="image/svg+xml")
+        response["Cache-Control"] = "public, max-age=86400"
+        response["Content-Disposition"] = 'inline; filename="myhomebro-registration-qr.svg"'
+        return response
 
 
 class EmailLoginView(APIView):

@@ -241,14 +241,14 @@ const AUDIENCE_CTA = {
   },
   homeowner: {
     primary: { label: 'Start a Project', path: '/start-project' },
-    secondary: { label: 'Create Customer Account', path: '/create-account' },
+    secondary: { label: 'Create Customer Account', path: '/register' },
   },
   property_manager: {
     primary: {
       label: 'Submit Maintenance Request',
       path: '/maintenance-request',
     },
-    secondary: { label: 'Create an Account', path: '/create-account' },
+    secondary: { label: 'Create an Account', path: '/register' },
   },
 };
 

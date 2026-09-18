@@ -56,6 +56,9 @@ const PropertyWorkOrderInvitationPage = lazy(
 const CustomerAccountOnboardingPage = lazy(
   () => import('../pages/CustomerAccountOnboardingPage.jsx')
 );
+const UniversalRegistrationPage = lazy(
+  () => import('../pages/UniversalRegistrationPage.jsx')
+);
 const EmailVerifiedPage = lazy(() => import('../pages/EmailVerifiedPage.jsx'));
 const PublicCaptureQrPage = lazy(
   () => import('../pages/PublicCaptureQrPage.jsx')
@@ -98,6 +101,7 @@ export default function PublicRoutes() {
         <Route path="/faq" element={<PublicFaqPage />} />
         <Route path="/login" element={<LoginForm />} />
         <Route path="/signup" element={<SignUpForm />} />
+        <Route path="/register" element={<UniversalRegistrationPage />} />
         <Route
           path="/create-account"
           element={<CustomerAccountOnboardingPage />}

@@ -1,7 +1,7 @@
 # backend/accounts/urls.py
 
 from django.urls import path, include
-from .views import ContractorRegistrationView, CustomerRegistrationView
+from .views import ContractorRegistrationView, CustomerRegistrationView, PublicRegistrationQrView
 from .email_verification_views import EmailVerificationView
 from .password_reset import (
     PasswordResetRequestView,
@@ -17,6 +17,11 @@ from .account_settings_views import (
 app_name = "accounts_api"
 
 urlpatterns = [
+    path(
+        "public/registration-qr/",
+        PublicRegistrationQrView.as_view(),
+        name="public-registration-qr",
+    ),
     # Registration -------------------------------------------------------------
     path(
         "auth/contractor-register/",

@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   ShieldCheck,
   Sparkles,
+  QrCode,
   UsersRound,
   Wrench,
   X,
@@ -371,6 +372,7 @@ export default function LandingPage() {
         </section>
 
         <PlatformStrip />
+        <RegistrationQrSection navigate={navigate} />
         {PWA_FLAGS.enabled ? (
           <section
             className="mx-auto max-w-6xl px-4 py-10 sm:px-6"
@@ -587,7 +589,7 @@ function LoginDropdown({ navigate, onLoginSelect }) {
             type="button"
             onClick={() => {
               onLoginSelect?.();
-              navigate('/create-account');
+              navigate('/register');
             }}
             className="mt-3 w-full rounded-xl border border-amber-300/35 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
           >
@@ -639,6 +641,43 @@ function PlatformStrip() {
           {platformRowTwo.map((item) => (
             <InfoCard key={item.title} {...item} wide />
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RegistrationQrSection({ navigate }) {
+  return (
+    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6" data-testid="landing-registration-qr-section">
+      <div className="grid gap-6 rounded-3xl border border-amber-300/30 bg-slate-950/38 p-6 shadow-2xl shadow-slate-950/20 backdrop-blur md:grid-cols-[1fr_auto] md:items-center md:p-8">
+        <div>
+          <div className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-amber-200">
+            <QrCode className="h-5 w-5" aria-hidden="true" />
+            Register from your phone
+          </div>
+          <h2 className="mt-3 text-3xl font-semibold text-white">Create your MyHomeBro account</h2>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-sky-50/74">Scan the code, choose Homeowner, Contractor, or Property Manager, and continue through the registration experience for your role.</p>
+          <button
+            type="button"
+            onClick={() => navigate('/register')}
+            className="mt-5 rounded-xl bg-amber-300 px-5 py-3 font-semibold text-slate-950 transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-white/70"
+            data-testid="landing-registration-qr-button"
+          >
+            Create an Account
+          </button>
+          <div className="mt-3 text-sm font-semibold text-sky-200">myhomebro.com/register</div>
+        </div>
+        <div className="mx-auto rounded-2xl bg-white p-3 shadow-xl md:mx-0">
+          <img
+            src="/api/accounts/public/registration-qr/"
+            alt="QR code to create a MyHomeBro account"
+            className="h-44 w-44 sm:h-52 sm:w-52"
+            width="208"
+            height="208"
+            loading="lazy"
+            data-testid="landing-registration-qr-image"
+          />
         </div>
       </div>
     </section>
