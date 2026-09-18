@@ -110,8 +110,6 @@ const landingFaqItems = [
   'after-project-request',
   'homeowner-cost',
   'payment-method-differences',
-  'homeowner-refund-request',
-  'dispute-process',
 ]
   .map((id) => PUBLIC_FAQ_CURATED_ITEMS.find((item) => item.id === id))
   .filter(Boolean);
@@ -425,6 +423,7 @@ export default function LandingPage() {
         <VideoPreview navigate={navigate} />
         <AudienceCards navigate={navigate} />
         <TrustBand />
+        <LandingFaq navigate={navigate} />
       </main>
 
       <footer className="border-t border-white/10 px-4 py-6 text-center text-sm text-sky-50/62">
@@ -783,33 +782,44 @@ function HowItWorks() {
   );
 }
 
-function LandingFaq({ onViewAll, viewAllRef }) {
+function LandingFaq({ navigate }) {
   const [openItemId, setOpenItemId] = useState(landingFaqItems[0]?.id || '');
+
+  const viewAllQuestions = () => {
+    navigate('/faq');
+    window.dispatchEvent(
+      new CustomEvent('mhb:analytics', {
+        detail: {
+          event: 'public_faq_opened',
+          category: 'faq',
+          source: 'landing_faq',
+        },
+      })
+    );
+  };
 
   return (
     <section
       id="frequently-asked-questions"
-      className="mx-auto max-w-6xl scroll-mt-28 px-4 pb-16 sm:px-6 lg:px-8"
+      className="mx-auto max-w-5xl scroll-mt-28 px-4 pb-10 sm:px-6 lg:px-8"
     >
-      <div className="rounded-[2rem] border border-white/12 bg-slate-950/30 p-5 shadow-2xl shadow-slate-950/18 backdrop-blur sm:p-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="rounded-2xl border border-white/12 bg-slate-950/25 p-4 shadow-xl shadow-slate-950/16 backdrop-blur sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
               Helpful answers
             </div>
-            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               Frequently Asked Questions
             </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-sky-50/70 sm:text-base">
-              Start with the essentials about projects, contractors, payments,
-              AI assistance, and disputes.
+            <p className="mt-2 max-w-2xl text-sm leading-5 text-sky-50/70">
+              Quick answers about projects, contractors, and payments.
             </p>
           </div>
           <button
-            ref={viewAllRef}
             type="button"
             data-testid="landing-view-all-faqs"
-            onClick={onViewAll}
+            onClick={viewAllQuestions}
             className="min-h-11 self-start rounded-xl border border-amber-300/55 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:self-auto"
           >
             View All FAQs
@@ -817,7 +827,7 @@ function LandingFaq({ onViewAll, viewAllRef }) {
         </div>
 
         <div
-          className="mt-6 grid gap-3 md:grid-cols-2"
+          className="mt-4 grid gap-2 md:grid-cols-2"
           data-testid="landing-faq-preview"
         >
           {landingFaqItems.map((item) => {
@@ -838,7 +848,7 @@ function LandingFaq({ onViewAll, viewAllRef }) {
                         current === item.id ? '' : item.id
                       )
                     }
-                    className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold leading-5 text-white hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:text-[15px]"
+                    className="flex min-h-11 w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm font-semibold leading-5 text-white hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300"
                   >
                     <span>{item.question}</span>
                     <ChevronDown
@@ -850,7 +860,7 @@ function LandingFaq({ onViewAll, viewAllRef }) {
                 <div
                   id={panelId}
                   hidden={!open}
-                  className="border-t border-white/10 px-4 py-3 text-sm leading-6 text-sky-50/72"
+                  className="border-t border-white/10 px-3.5 py-2.5 text-sm leading-5 text-sky-50/72"
                 >
                   {item.answer}
                 </div>
@@ -867,7 +877,6 @@ function VideoPreview({ navigate }) {
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [overviewInitialTab, setOverviewInitialTab] = useState('overview');
   const triggerRef = useRef(null);
-  const faqTriggerRef = useRef(null);
   const openerRef = useRef(null);
   const jsonLd = JSON.stringify(
     buildPublicFaqJsonLd(PUBLIC_FAQ_CURATED_ITEMS)
@@ -882,19 +891,6 @@ function VideoPreview({ navigate }) {
         detail: {
           event: 'product_overview_opened',
           category: 'product_overview',
-        },
-      })
-    );
-  };
-
-  const openQuestions = () => {
-    navigate('/faq');
-    window.dispatchEvent(
-      new CustomEvent('mhb:analytics', {
-        detail: {
-          event: 'public_faq_opened',
-          category: 'faq',
-          source: 'landing_faq',
         },
       })
     );
@@ -1024,7 +1020,6 @@ function VideoPreview({ navigate }) {
           navigate={navigate}
         />
       </section>
-      <LandingFaq onViewAll={openQuestions} viewAllRef={faqTriggerRef} />
     </>
   );
 }

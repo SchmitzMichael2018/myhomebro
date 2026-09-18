@@ -106,7 +106,7 @@ test("landing guidance explains each stage by hover, focus, and activation", asy
 test("landing FAQ answers essentials and opens the complete Questions view", async ({ page }) => {
   const faqPreview = page.getByTestId("landing-faq-preview");
   await faqPreview.scrollIntoViewIfNeeded();
-  await expect(faqPreview.getByRole("button")).toHaveCount(6);
+  await expect(faqPreview.getByRole("button")).toHaveCount(4);
 
   const paymentQuestion = faqPreview.getByRole("button", {
     name: "What is the difference between escrow, direct pay, and a draw?",
