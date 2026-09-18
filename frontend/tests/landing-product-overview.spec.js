@@ -15,6 +15,17 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 });
 
+test("invites public feedback without presenting a maintenance warning", async ({ page }) => {
+  const invitation = page.getByTestId("landing-feedback-invitation");
+  await expect(invitation).toContainText("Help us serve you better.");
+  await expect(invitation).toContainText("Have a comment or suggestion about MyHomeBro?");
+  await expect(page.getByTestId("landing-share-comment-link")).toHaveAttribute(
+    "href",
+    "mailto:info@myhomebro.com?subject=MyHomeBro%20Feedback",
+  );
+  await expect(page.getByText("We're making improvements to serve you better.")).toHaveCount(0);
+});
+
 test("landing page exposes role-based Guided Help", async ({ page }) => {
   await expect(page.getByTestId("landing-guided-help-link")).toBeVisible();
   await page.getByTestId("landing-guided-help-link").click();

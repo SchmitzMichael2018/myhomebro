@@ -254,31 +254,27 @@ export default function LandingPage() {
 
       <main>
         <div
-          data-testid="landing-maintenance-notice"
+          data-testid="landing-feedback-invitation"
           className="border-b border-white/10 bg-blue-950/24"
         >
-          <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 py-2.5 text-center text-sm text-sky-50/78 sm:px-6 lg:px-8">
-            <ShieldCheck
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-x-3 gap-y-2 px-4 py-2.5 text-center text-sm sm:px-6 lg:px-8">
+            <MessageSquareText
               className="h-4 w-4 shrink-0 text-amber-300"
               aria-hidden="true"
             />
             <span className="font-semibold text-white">
-              We&apos;re making improvements to serve you better.
+              Help us serve you better.
             </span>
-            <span className="hidden text-xs text-sky-100/55 sm:inline">
-              Some features may be temporarily unavailable while updates are in
-              progress.
+            <span className="text-xs text-sky-100/65">
+              Have a comment or suggestion about MyHomeBro?
             </span>
             <a
-              href="/legal/terms-of-service/"
-              className="hidden text-xs font-semibold text-sky-300 hover:text-sky-200 sm:inline"
+              data-testid="landing-share-comment-link"
+              href="mailto:info@myhomebro.com?subject=MyHomeBro%20Feedback"
+              className="inline-flex min-h-8 items-center rounded-full border border-sky-300/30 bg-white/8 px-3 text-xs font-semibold text-sky-200 transition hover:border-amber-200/55 hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
-              Learn more
+              Share a comment
             </a>
-            <X
-              className="ml-auto hidden h-4 w-4 text-sky-100/65 md:block"
-              aria-hidden="true"
-            />
           </div>
         </div>
 
