@@ -43,8 +43,7 @@ test('landing page smoke renders core entry points', async ({ page }) => {
   await expect(page.getByTestId('landing-contractor-visual-asset')).toBeVisible();
   const trustSection = page.getByTestId('landing-trust-section');
   await expect(trustSection.getByText('Escrow-Based Milestone Holds')).toBeVisible();
-  await expect(trustSection.getByText('Property Records & Maintenance History')).toBeVisible();
-  await expect(trustSection.getByText('Structured Agreements & Approvals')).toBeVisible();
+  await expect(trustSection.getByText('Agreements, Documents & Records')).toBeVisible();
   await expect(trustSection.getByText('Project Transparency & Dispute Workflow')).toBeVisible();
   await expect(page.getByText('10K+')).toHaveCount(0);
   await expect(page.getByText('Average homeowner rating')).toHaveCount(0);

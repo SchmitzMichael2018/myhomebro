@@ -10,7 +10,7 @@ import {
   ClipboardList,
   Home,
   Download,
-  Lock,
+  Menu,
   MessageSquareText,
   ShieldCheck,
   Sparkles,
@@ -31,39 +31,26 @@ import {
   PUBLIC_FAQ_CURATED_ITEMS,
 } from '../lib/publicFaq.js';
 
-const platformRowOne = [
+const platformHighlights = [
   {
-    icon: Lock,
-    title: 'Secure & Private',
-    text: 'Your information stays organized and shared only with the contractors you choose.',
+    icon: Sparkles,
+    title: 'Free project planning',
+    text: 'Turn an early idea into a clearer project request.',
+  },
+  {
+    icon: UsersRound,
+    title: 'Local contractor connections',
+    text: 'Connect with participating contractors who fit the work.',
   },
   {
     icon: ShieldCheck,
-    title: 'Escrow Protected',
-    text: 'Use escrow-supported payments for clearer project funding and release milestones.',
-  },
-  {
-    icon: Sparkles,
-    title: 'AI-Powered',
-    text: 'Turn rough project ideas into clearer scope, planning notes, and next steps.',
+    title: 'Escrow-supported payments',
+    text: 'Keep funding and milestone approvals documented.',
   },
   {
     icon: ClipboardList,
-    title: 'Organized & Clear',
-    text: 'Keep details, documents, decisions, and updates in one project workspace.',
-  },
-];
-
-const platformRowTwo = [
-  {
-    icon: Building2,
-    title: 'Residential & Commercial',
-    text: 'Plan home projects, remodels, repairs, commercial buildouts, and maintenance work.',
-  },
-  {
-    icon: BriefcaseBusiness,
-    title: 'Contractor Platform Built-In',
-    text: 'Contractors can manage customers, agreements, milestones, payments, and project records.',
+    title: 'Agreements and records',
+    text: 'Keep documents, decisions, and project history together.',
   },
 ];
 
@@ -114,24 +101,10 @@ const landingFaqItems = [
   .map((id) => PUBLIC_FAQ_CURATED_ITEMS.find((item) => item.id === id))
   .filter(Boolean);
 
-const previewBullets = [
-  'AI-powered project planning',
-  'Connect with participating local contractors',
-  'Escrow-supported milestone payments',
-  'Real-time updates & messaging',
-  'All your project docs in one place',
-];
-
-const featureChips = [
-  'AI Planning',
-  'Escrow Security',
-  'Match & Connect',
-  'Project Management',
-];
-
 export default function LandingPage() {
   const navigate = useNavigate();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountRoleOpen, setAccountRoleOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -145,6 +118,7 @@ export default function LandingPage() {
       if (event.key === 'Escape') {
         setLoginOpen(false);
         setAccountRoleOpen(false);
+        setMobileMenuOpen(false);
       }
     }
 
@@ -185,7 +159,7 @@ export default function LandingPage() {
             </div>
           </button>
 
-          <div className="order-3 flex w-full flex-wrap items-center justify-center gap-1 text-sm font-semibold text-sky-50/82 lg:order-2 lg:w-auto">
+          <div className="hidden items-center gap-1 text-sm font-semibold text-sky-50/82 lg:flex">
             <button
               type="button"
               onClick={() => scrollTo('how-it-works')}
@@ -215,22 +189,6 @@ export default function LandingPage() {
             >
               Guided Help
             </button>
-            <button
-              type="button"
-              onClick={() => scrollTo('frequently-asked-questions')}
-              className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
-            >
-              FAQs
-            </button>
-            <a
-              href="/maintenance-request"
-              data-testid="landing-resident-maintenance-link"
-              aria-label="Tenant or resident? Submit a maintenance request"
-              title="Tenant or resident? Submit a maintenance request"
-              className="rounded-full border border-amber-300/35 px-3 py-2 text-amber-200 transition hover:border-amber-200/70 hover:bg-amber-300/10 hover:text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
-            >
-              Resident Maintenance
-            </a>
           </div>
 
           <div
@@ -258,6 +216,16 @@ export default function LandingPage() {
                 aria-hidden="true"
               />
             </button>
+            <button
+              type="button"
+              data-testid="landing-mobile-menu-button"
+              onClick={() => setMobileMenuOpen((open) => !open)}
+              aria-expanded={mobileMenuOpen}
+              aria-label="Open navigation menu"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/18 bg-slate-950/45 text-white lg:hidden"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
+            </button>
             {loginOpen ? (
               <LoginDropdown
                 navigate={navigate}
@@ -265,6 +233,22 @@ export default function LandingPage() {
               />
             ) : null}
           </div>
+          {mobileMenuOpen ? (
+            <div className="order-4 grid w-full gap-1 border-t border-white/10 pt-3 text-sm font-semibold text-sky-50/82 lg:hidden" data-testid="landing-mobile-menu">
+              {[
+                ['How It Works', 'how-it-works'],
+                ['For Customers', 'for-homeowners'],
+                ['For Contractors', 'for-contractors'],
+                ['Guided Help', 'guided-help'],
+              ].map(([label, id]) => (
+                <button key={id} type="button" onClick={() => { setMobileMenuOpen(false); scrollTo(id); }} className="rounded-lg px-3 py-2.5 text-left hover:bg-white/8">
+                  {label}
+                </button>
+              ))}
+              <a href="/faq" className="rounded-lg px-3 py-2.5 hover:bg-white/8">FAQs</a>
+              <a href="/maintenance-request" data-testid="landing-resident-maintenance-link" className="rounded-lg px-3 py-2.5 text-amber-200 hover:bg-amber-300/10">Resident Maintenance</a>
+            </div>
+          ) : null}
         </nav>
       </header>
 
@@ -334,17 +318,6 @@ export default function LandingPage() {
             </button>
             <button
               type="button"
-              onClick={() => scrollTo('how-it-works')}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/18 bg-white/[0.04] px-6 py-4 text-base font-semibold text-white transition hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
-            >
-              <ArrowRight
-                className="h-5 w-5 text-amber-300"
-                aria-hidden="true"
-              />
-              How It Works
-            </button>
-            <button
-              type="button"
               data-testid="landing-create-free-account-button"
               onClick={() => setAccountRoleOpen(true)}
               aria-haspopup="dialog"
@@ -353,6 +326,14 @@ export default function LandingPage() {
               Create an Account
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => scrollTo('how-it-works')}
+            className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-sky-300 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
+          >
+            See How It Works
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </button>
 
           <div className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-sky-50/82">
             {['No Obligation', 'Free to Get Started', 'Secure & Private'].map(
@@ -370,7 +351,6 @@ export default function LandingPage() {
         </section>
 
         <PlatformStrip />
-        <RegistrationQrSection navigate={navigate} />
         {PWA_FLAGS.enabled ? (
           <section
             className="mx-auto max-w-6xl px-4 py-10 sm:px-6"
@@ -420,9 +400,10 @@ export default function LandingPage() {
           </section>
         ) : null}
         <HowItWorks />
-        <VideoPreview navigate={navigate} />
         <AudienceCards navigate={navigate} />
+        <VideoPreview navigate={navigate} />
         <TrustBand />
+        <RegistrationQrSection navigate={navigate} />
         <LandingFaq navigate={navigate} />
       </main>
 
@@ -437,6 +418,12 @@ export default function LandingPage() {
           </a>
           <a href="/faq" className="text-sky-300 hover:text-sky-200">
             FAQs
+          </a>
+          <a href="/maintenance-request" data-testid="landing-resident-maintenance-link" className="text-sky-300 hover:text-sky-200">
+            Resident Maintenance
+          </a>
+          <a href="/portal" className="text-sky-300 hover:text-sky-200">
+            Customer Login
           </a>
           <a
             href="/legal/privacy-policy/"
@@ -631,14 +618,9 @@ function PlatformStrip() {
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div className="overflow-hidden rounded-3xl border border-white/16 bg-slate-950/18 shadow-2xl shadow-slate-950/18 backdrop-blur">
-        <div className="grid gap-0 divide-y divide-white/10 md:grid-cols-4 md:divide-x md:divide-y-0">
-          {platformRowOne.map((item) => (
+        <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-white/10 md:grid-cols-4 md:divide-y-0">
+          {platformHighlights.map((item) => (
             <InfoCard key={item.title} {...item} />
-          ))}
-        </div>
-        <div className="grid gap-0 border-t border-white/10 md:grid-cols-2 md:divide-x md:divide-white/10">
-          {platformRowTwo.map((item) => (
-            <InfoCard key={item.title} {...item} wide />
           ))}
         </div>
       </div>
@@ -648,15 +630,15 @@ function PlatformStrip() {
 
 function RegistrationQrSection({ navigate }) {
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6" data-testid="landing-registration-qr-section">
-      <div className="grid gap-6 rounded-3xl border border-amber-300/30 bg-slate-950/38 p-6 shadow-2xl shadow-slate-950/20 backdrop-blur md:grid-cols-[1fr_auto] md:items-center md:p-8">
+    <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6" data-testid="landing-registration-qr-section">
+      <div className="grid gap-5 rounded-2xl border border-amber-300/30 bg-slate-950/38 p-5 shadow-xl shadow-slate-950/20 backdrop-blur md:grid-cols-[1fr_auto] md:items-center md:p-6">
         <div>
           <div className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-amber-200">
             <QrCode className="h-5 w-5" aria-hidden="true" />
             Register from your phone
           </div>
-          <h2 className="mt-3 text-3xl font-semibold text-white">Create your MyHomeBro account</h2>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-sky-50/74">Scan the code, choose Homeowner, Contractor, or Property Manager, and continue through the registration experience for your role.</p>
+          <h2 className="mt-2 text-2xl font-semibold text-white">Ready to get started?</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/74">Choose your role and create an account, or scan the code to continue on another device.</p>
           <button
             type="button"
             onClick={() => navigate('/register')}
@@ -667,11 +649,11 @@ function RegistrationQrSection({ navigate }) {
           </button>
           <div className="mt-3 text-sm font-semibold text-sky-200">myhomebro.com/register</div>
         </div>
-        <div className="mx-auto rounded-2xl bg-white p-3 shadow-xl md:mx-0">
+        <div className="mx-auto hidden rounded-2xl bg-white p-3 shadow-xl md:block md:mx-0">
           <img
             src="/api/accounts/public/registration-qr/"
             alt="QR code to create a MyHomeBro account"
-            className="h-44 w-44 sm:h-52 sm:w-52"
+            className="h-36 w-36"
             width="208"
             height="208"
             loading="lazy"
@@ -683,22 +665,22 @@ function RegistrationQrSection({ navigate }) {
   );
 }
 
-function InfoCard({ icon: Icon, title, text, wide = false }) {
+function InfoCard({ icon: Icon, title, text }) {
   return (
-    <div className={`bg-slate-950/18 p-5 ${wide ? 'md:p-6' : ''}`}>
-      <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-blue-300/35 bg-blue-500/10 text-blue-200 shadow-[0_0_24px_rgba(37,99,235,0.12)]">
+    <div className="bg-slate-950/18 p-4 sm:p-5">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-blue-300/35 bg-blue-500/10 text-blue-200">
           <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
         <div className="font-semibold text-white">{title}</div>
       </div>
-      <p className="mt-3 text-sm leading-6 text-sky-50/68">{text}</p>
+      <p className="mt-2 text-xs leading-5 text-sky-50/68 sm:text-sm">{text}</p>
     </div>
   );
 }
 
 function HowItWorks() {
-  const [activeStep, setActiveStep] = useState(0);
+  const [activeStep, setActiveStep] = useState(-1);
 
   return (
     <section
@@ -921,37 +903,23 @@ function VideoPreview({ navigate }) {
           data-testid="landing-faq-jsonld"
           dangerouslySetInnerHTML={{ __html: jsonLd }}
         />
-        <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
+        <div className="mx-auto grid max-w-6xl gap-5 overflow-hidden rounded-2xl border border-white/12 bg-slate-950/30 p-4 shadow-xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.7fr_1.3fr]">
           <div className="p-3 sm:p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
               Guided Help
             </div>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               Choose your role and learn MyHomeBro
             </h2>
-            <p className="mt-4 max-w-xl text-base leading-7 text-sky-50/72">
+            <p className="mt-3 max-w-xl text-sm leading-6 text-sky-50/72">
               Select customer, contractor, or property manager to see the
               videos and answers built for your workflow.
             </p>
-            <div className="mt-7 space-y-3">
-              {previewBullets.map((item) => (
-                <div
-                  key={item}
-                  className="flex items-center gap-3 text-sm text-sky-50/78"
-                >
-                  <CheckCircle2
-                    className="h-4 w-4 shrink-0 text-amber-300"
-                    aria-hidden="true"
-                  />
-                  {item}
-                </div>
-              ))}
-            </div>
           </div>
 
           <div data-testid="landing-video-preview" className="relative">
             <div className="grid gap-3">
-              <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22 lg:min-h-[22rem]">
+              <div className="relative min-h-[17rem] overflow-hidden rounded-[1.25rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22 lg:min-h-[18rem]">
                 <img
                   src={kitchenPreviewImage}
                   alt="Warm kitchen remodel planning preview"
@@ -1001,16 +969,6 @@ function VideoPreview({ navigate }) {
                 </div>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {featureChips.map((chip) => (
-                <span
-                  key={chip}
-                  className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5 text-xs font-semibold text-sky-50/78"
-                >
-                  {chip}
-                </span>
-              ))}
-            </div>
           </div>
         </div>
         <ProductOverviewModal
@@ -1026,8 +984,9 @@ function VideoPreview({ navigate }) {
 
 function AudienceCards({ navigate }) {
   return (
-    <section className="mx-auto grid max-w-6xl gap-4 px-4 pb-8 sm:px-6 lg:grid-cols-2 lg:px-8">
-      <AudienceCard
+    <section className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 lg:px-8">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AudienceCard
         id="for-homeowners"
         eyebrow="For Customers"
         title="Plan with confidence. Get it done right."
@@ -1042,8 +1001,8 @@ function AudienceCards({ navigate }) {
         onPrimary={() => navigate('/start-project')}
         onSecondary={() => navigate('/portal')}
         tone="homeowner"
-      />
-      <AudienceCard
+        />
+        <AudienceCard
         id="for-contractors"
         eyebrow="For Contractors"
         title="More quality projects. Less guesswork."
@@ -1066,7 +1025,17 @@ function AudienceCards({ navigate }) {
           )
         }
         tone="contractor"
-      />
+        />
+      </div>
+      <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/12 bg-slate-950/28 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">For Property Managers</div>
+          <div className="mt-1 font-semibold text-white">Organize properties, maintenance, vendors, and records.</div>
+        </div>
+        <button type="button" onClick={() => navigate('/create-account?role=property_manager')} className="min-h-11 rounded-xl border border-sky-300/35 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/10">
+          Explore Property Management
+        </button>
+      </div>
     </section>
   );
 }
@@ -1198,7 +1167,7 @@ function TrustBand() {
             </p>
           </div>
         </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
           <TrustValueCard
             icon={ShieldCheck}
             title="Escrow-Based Milestone Holds"
@@ -1206,14 +1175,9 @@ function TrustBand() {
             tone="amber"
           />
           <TrustValueCard
-            icon={Home}
-            title="Property Records & Maintenance History"
-            text="Store warranties, project records, photos, receipts, and maintenance history in one place."
-          />
-          <TrustValueCard
             icon={ClipboardList}
-            title="Structured Agreements & Approvals"
-            text="Use documented agreements, milestone reviews, approvals, and project tracking throughout the job."
+            title="Agreements, Documents & Records"
+            text="Keep agreements, approvals, warranties, photos, receipts, and property history together."
           />
           <TrustValueCard
             icon={MessageSquareText}

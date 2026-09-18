@@ -84,6 +84,10 @@ test("landing guidance explains each stage by hover, focus, and activation", asy
   const thirdStep = page.getByTestId("how-it-works-step-3");
 
   await firstStep.scrollIntoViewIfNeeded();
+  await expect(firstStep).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByTestId("how-it-works-detail-1")).toBeHidden();
+
+  await firstStep.click();
   await expect(firstStep).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByTestId("how-it-works-detail-1")).toBeVisible();
 
