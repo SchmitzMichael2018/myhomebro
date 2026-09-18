@@ -2414,6 +2414,32 @@ test("a standard customer request normalizes empty recommendation fields", async
   expect(submittedRequestPayload.recommendation_context).toBeNull();
 });
 
+test("customer can share a personal contractor referral QR", async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem("access", "customer-portal-token"));
+  await page.route("**/api/projects/customer-portal/referral-token/**", async (route) => {
+    const isReferralRequest = route.request().url().includes("/referrals/");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(isReferralRequest ? {
+        code: "CUSTOMER25",
+        referral_link: "https://www.myhomebro.com/signup?ref=CUSTOMER25",
+        qr_code_data_url: "data:image/png;base64,PHN2Zy8+",
+        summary: { registrations: 2, pending_cents: 1250, available_cents: 500, paid_cents: 0 },
+        reward_terms: { percent: 25, earning_months: 3 },
+        customer_payout: { status: "planning", planned_methods: ["MyHomeBro project credit", "Direct deposit"] },
+      } : portalPayload),
+    });
+  });
+
+  await page.goto("/portal/referral-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-referrals").click();
+  await expect(page.getByTestId("customer-referral-panel")).toContainText("Know a great contractor?");
+  await expect(page.getByTestId("customer-referral-link")).toContainText("CUSTOMER25");
+  await expect(page.getByTestId("customer-referral-qr")).toBeVisible();
+  await expect(page.getByTestId("customer-referral-payout-notice")).toContainText("project credit and direct deposit");
+});
+
 test("customer portal is reachable from the landing page and loads secure records", async ({ page }) => {
   test.setTimeout(60000);
   const consoleErrors = [];
@@ -2536,6 +2562,22 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.route("**/api/projects/customer-portal/**", async (route) => {
     const requestUrl = route.request().url();
     const method = route.request().method();
+
+    if (requestUrl.includes("/customer-portal/customer-token/referrals/")) {
+      await route.fulfill({
+        status: method === "POST" ? 201 : 200,
+        contentType: "application/json",
+        body: JSON.stringify(method === "POST" ? { recorded: true } : {
+          code: "CUSTOMER25",
+          referral_link: "https://www.myhomebro.com/signup?ref=CUSTOMER25",
+          qr_code_data_url: "data:image/png;base64,PHN2Zy8+",
+          summary: { registrations: 2, pending_cents: 1250, available_cents: 500, paid_cents: 0 },
+          reward_terms: { percent: 25, earning_months: 3 },
+          customer_payout: { status: "planning", planned_methods: ["MyHomeBro project credit", "Direct deposit"] },
+        }),
+      });
+      return;
+    }
 
     if (requestUrl.endsWith("/request-link/") && method === "POST") {
       await route.fulfill({
@@ -4649,7 +4691,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
   await expect(page.getByText("track projects, payments, documents, warranties, and property records in one place.")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText(["Home", "Projects", "Payments", "Property", "Updates", "How-To"]);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText(["Home", "Projects", "Payments", "Property", "Updates", "Rewards", "How-To"]);
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
@@ -4802,7 +4844,7 @@ test("customer portal is reachable from the landing page and loads secure record
   });
   expect(savedProfilePayload).toMatchObject(profileSavePayload);
   await expect(page.getByRole("heading", { name: "Property Manager Portal" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates", "How-To"]);
+  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates", "Rewards", "How-To"]);
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("property-management-command-center")).toBeVisible();
   await expect(page.getByTestId("property-management-summary")).toContainText("Open Requests");
@@ -6677,7 +6719,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await page.goto("/portal/empty-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
   await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).getByRole("button")).toHaveCount(6);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).getByRole("button")).toHaveCount(7);
   await expect(page.getByTestId("customer-mobile-primary-action")).toHaveCount(1);
   await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new notifications");
   await expect(page.getByTestId("customer-overview-projects-empty")).toContainText("No active projects yet");
@@ -6771,7 +6813,7 @@ test("property manager portal presents a role-aware operations command center", 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Property Manager Portal" })).toBeVisible();
   await expect(page.getByText("coordinate properties, tenants, maintenance, vendors, approvals, payments, and history in one place.")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates", "How-To"]);
+  await expect(page.getByRole("navigation", { name: "Property management workspace tabs" }).locator("button")).toHaveText(["Operations", "Maintenance", "Properties", "Projects", "Payments", "Updates", "Rewards", "How-To"]);
   await page.getByTestId("customer-dashboard-tab-how-to").click();
   const propertyManagerHowTo = page.getByTestId("guided-video-library-property_manager");
   await expect(propertyManagerHowTo).toBeVisible();

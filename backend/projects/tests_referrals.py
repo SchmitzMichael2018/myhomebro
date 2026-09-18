@@ -17,6 +17,7 @@ from projects.services.referrals import (
     release_eligible_earnings,
     reserve_founding_slot,
 )
+from projects.views.customer_portal import _portal_token
 from receipts.models import Receipt
 
 
@@ -92,6 +93,42 @@ class ReferralProgramTests(TestCase):
         self.assertEqual(earning.qualifying_platform_fee_cents, 1200)
         self.assertEqual(earning.reward_cents, 300)
         self.assertEqual(record_qualifying_receipt(receipt).pk, earning.pk)
+
+    def test_customer_portal_provides_personal_contractor_referral_qr(self):
+        customer = User.objects.create_user(email="homeowner-referrer@example.com", password="test-pass")
+        token = _portal_token(customer.email)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/referrals/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("/signup?ref=", payload["referral_link"])
+        self.assertTrue(payload["qr_code_data_url"].startswith("data:image/png;base64,"))
+        self.assertEqual(payload["reward_terms"]["percent"], 25)
+        self.assertEqual(payload["reward_terms"]["earning_months"], 3)
+        self.assertEqual(payload["customer_payout"]["status"], "planning")
+
+        referred = self.make_contractor("customer-referred-builder@example.com", qualified=True)
+        attribution = attribute_contractor_registration(
+            contractor=referred,
+            referral_code=payload["code"],
+        )
+        self.assertEqual(attribution.referrer_id, customer.id)
+        self.assertEqual(attribution.reward_rate_bps, 2500)
+        self.assertEqual(attribution.earning_months, 3)
+
+    def test_customer_portal_records_referral_qr_share(self):
+        customer = User.objects.create_user(email="homeowner-share@example.com", password="test-pass")
+        token = _portal_token(customer.email)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/referrals/",
+            {"channel": "qr"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        participant = participant_for_user(customer)
+        self.assertEqual(participant.invitations.filter(channel="qr").count(), 1)
 
     def test_unverified_referral_does_not_activate_or_earn(self):
         referrer = self.make_contractor("advocate@example.com")

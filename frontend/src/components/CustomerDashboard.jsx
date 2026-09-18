@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Bell, Building2, CheckCircle2, Circle, Clapperboard, CreditCard, ExternalLink, FolderKanban, Home, LayoutDashboard, LogOut, Pencil, Route, UserRound, Users, Wrench } from "lucide-react";
+import { Bell, Building2, CheckCircle2, Circle, Clapperboard, CreditCard, Download, ExternalLink, FolderKanban, Gift, Home, LayoutDashboard, LogOut, Pencil, Route, UserRound, Users, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -19,6 +19,7 @@ const PRIMARY_TABS = [
   ["payments", "Payments", CreditCard],
   ["property", "Property", Home],
   ["notifications", "Updates", Bell],
+  ["referrals", "Rewards", Gift],
   ["how-to", "How-To", Clapperboard],
 ];
 
@@ -29,6 +30,7 @@ const PROPERTY_MANAGER_PRIMARY_TABS = [
   ["projects", "Projects", FolderKanban],
   ["payments", "Payments", CreditCard],
   ["notifications", "Updates", Bell],
+  ["referrals", "Rewards", Gift],
   ["how-to", "How-To", Clapperboard],
 ];
 
@@ -55,6 +57,7 @@ const VALID_PORTAL_TABS = new Set([
   "documents",
   "payments",
   "notifications",
+  "referrals",
   "account",
   "how-to",
 ]);
@@ -143,6 +146,70 @@ function InfoCard({ eyebrow, title, body, actionLabel, onClick, testId, children
       {children}
       {actionLabel ? <div className="mt-3 text-xs font-semibold text-amber-100">{actionLabel}</div> : null}
     </Component>
+  );
+}
+
+function CustomerReferralPanel({ token }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api.get(`/projects/customer-portal/${encodeURIComponent(token)}/referrals/`)
+      .then(({ data: payload }) => { if (active) setData(payload); })
+      .catch((requestError) => { if (active) setError(requestError?.response?.data?.detail || "Referral rewards could not be loaded."); });
+    return () => { active = false; };
+  }, [token]);
+
+  const recordShare = (channel) => api.post(`/projects/customer-portal/${encodeURIComponent(token)}/referrals/`, { channel }).catch(() => {});
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(data.referral_link);
+      recordShare("copy");
+      toast.success("Referral link copied.");
+    } catch {
+      toast.error("Could not copy the referral link.");
+    }
+  };
+
+  if (error) return <section className="rounded-3xl border border-rose-300/30 bg-rose-400/10 p-5 text-rose-100" data-testid="customer-referral-error">{error}</section>;
+  if (!data) return <section className="rounded-3xl border border-slate-700 bg-slate-900/75 p-5 text-slate-300" data-testid="customer-referral-loading">Loading referral rewards…</section>;
+
+  const summary = data.summary || {};
+  const shareText = `Join MyHomeBro as a contractor using my referral link: ${data.referral_link}`;
+  return (
+    <section className="space-y-5" data-testid="customer-referral-panel">
+      <header className="rounded-3xl border border-amber-300/30 bg-slate-900/80 p-5 shadow-xl">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-200">Referral rewards</p>
+        <h2 className="mt-1 text-2xl font-bold text-white">Know a great contractor?</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Share your personal QR code or link. If the contractor joins, qualifies, and completes paid projects through MyHomeBro, you can earn 25% of qualifying platform fees for their first three earning months.</p>
+      </header>
+
+      <div className="grid gap-5 rounded-3xl border border-slate-700 bg-slate-900/75 p-5 md:grid-cols-[1fr_auto]">
+        <div className="min-w-0">
+          <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Your personal contractor referral link</div>
+          <div className="mt-2 break-all rounded-xl bg-slate-950 px-4 py-3 font-mono text-sm text-sky-100" data-testid="customer-referral-link">{data.referral_link}</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={copyLink} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-black text-slate-950">Copy link</button>
+            <a onClick={() => recordShare("text")} href={`sms:?&body=${encodeURIComponent(shareText)}`} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white">Text</a>
+            <a onClick={() => recordShare("email")} href={`mailto:?subject=${encodeURIComponent("MyHomeBro contractor referral")}&body=${encodeURIComponent(shareText)}`} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white">Email</a>
+            <a onClick={() => recordShare("qr")} href={data.qr_code_data_url} download={`myhomebro-referral-${data.code}.png`} className="inline-flex items-center gap-2 rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white"><Download size={15} />Download QR</a>
+          </div>
+        </div>
+        <img src={data.qr_code_data_url} alt="Personal contractor referral QR code" className="h-44 w-44 justify-self-center rounded-2xl bg-white p-2" data-testid="customer-referral-qr" />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard label="Contractors registered" value={summary.registrations || 0} />
+        <StatCard label="Rewards pending" value={moneyLabel(Number(summary.pending_cents || 0) / 100)} />
+        <StatCard label="Rewards available" value={moneyLabel(Number(summary.available_cents || 0) / 100)} />
+      </div>
+
+      <div className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-4" data-testid="customer-referral-payout-notice">
+        <div className="font-semibold text-white">How you will receive rewards</div>
+        <p className="mt-1 text-sm leading-6 text-sky-100/80">Eligible rewards are being tracked now. We are finalizing the choice between MyHomeBro project credit and direct deposit before customer payouts are enabled. We will show the method and require your confirmation before any payout.</p>
+      </div>
+    </section>
   );
 }
 
@@ -4000,6 +4067,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (activeTab === "notifications") {
       return <NotificationsCenter notifications={notifications} unreadCount={unreadCount} preferences={portal?.notification_cleanup_preferences || {}} notificationPreferences={portal?.notification_preferences || {}} markingId={markingNotificationId} archivingId={archivingNotificationId} restoringId={restoringNotificationId} savingPreferences={savingNotificationPreferences} savingNotificationPreferences={savingDeliveryPreferences} preferenceError={notificationPreferenceError} notificationPreferenceError={deliveryPreferenceError} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} onArchive={archiveNotification} onRestore={restoreNotification} onSavePreferences={saveNotificationCleanupPreferences} onSaveNotificationPreferences={saveCustomerNotificationPreferences} onOpenTab={openWorkspaceTab} onOpenReminder={openReminderDetail} />;
     }
+    if (activeTab === "referrals") return <CustomerReferralPanel token={token} />;
     if (activeTab === "how-to") {
       return (
         <GuidedVideoLibrary

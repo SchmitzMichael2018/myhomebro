@@ -468,6 +468,7 @@ from .views.customer_portal import (
     CustomerPortalRequestMatchingView,
     CustomerProjectDashboardView,
     CustomerPortalRequestLinkView,
+    CustomerPortalReferralDashboardView,
     CustomerPortalView,
 )
 from .views.milestone_workflow import (
@@ -678,6 +679,7 @@ urlpatterns = [
     path("customer-portal/request-link/", CustomerPortalRequestLinkView.as_view(), name="customer-portal-request-link"),
     path("customer-portal/account/", CustomerPortalAccountView.as_view(), name="customer-portal-account"),
     path("customer-portal/<str:token>/create-password/", CustomerPortalCreatePasswordView.as_view(), name="customer-portal-create-password"),
+    path("customer-portal/<str:token>/referrals/", CustomerPortalReferralDashboardView.as_view(), name="customer-portal-referrals"),
     path("customer-portal/<str:token>/", CustomerPortalView.as_view(), name="customer-portal-detail"),
     path("customer-portal/<str:token>/rental-operations/checkout/", CustomerPortalRentalOperationsCheckoutView.as_view(), name="customer-portal-rental-operations-checkout"),
     path("customer-portal/<str:token>/profile/", CustomerPortalProfileView.as_view(), name="customer-portal-profile"),

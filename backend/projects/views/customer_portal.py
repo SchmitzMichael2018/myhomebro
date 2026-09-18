@@ -105,6 +105,7 @@ from projects.models_project_intake import ProjectIntake
 from projects.models_proposals import Proposal, ProposalReviewVersion
 from projects.services.proposal_customer_review import token_for as proposal_review_token
 from projects.services.proposal_conversion import ProposalConversionError
+from projects.services.referrals import referral_dashboard
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
     bid_next_action,
@@ -5665,6 +5666,58 @@ class CustomerPortalView(APIView):
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalReferralDashboardView(APIView):
+    permission_classes = [AllowAny]
+
+    @staticmethod
+    def _user_for_token(token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return None, Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return None, Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+        if user is None:
+            return None, Response(
+                {"detail": "Create your MyHomeBro account before sharing a personal referral code."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return user, None
+
+    def get(self, request, token: str):
+        user, error = self._user_for_token(token)
+        if error is not None:
+            return error
+        payload = referral_dashboard(user, request=request)
+        payload["reward_terms"] = {
+            "percent": 25,
+            "earning_months": 3,
+            "basis": "Qualifying MyHomeBro platform fees collected from the referred contractor's projects.",
+        }
+        payload["customer_payout"] = {
+            "status": "planning",
+            "available_methods": [],
+            "planned_methods": ["MyHomeBro project credit", "Direct deposit"],
+            "message": "Eligible rewards are tracked while customer payout choices are being finalized.",
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str):
+        user, error = self._user_for_token(token)
+        if error is not None:
+            return error
+        channel = _safe_text(request.data.get("channel")).lower()
+        from projects.models_referrals import ReferralInvitation
+        from projects.services.referrals import participant_for_user
+
+        valid_channels = {value for value, _label in ReferralInvitation.CHANNEL_CHOICES}
+        if channel not in valid_channels:
+            return Response({"channel": ["Choose a valid sharing channel."]}, status=status.HTTP_400_BAD_REQUEST)
+        ReferralInvitation.objects.create(participant=participant_for_user(user), channel=channel)
+        return Response({"recorded": True}, status=status.HTTP_201_CREATED)
 
 
 class CustomerPortalRentalOperationsCheckoutView(APIView):
