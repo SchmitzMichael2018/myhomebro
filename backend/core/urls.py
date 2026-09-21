@@ -17,6 +17,7 @@ from rest_framework_simplejwt.views import (
 from payments.webhooks import stripe_webhook  # noqa: F401  (imported elsewhere historically)
 from projects.views.sms_webhook import sms_webhook
 from projects.views.public_presence import PublicContractorRatingView
+from projects.views.referrals import PublicReferralRedirectView
 from projects.services.proposal_customer_review import ReviewAccessError, resolve_short_code, token_for
 from projects.services.estimate_appointment_notifications import (
     confirmation_token,
@@ -103,6 +104,7 @@ urlpatterns = [
     # Admin & health
     path("healthz", health),
     path("r/<str:code>", ProposalReviewShortLinkView.as_view(), name="proposal-review-short-link"),
+    path("refer/<str:code>", PublicReferralRedirectView.as_view(), name="public-referral-short-link"),
     path("a/<str:code>", EstimateAppointmentShortLinkView.as_view(), name="appointment-short-link"),
     path("admin/health/async-services/", async_services_readiness, name="async-services-readiness"),
     path("admin/", admin.site.urls),

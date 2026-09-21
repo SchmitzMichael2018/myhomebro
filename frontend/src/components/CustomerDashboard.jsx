@@ -152,6 +152,17 @@ function InfoCard({ eyebrow, title, body, actionLabel, onClick, testId, children
 function CustomerReferralPanel({ token }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [busyAction, setBusyAction] = useState("");
+  const [creditOption, setCreditOption] = useState("");
+  const [creditAmount, setCreditAmount] = useState("");
+  const loadReferrals = useCallback(() => api.get(`/projects/customer-portal/${encodeURIComponent(token)}/referrals/`)
+    .then(({ data: payload }) => {
+      setData(payload);
+      setError("");
+    })
+    .catch((requestError) => {
+      setError(requestError?.response?.data?.detail || "Referral rewards could not be loaded.");
+    }), [token]);
 
   useEffect(() => {
     let active = true;
@@ -171,23 +182,63 @@ function CustomerReferralPanel({ token }) {
       toast.error("Could not copy the referral link.");
     }
   };
+  const cashOut = async () => {
+    setBusyAction("cash");
+    try {
+      const { data: result } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/referrals/`, { action: "cash_out" });
+      toast.success(result.requires_onboarding
+        ? "Rewards reserved. Complete supported payout onboarding before payment."
+        : "Cash-out request submitted for review.");
+      await loadReferrals();
+    } catch (requestError) {
+      toast.error(requestError?.response?.data?.detail || "Cash-out request could not be submitted.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+  const applyProjectCredit = async () => {
+    const option = (data.credit_options || []).find((row) => String(row.invoice_id) === creditOption);
+    const amountCents = Math.round(Number(creditAmount || 0) * 100);
+    if (!option || amountCents <= 0) {
+      toast.error("Choose an invoice and enter a positive reward amount.");
+      return;
+    }
+    setBusyAction("credit");
+    try {
+      const { data: result } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/referrals/`, {
+        action: "project_credit",
+        project_id: option.project_id,
+        invoice_id: option.invoice_id,
+        amount_cents: amountCents,
+      });
+      toast.success(result.integration_required
+        ? "Rewards reserved for this invoice; payment funding remains gated until integration is verified."
+        : "Referral rewards applied to the project.");
+      setCreditAmount("");
+      await loadReferrals();
+    } catch (requestError) {
+      toast.error(requestError?.response?.data?.detail || "Project credit could not be reserved.");
+    } finally {
+      setBusyAction("");
+    }
+  };
 
   if (error) return <section className="rounded-3xl border border-rose-300/30 bg-rose-400/10 p-5 text-rose-100" data-testid="customer-referral-error">{error}</section>;
   if (!data) return <section className="rounded-3xl border border-slate-700 bg-slate-900/75 p-5 text-slate-300" data-testid="customer-referral-loading">Loading referral rewards…</section>;
 
   const summary = data.summary || {};
-  const shareText = `Join MyHomeBro as a contractor using my referral link: ${data.referral_link}`;
+  const shareText = `Join MyHomeBro using my referral link: ${data.referral_link}`;
   return (
     <section className="space-y-5" data-testid="customer-referral-panel">
       <header className="rounded-3xl border border-amber-300/30 bg-slate-900/80 p-5 shadow-xl">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-200">Referral rewards</p>
-        <h2 className="mt-1 text-2xl font-bold text-white">Know a great contractor?</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Share your personal QR code or link. If the contractor joins, qualifies, and completes paid projects through MyHomeBro, you can earn 25% of qualifying platform fees for their first three earning months.</p>
+        <h2 className="mt-1 text-2xl font-bold text-white">Know someone who could use MyHomeBro?</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Share your stable personal QR code or link with contractors, homeowners, or property managers. Standard referrals earn 25% of eligible platform fees for three months; qualifying Founding referrals retain their snapshotted terms.</p>
       </header>
 
       <div className="grid gap-5 rounded-3xl border border-slate-700 bg-slate-900/75 p-5 md:grid-cols-[1fr_auto]">
         <div className="min-w-0">
-          <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Your personal contractor referral link</div>
+          <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Your personal MyHomeBro referral link</div>
           <div className="mt-2 break-all rounded-xl bg-slate-950 px-4 py-3 font-mono text-sm text-sky-100" data-testid="customer-referral-link">{data.referral_link}</div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={copyLink} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-black text-slate-950">Copy link</button>
@@ -196,18 +247,38 @@ function CustomerReferralPanel({ token }) {
             <a onClick={() => recordShare("qr")} href={data.qr_code_data_url} download={`myhomebro-referral-${data.code}.png`} className="inline-flex items-center gap-2 rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white"><Download size={15} />Download QR</a>
           </div>
         </div>
-        <img src={data.qr_code_data_url} alt="Personal contractor referral QR code" className="h-44 w-44 justify-self-center rounded-2xl bg-white p-2" data-testid="customer-referral-qr" />
+        <img src={data.qr_code_data_url} alt="Personal MyHomeBro referral QR code" className="h-44 w-44 justify-self-center rounded-2xl bg-white p-2" data-testid="customer-referral-qr" />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard label="Contractors registered" value={summary.registrations || 0} />
+        <StatCard label="Accounts registered" value={summary.registrations || 0} />
         <StatCard label="Rewards pending" value={moneyLabel(Number(summary.pending_cents || 0) / 100)} />
         <StatCard label="Rewards available" value={moneyLabel(Number(summary.available_cents || 0) / 100)} />
       </div>
 
       <div className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-4" data-testid="customer-referral-payout-notice">
-        <div className="font-semibold text-white">How you will receive rewards</div>
-        <p className="mt-1 text-sm leading-6 text-sky-100/80">Eligible rewards are being tracked now. We are finalizing the choice between MyHomeBro project credit and direct deposit before customer payouts are enabled. We will show the method and require your confirmation before any payout.</p>
+        <div className="font-semibold text-white">Cash out or apply rewards to a project</div>
+        <p className="mt-1 text-sm leading-6 text-sky-100/80">Rewards accrue without payout onboarding. Available rewards can be reserved for a qualifying MyHomeBro project. Cash payout remains gated until your supported Stripe payout identity is ready.</p>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <button type="button" onClick={cashOut} disabled={!summary.available_cents || busyAction} className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+            {busyAction === "cash" ? "Submitting…" : `Cash out ${moneyLabel(Number(summary.available_cents || 0) / 100)}`}
+          </button>
+          <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto]">
+            <select value={creditOption} onChange={(event) => setCreditOption(event.target.value)} className="min-w-0 rounded-xl border border-sky-200/30 bg-slate-950 px-3 py-2 text-sm text-white">
+              <option value="">Choose project invoice</option>
+              {(data.credit_options || []).map((option) => (
+                <option key={option.invoice_id} value={option.invoice_id}>
+                  {option.project_title} · {option.invoice_number} · {moneyLabel(Number(option.invoice_amount_cents || 0) / 100)}
+                </option>
+              ))}
+            </select>
+            <input type="number" min="0.01" step="0.01" value={creditAmount} onChange={(event) => setCreditAmount(event.target.value)} placeholder="Amount" className="min-w-0 rounded-xl border border-sky-200/30 bg-slate-950 px-3 py-2 text-sm text-white" />
+            <button type="button" onClick={applyProjectCredit} disabled={!summary.available_cents || !creditOption || busyAction} className="rounded-xl border border-amber-300/60 px-4 py-2 text-sm font-bold text-amber-100 disabled:cursor-not-allowed disabled:opacity-50">
+              {busyAction === "credit" ? "Reserving…" : "Apply"}
+            </button>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-sky-100/65">Project-credit reservations do not reduce a Stripe payment or claim contractor funding until the production funding integration is verified.</p>
       </div>
     </section>
   );

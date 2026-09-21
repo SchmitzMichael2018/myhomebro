@@ -68,7 +68,7 @@ export default function UniversalRegistrationPage() {
             </button>
           ))}
         </div>
-        {referralCode ? <p className="mt-6 text-center text-sm text-emerald-200" data-testid="universal-registration-referral">Your contractor referral will remain attached if you choose Contractor.</p> : null}
+        {referralCode ? <p className="mt-6 text-center text-sm text-emerald-200" data-testid="universal-registration-referral">Your referral will remain attached to whichever account role you choose.</p> : null}
       </main>
     </div>
   );

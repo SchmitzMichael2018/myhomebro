@@ -5692,23 +5692,54 @@ class CustomerPortalReferralDashboardView(APIView):
         if error is not None:
             return error
         payload = referral_dashboard(user, request=request)
-        payload["reward_terms"] = {
-            "percent": 25,
-            "earning_months": 3,
-            "basis": "Qualifying MyHomeBro platform fees collected from the referred contractor's projects.",
-        }
-        payload["customer_payout"] = {
-            "status": "planning",
-            "available_methods": [],
-            "planned_methods": ["MyHomeBro project credit", "Direct deposit"],
-            "message": "Eligible rewards are tracked while customer payout choices are being finalized.",
-        }
+        payload["reward_terms"]["basis"] = (
+            "Qualifying MyHomeBro platform fees collected from referred contractor, homeowner, "
+            "or property-manager accounts during their snapshotted earning periods."
+        )
+        payload["customer_payout"]["available_methods"] = ["MyHomeBro project credit"]
+        payload["customer_payout"]["planned_methods"] = ["Stripe cash payout after supported onboarding"]
         return Response(payload, status=status.HTTP_200_OK)
 
     def post(self, request, token: str):
         user, error = self._user_for_token(token)
         if error is not None:
             return error
+        action = _safe_text(request.data.get("action")).lower()
+        if action in {"cash_out", "project_credit"}:
+            from projects.services.referral_payouts import request_cash_out, reserve_project_credit
+            from projects.services.referrals import participant_for_user
+
+            participant = participant_for_user(user)
+            try:
+                if action == "cash_out":
+                    payout = request_cash_out(participant=participant, requested_by=user)
+                    return Response({
+                        "id": payout.id,
+                        "status": payout.status,
+                        "amount_cents": payout.amount_cents,
+                        "requires_onboarding": payout.status == payout.STATUS_NEEDS_ONBOARDING,
+                    }, status=status.HTTP_201_CREATED)
+                project = get_object_or_404(Project, pk=request.data.get("project_id"))
+                invoice = get_object_or_404(
+                    Invoice,
+                    pk=request.data.get("invoice_id"),
+                    agreement__project=project,
+                )
+                credit = reserve_project_credit(
+                    participant=participant,
+                    requested_by=user,
+                    project=project,
+                    invoice=invoice,
+                    amount_cents=request.data.get("amount_cents"),
+                )
+                return Response({
+                    "id": credit.id,
+                    "status": credit.status,
+                    "amount_cents": credit.amount_cents,
+                    "integration_required": credit.status == credit.STATUS_PENDING_INTEGRATION,
+                }, status=status.HTTP_201_CREATED)
+            except (TypeError, ValueError) as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         channel = _safe_text(request.data.get("channel")).lower()
         from projects.models_referrals import ReferralInvitation
         from projects.services.referrals import participant_for_user

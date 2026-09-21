@@ -3361,6 +3361,8 @@ from .models_referrals import (  # noqa: E402,F401
     ReferralInvitation,
     ReferralParticipant,
     ReferralPayout,
+    ReferralProjectCredit,
+    ReferralVisit,
 )
 from .models_attachments import AgreementAttachment, ExpenseRequestAttachment  # noqa: E402,F401
 from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401

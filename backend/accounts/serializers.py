@@ -252,7 +252,17 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
                 if referral_code:
                     from projects.services.referrals import attribute_contractor_registration
                     try:
-                        attribute_contractor_registration(contractor=contractor, referral_code=referral_code)
+                        request = self.context.get("request")
+                        session = getattr(request, "session", {}) if request else {}
+                        first_touch = session.get("referral_first_touch_at")
+                        from django.utils.dateparse import parse_datetime
+                        attribute_contractor_registration(
+                            contractor=contractor,
+                            referral_code=referral_code,
+                            medium=session.get("referral_medium", "link"),
+                            landing_page=getattr(request, "path", "") if request else "",
+                            first_touch_at=parse_datetime(first_touch) if first_touch else None,
+                        )
                     except ValueError as exc:
                         raise serializers.ValidationError({"referral_code": [str(exc)]}) from exc
 
@@ -296,6 +306,9 @@ class CustomerRegistrationSerializer(serializers.Serializer):
         choices=Homeowner.ACCOUNT_TYPE_CHOICES,
         default=Homeowner.ACCOUNT_TYPE_INDIVIDUAL,
     )
+    referral_code = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, default="", max_length=20
+    )
     password = serializers.CharField(
         write_only=True,
         validators=[validate_password],
@@ -319,6 +332,7 @@ class CustomerRegistrationSerializer(serializers.Serializer):
         full_name = validated_data["full_name"].strip()
         email = validated_data["email"].strip().lower()
         phone = (validated_data.get("phone_number") or "").strip()
+        referral_code = (validated_data.get("referral_code") or "").strip()
         first_name, last_name = split_customer_name(full_name)
 
         try:
@@ -344,6 +358,32 @@ class CustomerRegistrationSerializer(serializers.Serializer):
                     phone=phone,
                     account_type=validated_data["account_type"],
                 )
+                from projects.services.referrals import (
+                    attribute_customer_registration,
+                    participant_for_user,
+                    reserve_founding_slot_for_user,
+                    role_for_user,
+                )
+
+                role = role_for_user(user, homeowner=homeowner)
+                participant_for_user(user, role=role)
+                reserve_founding_slot_for_user(user, role=role)
+                if referral_code:
+                    try:
+                        request = self.context.get("request")
+                        session = getattr(request, "session", {}) if request else {}
+                        first_touch = session.get("referral_first_touch_at")
+                        from django.utils.dateparse import parse_datetime
+                        attribute_customer_registration(
+                            user=user,
+                            homeowner=homeowner,
+                            referral_code=referral_code,
+                            medium=session.get("referral_medium", "link"),
+                            landing_page=getattr(request, "path", "") if request else "",
+                            first_touch_at=parse_datetime(first_touch) if first_touch else None,
+                        )
+                    except ValueError as exc:
+                        raise serializers.ValidationError({"referral_code": [str(exc)]}) from exc
         except IntegrityError:
             raise serializers.ValidationError(
                 {"email": ["A MyHomeBro account with this email already exists."]}

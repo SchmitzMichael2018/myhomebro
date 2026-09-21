@@ -104,11 +104,25 @@ class ContractorRegistrationView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
-        serializer = ContractorRegistrationSerializer(data=request.data)
+        payload = request.data.copy()
+        payload.setdefault("referral_code", request.session.get("referral_code", ""))
+        serializer = ContractorRegistrationSerializer(data=payload, context={"request": request})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()
+        self._mark_referral_visit_registered(request, user)
         return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _mark_referral_visit_registered(request, user):
+        from django.utils import timezone
+        from projects.models_referrals import ReferralVisit
+
+        if request.session.session_key:
+            ReferralVisit.objects.filter(
+                session_key=request.session.session_key,
+                registered_user__isnull=True,
+            ).update(registered_user=user, registration_at=timezone.now())
 
 
 class CustomerRegistrationView(APIView):
@@ -119,8 +133,11 @@ class CustomerRegistrationView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
-        serializer = CustomerRegistrationSerializer(data=request.data)
+        payload = request.data.copy()
+        payload.setdefault("referral_code", request.session.get("referral_code", ""))
+        serializer = CustomerRegistrationSerializer(data=payload, context={"request": request})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()
+        ContractorRegistrationView._mark_referral_visit_registered(request, user)
         return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)

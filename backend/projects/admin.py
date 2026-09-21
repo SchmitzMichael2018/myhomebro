@@ -1968,6 +1968,8 @@ from .models_referrals import (  # noqa: E402
     ReferralInvitation,
     ReferralParticipant,
     ReferralPayout,
+    ReferralProjectCredit,
+    ReferralVisit,
 )
 
 
@@ -1981,24 +1983,24 @@ class ReferralParticipantAdmin(admin.ModelAdmin):
 
 @admin.register(FoundingContractorAward)
 class FoundingContractorAwardAdmin(admin.ModelAdmin):
-    list_display = ("contractor", "slot_number", "status", "qualification_deadline", "promotion_ends_at")
-    list_filter = ("status",)
-    search_fields = ("contractor__business_name", "contractor__user__email")
+    list_display = ("participant", "contractor", "pool", "slot_number", "status", "qualification_deadline", "promotion_ends_at")
+    list_filter = ("pool", "status")
+    search_fields = ("participant__user__email", "contractor__business_name", "contractor__user__email")
 
 
 @admin.register(ContractorReferral)
 class ContractorReferralAdmin(admin.ModelAdmin):
-    list_display = ("referred_contractor", "referrer", "status", "program_code", "registered_at", "earning_ends_at")
-    list_filter = ("status", "program_code")
-    search_fields = ("referred_contractor__business_name", "referred_contractor__user__email", "referrer__email")
-    readonly_fields = ("referrer", "participant", "referred_contractor", "attributed_code", "registered_at")
+    list_display = ("referred_user", "referred_role", "referrer", "referrer_role", "status", "program_code", "registered_at", "earning_ends_at")
+    list_filter = ("referred_role", "referrer_role", "status", "program_code")
+    search_fields = ("referred_user__email", "referred_contractor__business_name", "referred_contractor__user__email", "referrer__email", "attributed_code")
+    readonly_fields = ("referrer", "participant", "referred_user", "referred_contractor", "referred_homeowner", "attributed_code", "registered_at", "attribution_locked_at")
 
 
 @admin.register(ReferralEarning)
 class ReferralEarningAdmin(admin.ModelAdmin):
-    list_display = ("referral", "receipt", "qualifying_platform_fee_cents", "reward_cents", "status", "available_at")
-    list_filter = ("status",)
-    readonly_fields = ("referral", "receipt", "qualifying_platform_fee_cents", "reward_rate_bps", "reward_cents", "created_at")
+    list_display = ("referral", "receipt", "allocation_side", "qualifying_platform_fee_cents", "maximum_reward_pool_cents", "reward_cents", "status", "available_at")
+    list_filter = ("allocation_side", "status")
+    readonly_fields = ("referral", "receipt", "allocation_side", "qualifying_platform_fee_cents", "maximum_reward_pool_cents", "reward_rate_bps", "reward_cents", "created_at")
 
 
 @admin.register(ReferralPayout)
@@ -2034,3 +2036,19 @@ class ReferralInvitationAdmin(admin.ModelAdmin):
     list_display = ("participant", "channel", "created_at")
     list_filter = ("channel",)
     readonly_fields = ("participant", "channel", "created_at")
+
+
+@admin.register(ReferralProjectCredit)
+class ReferralProjectCreditAdmin(admin.ModelAdmin):
+    list_display = ("participant", "project", "invoice", "amount_cents", "status", "created_at", "applied_at")
+    list_filter = ("status",)
+    search_fields = ("participant__user__email", "project__number", "external_reference")
+    readonly_fields = ("participant", "earnings", "project", "agreement", "invoice", "amount_cents", "requested_by", "created_at", "updated_at", "applied_at")
+
+
+@admin.register(ReferralVisit)
+class ReferralVisitAdmin(admin.ModelAdmin):
+    list_display = ("referral_code", "participant", "medium", "first_touch_at", "registered_user", "registration_at")
+    list_filter = ("medium",)
+    search_fields = ("referral_code", "participant__user__email", "registered_user__email", "session_key")
+    readonly_fields = ("participant", "referral_code", "medium", "landing_page", "session_key", "first_touch_at", "registered_user", "registration_at", "created_at")

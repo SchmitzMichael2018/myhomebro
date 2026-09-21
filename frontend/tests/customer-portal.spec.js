@@ -2423,11 +2423,11 @@ test("customer can share a personal contractor referral QR", async ({ page }) =>
       contentType: "application/json",
       body: JSON.stringify(isReferralRequest ? {
         code: "CUSTOMER25",
-        referral_link: "https://www.myhomebro.com/signup?ref=CUSTOMER25",
+        referral_link: "https://www.myhomebro.com/refer/CUSTOMER25",
         qr_code_data_url: "data:image/png;base64,PHN2Zy8+",
         summary: { registrations: 2, pending_cents: 1250, available_cents: 500, paid_cents: 0 },
         reward_terms: { percent: 25, earning_months: 3 },
-        customer_payout: { status: "planning", planned_methods: ["MyHomeBro project credit", "Direct deposit"] },
+        customer_payout: { status: "not_started", planned_methods: ["MyHomeBro project credit", "Direct deposit"] },
       } : portalPayload),
     });
   });
@@ -2569,11 +2569,11 @@ test("customer portal is reachable from the landing page and loads secure record
         contentType: "application/json",
         body: JSON.stringify(method === "POST" ? { recorded: true } : {
           code: "CUSTOMER25",
-          referral_link: "https://www.myhomebro.com/signup?ref=CUSTOMER25",
+          referral_link: "https://www.myhomebro.com/refer/CUSTOMER25",
           qr_code_data_url: "data:image/png;base64,PHN2Zy8+",
           summary: { registrations: 2, pending_cents: 1250, available_cents: 500, paid_cents: 0 },
           reward_terms: { percent: 25, earning_months: 3 },
-          customer_payout: { status: "planning", planned_methods: ["MyHomeBro project credit", "Direct deposit"] },
+          customer_payout: { status: "not_started", planned_methods: ["MyHomeBro project credit", "Direct deposit"] },
         }),
       });
       return;

@@ -66,6 +66,7 @@ export default function CustomerAccountOnboardingPage() {
   const isPropertyManager = searchParams.get("role") === "property_manager";
   const accountType = isPropertyManager ? "property_management_company" : "individual";
   const accountLabel = isPropertyManager ? "Property Manager" : "Customer";
+  const referralCode = (searchParams.get("ref") || "").trim().toUpperCase();
 
   const [step, setStep] = useState(verifiedParam ? "signin" : "account");
   const [accountForm, setAccountForm] = useState({
@@ -125,6 +126,7 @@ export default function CustomerAccountOnboardingPage() {
         phone_number: accountForm.phone_number,
         password: accountForm.password,
         account_type: accountType,
+        referral_code: referralCode,
       });
       setLoginForm({ email: accountForm.email.trim().toLowerCase(), password: "" });
       setStep("verify");
