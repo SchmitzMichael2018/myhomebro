@@ -18,6 +18,11 @@ describe('acquisition attribution', () => {
   it('maps only meaningful public routes', () => {
     expect(publicRouteEvent('/')).toBe('landing_view');
     expect(publicRouteEvent('/register')).toBe('signup_started');
+    expect(publicRouteEvent('/improvements/')).toBe('guide_view');
+    expect(publicRouteEvent('/improvements/bathroom/')).toBe('guide_view');
+    expect(
+      publicRouteEvent('/improvements/bathroom/replace-bathroom-vanity/')
+    ).toBeNull();
     expect(publicRouteEvent('/legal/privacy')).toBeNull();
   });
 });

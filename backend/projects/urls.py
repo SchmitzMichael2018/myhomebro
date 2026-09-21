@@ -119,6 +119,11 @@ from .views.contractor_activation import (
     ContractorActivationSummaryView,
 )
 from .views.public_intake_start import PublicIntakeStartView
+from .views.public_improvements import (
+    PublicImprovementCategoryView,
+    PublicImprovementDetailView,
+    PublicImprovementLibraryView,
+)
 from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorDeactivateView, ContractorMeView
@@ -581,6 +586,9 @@ agreements_router.register(
 )
 
 urlpatterns = [
+    path("public/improvements/", PublicImprovementLibraryView.as_view(), name="public-improvement-library"),
+    path("public/improvements/<slug:category_slug>/", PublicImprovementCategoryView.as_view(), name="public-improvement-category"),
+    path("public/improvements/<slug:category_slug>/<slug:improvement_slug>/", PublicImprovementDetailView.as_view(), name="public-improvement-detail"),
     path("attribution/track/", PublicAttributionEventView.as_view(), name="attribution-track"),
     path("attribution/report/", AttributionReportView.as_view(), name="attribution-report"),
     path("referrals/dashboard/", ReferralDashboardView.as_view(), name="referral-dashboard"),

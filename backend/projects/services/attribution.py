@@ -319,6 +319,24 @@ def acquisition_report():
         Q(visitor__isnull=True) | Q(visitor__excluded_from_reporting=False)
     ).values("event_type").annotate(total=Count("id")).values_list("event_type", "total"))
     by_campaign = list(included_visits.values("first_campaign", "first_content").exclude(first_campaign="").annotate(visitors=Count("id")).order_by("first_campaign", "first_content"))
+    by_improvement = list(
+        AttributionEvent.objects.filter(
+            object_type="improvement",
+            event_type__in=("improvement_template_view", "diy_project_started", "hire_pro_clicked"),
+        )
+        .values("object_id", "event_type")
+        .annotate(total=Count("id"))
+        .order_by("object_id", "event_type")
+    )
+    by_improvement_category = list(
+        AttributionEvent.objects.filter(
+            object_type="improvement",
+            event_type__in=("improvement_template_view", "diy_project_started", "hire_pro_clicked"),
+        )
+        .values("metadata__category", "event_type")
+        .annotate(total=Count("id"))
+        .order_by("metadata__category", "event_type")
+    )
     by_role = {role: 0 for role in ROLE_VALUES}
     source_funnel = {}
 
@@ -364,4 +382,6 @@ def acquisition_report():
     revenue = RevenueAttributionSnapshot.objects.aggregate(platform_fees=Sum("eligible_platform_fee_cents"), referral_rewards=Sum("total_referral_reward_cents"), retained_revenue=Sum("retained_platform_fee_cents"))
     return {"by_source": by_source, "source_funnel": source_funnel, "by_role": by_role,
             "revenue_by_contractor_source": revenue_by_contractor_source, "by_campaign_content": by_campaign,
+            "by_improvement": by_improvement,
+            "by_improvement_category": by_improvement_category,
             "funnel_events": event_totals, "revenue": {key: value or 0 for key, value in revenue.items()}}

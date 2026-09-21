@@ -50,7 +50,7 @@ def spa(request, *args, **kwargs):
         # Its supported CSP integration discovers this per-response nonce via
         # meta[name="csp-nonce"].
         csp_nonce = secrets.token_urlsafe(24)
-        context = metadata_for_path(request.path)
+        context = kwargs.pop("seo_override", None) or metadata_for_path(request.path)
         context.update(
             {
                 "google_maps_api_key": google_maps_api_key,

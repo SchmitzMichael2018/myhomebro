@@ -19,6 +19,14 @@ class DIYProject(models.Model):
     property_profile = models.ForeignKey(
         "projects.PropertyProfile", null=True, blank=True, on_delete=models.SET_NULL, related_name="diy_projects"
     )
+    source_template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="diy_projects",
+        help_text="Canonical Improvement Library template used to start this DIY project.",
+    )
     title = models.CharField(max_length=200)
     desired_outcome = models.TextField()
     category = models.CharField(max_length=120, blank=True, default="")

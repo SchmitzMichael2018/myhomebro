@@ -37,6 +37,15 @@ const PublicProfile = lazy(() => import('../pages/PublicProfile.jsx'));
 const PublicWebsitePage = lazy(() => import('../pages/PublicWebsitePage.jsx'));
 const LegalPage = lazy(() => import('../pages/LegalPage.jsx'));
 const PublicFaqPage = lazy(() => import('../pages/PublicFaqPage.jsx'));
+const PublicImprovementLibraryPage = lazy(
+  () => import('../pages/PublicImprovementLibraryPage.jsx')
+);
+const PublicImprovementCategoryPage = lazy(
+  () => import('../pages/PublicImprovementCategoryPage.jsx')
+);
+const PublicImprovementPage = lazy(
+  () => import('../pages/PublicImprovementPage.jsx')
+);
 
 // Optional: your /invoice/:token router page
 const InvoicePage = lazy(() => import('../pages/InvoicePage.jsx'));
@@ -137,6 +146,18 @@ export default function PublicRoutes() {
         {/* Landing & Auth */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/faq" element={<PublicFaqPage />} />
+        <Route
+          path="/improvements"
+          element={<PublicImprovementLibraryPage />}
+        />
+        <Route
+          path="/improvements/:categorySlug"
+          element={<PublicImprovementCategoryPage />}
+        />
+        <Route
+          path="/improvements/:categorySlug/:improvementSlug"
+          element={<PublicImprovementPage />}
+        />
         <Route path="/login" element={<LoginForm />} />
         <Route path="/signup" element={<SignUpForm />} />
         <Route path="/register" element={<UniversalRegistrationPage />} />

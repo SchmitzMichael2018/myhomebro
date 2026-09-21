@@ -16,7 +16,7 @@ SOCIAL_DESCRIPTION = (
     "DIY or hiring a pro? Plan projects, connect with contractors, manage the work, "
     "and keep your home improvements organized in one place."
 )
-DEFAULT_SOCIAL_IMAGE = f"{SITE_ORIGIN}/static/myhomebro_logo.png"
+DEFAULT_SOCIAL_IMAGE = f"{SITE_ORIGIN}/static/social/myhomebro-default-1200x630.png"
 
 INDEXABLE_ROUTES = {
     "/": {"title": DEFAULT_TITLE, "description": DEFAULT_DESCRIPTION},
@@ -55,3 +55,19 @@ def metadata_for_path(path):
         "search_verification": getattr(settings, "GOOGLE_SITE_VERIFICATION", ""),
     }
 
+
+def improvement_metadata(template):
+    canonical_url = (
+        f"{SITE_ORIGIN}/improvements/{template.public_category_slug}/{template.public_slug}/"
+    )
+    image_path = template.social_image or "/static/social/myhomebro-default-1200x630.png"
+    return {
+        "seo_title": template.seo_title or f"{template.name}: DIY & Project Guide | MyHomeBro",
+        "seo_description": template.seo_description or template.public_summary,
+        "seo_social_description": template.seo_description or template.public_summary,
+        "seo_canonical_url": canonical_url,
+        "seo_social_image": f"{SITE_ORIGIN}{image_path}",
+        "seo_robots": "index, follow",
+        "seo_indexable": True,
+        "search_verification": getattr(settings, "GOOGLE_SITE_VERIFICATION", ""),
+    }

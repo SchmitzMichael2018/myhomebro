@@ -86,6 +86,7 @@ export default function StartProjectIntake() {
             searchParams.get("slug") ||
             "").trim(),
         source: (searchParams.get("source") || "landing_page").trim(),
+        template_id: searchParams.get("template_id") || undefined,
       };
 
       const { data } = await api.post("/projects/public-intake/start/", payload);

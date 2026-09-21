@@ -12,7 +12,7 @@ describe('public SEO metadata', () => {
     expect(metadata.title).toBe(DEFAULT_TITLE);
     expect(metadata.canonicalUrl).toBe('https://www.myhomebro.com/');
     expect(metadata.robots).toBe('index, follow');
-    expect(metadata.image).toContain('myhomebro_logo.png');
+    expect(metadata.image).toContain('myhomebro-default-1200x630.png');
     expect(metadata.structuredData.map((item) => item['@type'])).toEqual([
       'Organization',
       'WebSite',

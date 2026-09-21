@@ -52,7 +52,7 @@
 
 ## Social asset status
 
-Metadata currently uses the real official MyHomeBro logo at `/static/myhomebro_logo.png`; no generated or off-brand artwork was introduced. Design should deliver an approved navy/blue/gold image at 1200×630. When available, place it at `/static/social/myhomebro-default-1200x630.png` and change `DEFAULT_SOCIAL_IMAGE` in both SEO metadata modules. Page-specific image overrides are supported by the frontend metadata shape.
+Phase 1D supplied and validated the approved navy/blue/gold image at `/static/social/myhomebro-default-1200x630.png`. The supplied file was proportionally resized from 1730×909 to the required 1200×630 without redesigning its approved composition. It is present in both the Vite public tree and Django static source, and is now the default Open Graph/Twitter image. Page-specific approved `/static/social/*.png` overrides are supported.
 
 ## Search and social validation after deployment
 

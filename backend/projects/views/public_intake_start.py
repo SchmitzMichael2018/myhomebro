@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny
 
 from projects.models import ContractorPublicProfile, PublicContractorLead
 from projects.models_project_intake import ProjectIntake
+from projects.models_templates import ProjectTemplate
 from projects.services.intake_public import build_public_intake_url
 from projects.services.public_lead_pipeline import normalize_public_lead_source
 
@@ -36,6 +37,15 @@ class PublicIntakeStartView(APIView):
             request.data.get("source"),
             default=PublicContractorLead.SOURCE_LANDING_PAGE,
         )
+        template_id = request.data.get("template_id")
+        source_template = None
+        if template_id:
+            source_template = ProjectTemplate.objects.filter(
+                pk=template_id,
+                public_publication_status=ProjectTemplate.PublicPublicationStatus.PUBLISHED,
+            ).first()
+            if source_template is None:
+                return Response({"detail": "Published improvement not found."}, status=status.HTTP_404_NOT_FOUND)
 
         profile = None
         contractor = None
@@ -60,6 +70,7 @@ class PublicIntakeStartView(APIView):
             customer_name=customer_name,
             customer_email=customer_email,
             customer_phone=customer_phone,
+            source_template=source_template,
         )
 
         intake.ensure_share_token(save=True)

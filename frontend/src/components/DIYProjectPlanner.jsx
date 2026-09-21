@@ -74,6 +74,7 @@ export default function DIYProjectPlanner({
     target_completion_date: '',
     confidence_notes: '',
     additional_context: '',
+    source_template_id: '',
   });
   const [phaseDraft, setPhaseDraft] = useState({ title: '', description: '' });
   const [taskDrafts, setTaskDrafts] = useState({});
@@ -125,7 +126,16 @@ export default function DIYProjectPlanner({
   }, [loadList]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('action') === 'create') setCreating(true);
+    if (params.get('action') === 'create') {
+      setCreating(true);
+      const sourceTemplateId = params.get('template_id');
+      if (sourceTemplateId) {
+        setNewProject((current) => ({
+          ...current,
+          source_template_id: sourceTemplateId,
+        }));
+      }
+    }
     const requestedProject = params.get('project');
     if (requestedProject) loadProject(requestedProject).catch(() => {});
     const requestedSection = params.get('section');
@@ -299,7 +309,9 @@ export default function DIYProjectPlanner({
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (error) {
       previewWindow.close();
-      toast.error(error?.response?.data?.detail || 'Could not open this project file.');
+      toast.error(
+        error?.response?.data?.detail || 'Could not open this project file.'
+      );
     }
   };
   const generateProposal = async () => {

@@ -112,6 +112,7 @@ try:
     from .models_templates import (  # <-- corrected import
         ProjectTemplate,
         ProjectTemplateMilestone,
+        ProjectTemplatePublicSlug,
         SeedBenchmarkProfile,
         MarketPricingBaseline,
         PricingObservation,
@@ -120,6 +121,7 @@ try:
 except Exception:  # pragma: no cover
     ProjectTemplate = None  # type: ignore
     ProjectTemplateMilestone = None  # type: ignore
+    ProjectTemplatePublicSlug = None  # type: ignore
     SeedBenchmarkProfile = None  # type: ignore
     MarketPricingBaseline = None  # type: ignore
     PricingObservation = None  # type: ignore
@@ -1003,6 +1005,10 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "is_system",
             "is_system_template",
             "is_published",
+            "public_publication_status",
+            "public_category_slug",
+            "public_slug",
+            "is_featured_public",
             "visibility",
             "allow_discovery",
             "normalized_region_key",
@@ -1018,6 +1024,8 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "is_system",
             "is_system_template",
             "is_published",
+            "public_publication_status",
+            "is_featured_public",
             "is_active",
             "visibility",
             "allow_discovery",
@@ -1030,6 +1038,9 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "project_type",
             "project_subtype",
             "description",
+            "public_summary",
+            "seo_title",
+            "seo_description",
             "contractor__business_name",
             "contractor__user__email",
         )
@@ -1078,6 +1089,37 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
                         "source_system_template",
                         "region_tags",
                     )
+                },
+            ),
+            (
+                "Public Improvement Library",
+                {
+                    "fields": (
+                        "public_publication_status",
+                        "public_category_slug",
+                        "public_slug",
+                        "public_summary",
+                        "public_intro",
+                        "difficulty",
+                        "estimated_duration_min_days",
+                        "estimated_duration_max_days",
+                        "cost_guidance",
+                        "preparation",
+                        "safety_guidance",
+                        "common_mistakes",
+                        "diy_guidance",
+                        "pro_guidance",
+                        "public_faqs",
+                        "seo_title",
+                        "seo_description",
+                        "social_image",
+                        "is_featured_public",
+                        "related_public_templates",
+                        "public_published_at",
+                        "public_reviewed_at",
+                        "public_reviewed_by",
+                    ),
+                    "classes": ("collapse",),
                 },
             ),
             (

@@ -4,7 +4,7 @@ export const DEFAULT_DESCRIPTION =
   'Plan DIY projects, connect with contractors, manage agreements, track milestones, make project payments, and keep your home improvements organized with MyHomeBro.';
 export const SOCIAL_DESCRIPTION =
   'DIY or hiring a pro? Plan projects, connect with contractors, manage the work, and keep your home improvements organized in one place.';
-export const DEFAULT_SOCIAL_IMAGE = `${SITE_ORIGIN}/static/myhomebro_logo.png`;
+export const DEFAULT_SOCIAL_IMAGE = `${SITE_ORIGIN}/static/social/myhomebro-default-1200x630.png`;
 
 const ROUTES = {
   '/': {
@@ -90,8 +90,8 @@ function upsertMeta(selector, attributes) {
   );
 }
 
-export function applySeoMetadata(pathname) {
-  const metadata = resolveSeoMetadata(pathname);
+export function applySeoMetadata(pathname, overrides = {}) {
+  const metadata = { ...resolveSeoMetadata(pathname), ...overrides };
   document.title = metadata.title;
   upsertMeta('meta[name="description"]', {
     name: 'description',

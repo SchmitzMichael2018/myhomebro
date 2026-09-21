@@ -114,6 +114,15 @@ class ProjectIntake(models.Model):
         default="draft",
     )
 
+    source_template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        on_delete=models.SET_NULL,
+        related_name="public_intakes",
+        null=True,
+        blank=True,
+        help_text="Canonical Improvement Library template that initiated this request.",
+    )
+
     post_submit_flow = models.CharField(
         max_length=32,
         choices=POST_SUBMIT_FLOW_CHOICES,

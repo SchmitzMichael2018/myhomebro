@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 from django.db import models
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from projects.models import AgreementPaymentStructure
 
@@ -25,6 +27,18 @@ class ProjectTemplate(models.Model):
     class LifecycleStatus(models.TextChoices):
         DRAFT = "draft", "Draft"
         ACTIVE = "active", "Active"
+
+    class PublicPublicationStatus(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        READY_FOR_REVIEW = "ready_for_review", "Ready for review"
+        PUBLISHED = "published", "Published"
+        ARCHIVED = "archived", "Archived"
+
+    class Difficulty(models.TextChoices):
+        BEGINNER = "beginner", "Beginner"
+        INTERMEDIATE = "intermediate", "Intermediate"
+        ADVANCED = "advanced", "Advanced"
+        PROFESSIONAL = "professional", "Professional recommended"
 
     contractor = models.ForeignKey(
         "projects.Contractor",
@@ -124,6 +138,50 @@ class ProjectTemplate(models.Model):
         related_name="published_project_templates",
     )
 
+    # Public Improvement Library publishing layer. Contractor-facing template
+    # publication above remains independent and backward compatible.
+    public_slug = models.SlugField(max_length=180, unique=True, null=True, blank=True)
+    public_category_slug = models.SlugField(max_length=100, blank=True, default="", db_index=True)
+    public_publication_status = models.CharField(
+        max_length=24,
+        choices=PublicPublicationStatus.choices,
+        default=PublicPublicationStatus.DRAFT,
+        db_index=True,
+    )
+    public_summary = models.CharField(max_length=320, blank=True, default="")
+    public_intro = models.TextField(blank=True, default="")
+    difficulty = models.CharField(max_length=24, choices=Difficulty.choices, blank=True, default="")
+    estimated_duration_min_days = models.PositiveIntegerField(null=True, blank=True)
+    estimated_duration_max_days = models.PositiveIntegerField(null=True, blank=True)
+    cost_guidance = models.TextField(blank=True, default="")
+    preparation = models.TextField(blank=True, default="")
+    safety_guidance = models.TextField(blank=True, default="")
+    common_mistakes = models.TextField(blank=True, default="")
+    diy_guidance = models.TextField(blank=True, default="")
+    pro_guidance = models.TextField(blank=True, default="")
+    public_faqs = models.JSONField(blank=True, default=list)
+    seo_title = models.CharField(max_length=70, blank=True, default="")
+    seo_description = models.CharField(max_length=170, blank=True, default="")
+    social_image = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Approved root-relative static image path; user uploads are not accepted here.",
+    )
+    is_featured_public = models.BooleanField(default=False, db_index=True)
+    public_published_at = models.DateTimeField(null=True, blank=True)
+    public_reviewed_at = models.DateTimeField(null=True, blank=True)
+    public_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_public_project_templates",
+    )
+    related_public_templates = models.ManyToManyField(
+        "self", blank=True, symmetrical=True
+    )
+
     created_from_agreement = models.ForeignKey(
         "projects.Agreement",
         on_delete=models.SET_NULL,
@@ -159,6 +217,7 @@ class ProjectTemplate(models.Model):
             models.Index(fields=["benchmark_match_key"]),
             models.Index(fields=["visibility", "allow_discovery"]),
             models.Index(fields=["normalized_region_key"]),
+            models.Index(fields=["public_publication_status", "public_category_slug"], name="tpl_public_category_idx"),
         ]
 
     def __str__(self) -> str:
@@ -170,6 +229,11 @@ class ProjectTemplate(models.Model):
         return self.milestones.count()
 
     def save(self, *args, **kwargs):
+        previous_public_path = None
+        if self.pk:
+            previous_public_path = type(self).objects.filter(pk=self.pk).values_list(
+                "public_category_slug", "public_slug"
+            ).first()
         if self.is_system or self.is_system_template:
             self.is_system = True
             self.is_system_template = True
@@ -183,6 +247,72 @@ class ProjectTemplate(models.Model):
             self.published_at = None
             self.published_by = None
         super().save(*args, **kwargs)
+        if previous_public_path and all(previous_public_path):
+            previous_category, previous_slug = previous_public_path
+            if (previous_category, previous_slug) != (self.public_category_slug, self.public_slug):
+                ProjectTemplatePublicSlug.objects.get_or_create(
+                    template=self,
+                    category_slug=previous_category,
+                    slug=previous_slug,
+                )
+
+    @property
+    def is_public_improvement(self):
+        return self.public_publication_status == self.PublicPublicationStatus.PUBLISHED
+
+    def clean(self):
+        super().clean()
+        if self.estimated_duration_min_days and self.estimated_duration_max_days:
+            if self.estimated_duration_min_days > self.estimated_duration_max_days:
+                raise ValidationError({"estimated_duration_max_days": "Maximum duration must not be less than minimum duration."})
+        if self.social_image and not (
+            self.social_image.startswith("/static/social/") and self.social_image.lower().endswith(".png")
+        ):
+            raise ValidationError({"social_image": "Use an approved PNG under /static/social/."})
+        if self.public_faqs:
+            if not isinstance(self.public_faqs, list) or any(
+                not isinstance(item, dict) or not str(item.get("question", "")).strip() or not str(item.get("answer", "")).strip()
+                for item in self.public_faqs
+            ):
+                raise ValidationError({"public_faqs": "FAQs must be a list of question/answer objects."})
+        if self.public_publication_status == self.PublicPublicationStatus.PUBLISHED:
+            errors = {}
+            required = {
+                "name": self.name,
+                "public_slug": self.public_slug,
+                "public_category_slug": self.public_category_slug,
+                "public_summary": self.public_summary,
+                "seo_description": self.seo_description,
+            }
+            for field, value in required.items():
+                if not str(value or "").strip():
+                    errors[field] = "Required before public publication."
+            has_useful_content = bool(
+                str(self.public_intro or self.description or self.default_scope).strip()
+                or (self.pk and self.milestones.exists())
+            )
+            if not has_useful_content:
+                errors["public_intro"] = "Useful project content or milestones are required before publication."
+            if not self.public_reviewed_at or not self.public_reviewed_by_id:
+                errors["public_reviewed_at"] = "A recorded human review is required before publication."
+            if errors:
+                raise ValidationError(errors)
+            self.public_published_at = self.public_published_at or timezone.now()
+        elif self.public_publication_status != self.PublicPublicationStatus.ARCHIVED:
+            self.public_published_at = None
+
+
+class ProjectTemplatePublicSlug(models.Model):
+    template = models.ForeignKey(ProjectTemplate, on_delete=models.CASCADE, related_name="public_slug_history")
+    category_slug = models.SlugField(max_length=100)
+    slug = models.SlugField(max_length=180)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("category_slug", "slug"), name="uniq_public_template_slug_history")]
+
+    def __str__(self):
+        return f"{self.category_slug}/{self.slug}"
 
 
 class ProjectTemplateMilestone(models.Model):

@@ -1,7 +1,7 @@
 import json
 from xml.etree import ElementTree
 
-from django.test import SimpleTestCase, override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 
@@ -14,7 +14,7 @@ from django.urls import reverse
         },
     },
 )
-class SeoFoundationTests(SimpleTestCase):
+class SeoFoundationTests(TestCase):
     def test_homepage_has_complete_search_and_social_metadata(self):
         response = self.client.get(reverse("spa_index"))
 

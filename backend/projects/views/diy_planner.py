@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 
 from projects.models import CustomerRequest, PropertyProfile
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
+from projects.models_templates import ProjectTemplate
 from projects.models_diy_planner import (
     DIYProject, DIYProjectAIProposal, DIYProjectAsset, DIYProjectMeasurement,
     DIYProjectPhase, DIYProjectProgressEntry, DIYProjectRequestLink, DIYProjectTask,
@@ -39,12 +40,13 @@ def owned_project(token, project_id):
 
 class ProjectWriteSerializer(serializers.ModelSerializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    source_template_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = DIYProject
         fields = ["title", "desired_outcome", "category", "area", "existing_conditions", "work_completed",
                   "target_budget_min", "target_budget_max", "target_completion_date", "confidence_notes",
-                  "design_notes", "additional_context", "status", "property_id"]
+                  "design_notes", "additional_context", "status", "property_id", "source_template_id"]
         extra_kwargs = {"status": {"required": False}, "desired_outcome": {"required": True}}
 
 
@@ -87,6 +89,7 @@ def serialize_project(row, request=None, detail=False):
         "target_completion_date": row.target_completion_date, "confidence_notes": row.confidence_notes,
         "design_notes": row.design_notes, "additional_context": row.additional_context,
         "status": row.status, "status_label": row.get_status_display(), "ai_summary": row.ai_summary,
+        "source_template_id": row.source_template_id,
         "progress_percent": progress, "task_count": task_count, "completed_task_count": complete_count,
         "created_at": row.created_at, "updated_at": row.updated_at,
     }
@@ -137,10 +140,47 @@ class DIYProjectListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         data = dict(serializer.validated_data)
         property_id = data.pop("property_id", None)
+        source_template_id = data.pop("source_template_id", None)
         profile = None
         if property_id:
             profile = get_object_or_404(PropertyProfile, id=property_id, customer_email__iexact=email)
-        row = DIYProject.objects.create(owner_email=email, property_profile=profile, **data)
+        source_template = None
+        if source_template_id:
+            source_template = get_object_or_404(
+                ProjectTemplate,
+                pk=source_template_id,
+                public_publication_status=ProjectTemplate.PublicPublicationStatus.PUBLISHED,
+            )
+            data.setdefault("title", source_template.name)
+            data.setdefault("desired_outcome", source_template.public_summary)
+            data.setdefault("category", source_template.public_category_slug)
+        row = DIYProject.objects.create(
+            owner_email=email,
+            property_profile=profile,
+            source_template=source_template,
+            **data,
+        )
+        if source_template:
+            for index, milestone in enumerate(source_template.milestones.all(), start=1):
+                phase = DIYProjectPhase.objects.create(
+                    project=row,
+                    title=milestone.title,
+                    description=milestone.description,
+                    sort_order=index,
+                )
+                DIYProjectTask.objects.create(
+                    phase=phase,
+                    title=milestone.title,
+                    description=milestone.description,
+                    sort_order=1,
+                    estimated_duration=(
+                        f"{milestone.duration_days or milestone.recommended_duration_days} days"
+                        if milestone.duration_days or milestone.recommended_duration_days
+                        else ""
+                    ),
+                    professional_review_recommended=source_template.difficulty
+                    in {ProjectTemplate.Difficulty.ADVANCED, ProjectTemplate.Difficulty.PROFESSIONAL},
+                )
         return Response(serialize_project(row, detail=True), status=201)
 
 
