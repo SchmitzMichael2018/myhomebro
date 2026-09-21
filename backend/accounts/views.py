@@ -110,19 +110,13 @@ class ContractorRegistrationView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()
-        self._mark_referral_visit_registered(request, user)
+        self._mark_referral_visit_registered(request, user, role="contractor")
         return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)
 
     @staticmethod
-    def _mark_referral_visit_registered(request, user):
-        from django.utils import timezone
-        from projects.models_referrals import ReferralVisit
-
-        if request.session.session_key:
-            ReferralVisit.objects.filter(
-                session_key=request.session.session_key,
-                registered_user__isnull=True,
-            ).update(registered_user=user, registration_at=timezone.now())
+    def _mark_referral_visit_registered(request, user, *, role):
+        from projects.services.attribution import associate_account
+        associate_account(request, user, role=role)
 
 
 class CustomerRegistrationView(APIView):
@@ -139,5 +133,7 @@ class CustomerRegistrationView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()
-        ContractorRegistrationView._mark_referral_visit_registered(request, user)
+        account_type = str(payload.get("account_type") or "individual")
+        role = "property_manager" if account_type == "property_management_company" else "homeowner"
+        ContractorRegistrationView._mark_referral_visit_registered(request, user, role=role)
         return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)

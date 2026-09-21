@@ -12,6 +12,7 @@ from projects.models import Invoice, Project
 from projects.models_referrals import ReferralInvitation, ReferralParticipant, ReferralVisit
 from projects.services.referral_payouts import request_cash_out, reserve_project_credit
 from projects.services.referrals import participant_for_user
+from projects.services.attribution import capture_visit, update_visit_referral
 
 
 class ReferralDashboardView(APIView):
@@ -75,22 +76,16 @@ class PublicReferralRedirectView(APIView):
         participant = ReferralParticipant.objects.filter(code=normalized, is_eligible=True).first()
         if participant is None:
             raise Http404("This referral link is invalid or no longer available.")
-        if not request.session.session_key:
-            request.session.create()
         now = timezone.now()
-        ReferralVisit.objects.get_or_create(
-            participant=participant,
-            session_key=request.session.session_key or "",
-            defaults={
-                "referral_code": participant.code,
-                "medium": str(request.GET.get("medium") or "link")[:24],
-                "landing_page": request.path[:255],
-                "first_touch_at": now,
-            },
-        )
+        referral_medium = str(request.GET.get("medium") or "link")[:24]
+        params = request.GET.copy()
+        params.setdefault("utm_source", "referral")
+        params.setdefault("utm_medium", referral_medium)
+        visit = capture_visit(request, landing_page=request.path, params=params)
+        update_visit_referral(visit, participant)
         # First valid referral wins; later generic campaign traffic cannot replace it.
         request.session.setdefault("referral_code", participant.code)
-        request.session.setdefault("referral_medium", str(request.GET.get("medium") or "link")[:24])
+        request.session.setdefault("referral_medium", referral_medium)
         request.session.setdefault("referral_first_touch_at", now.isoformat())
         request.session.modified = True
         return redirect(f"/register?ref={participant.code}")

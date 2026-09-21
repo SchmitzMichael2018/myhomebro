@@ -1971,6 +1971,13 @@ from .models_referrals import (  # noqa: E402
     ReferralProjectCredit,
     ReferralVisit,
 )
+from .models_attribution import (  # noqa: E402
+    AccountAcquisition,
+    AttributionEvent,
+    MarketingCampaign,
+    ProjectAttributionSnapshot,
+    RevenueAttributionSnapshot,
+)
 
 
 @admin.register(ReferralParticipant)
@@ -2048,7 +2055,41 @@ class ReferralProjectCreditAdmin(admin.ModelAdmin):
 
 @admin.register(ReferralVisit)
 class ReferralVisitAdmin(admin.ModelAdmin):
-    list_display = ("referral_code", "participant", "medium", "first_touch_at", "registered_user", "registration_at")
-    list_filter = ("medium",)
+    list_display = ("visitor_token", "first_source", "first_medium", "last_source", "campaign", "referral_code", "registered_user", "excluded_from_reporting")
+    list_filter = ("first_source", "first_medium", "last_source", "excluded_from_reporting")
     search_fields = ("referral_code", "participant__user__email", "registered_user__email", "session_key")
-    readonly_fields = ("participant", "referral_code", "medium", "landing_page", "session_key", "first_touch_at", "registered_user", "registration_at", "created_at")
+    readonly_fields = ("visitor_token", "participant", "referral_code", "medium", "landing_page", "session_key", "first_touch_at", "registered_user", "registration_at", "created_at")
+
+
+@admin.register(MarketingCampaign)
+class MarketingCampaignAdmin(admin.ModelAdmin):
+    list_display = ("name", "public_code", "source", "medium", "campaign_name", "destination", "is_active", "starts_at", "ends_at")
+    list_filter = ("is_active", "source", "medium", "partner_type")
+    search_fields = ("name", "public_code", "campaign_name", "partner_code")
+
+
+@admin.register(AccountAcquisition)
+class AccountAcquisitionAdmin(admin.ModelAdmin):
+    list_display = ("user", "roles", "first_touch_at", "last_touch_at", "referral")
+    search_fields = ("user__email",)
+    readonly_fields = ("user", "first_visit", "last_visit", "referral", "roles", "first_touch", "last_touch", "first_touch_at", "last_touch_at", "account_created_at", "profile_completed_at", "created_at", "updated_at")
+
+
+@admin.register(AttributionEvent)
+class AttributionEventAdmin(admin.ModelAdmin):
+    list_display = ("event_type", "source", "medium", "campaign_name", "role", "user", "project", "occurred_at")
+    list_filter = ("event_type", "source", "medium", "role")
+    search_fields = ("user__email", "object_id", "idempotency_key", "campaign_name")
+    readonly_fields = tuple(field.name for field in AttributionEvent._meta.fields)
+
+
+@admin.register(ProjectAttributionSnapshot)
+class ProjectAttributionSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("project", "customer_user", "contractor_user", "snapshotted_at")
+    readonly_fields = tuple(field.name for field in ProjectAttributionSnapshot._meta.fields)
+
+
+@admin.register(RevenueAttributionSnapshot)
+class RevenueAttributionSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("receipt", "project", "eligible_platform_fee_cents", "total_referral_reward_cents", "retained_platform_fee_cents", "created_at")
+    readonly_fields = tuple(field.name for field in RevenueAttributionSnapshot._meta.fields)

@@ -28,3 +28,8 @@ class ProjectsConfig(AppConfig):
             import projects.signals_referrals  # noqa
         except Exception:
             pass
+
+        try:
+            import projects.signals_attribution  # noqa
+        except Exception:
+            pass

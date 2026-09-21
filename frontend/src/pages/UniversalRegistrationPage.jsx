@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import logo from '../assets/myhomebro_logo.png';
 import { registrationDestination } from '../lib/universalRegistration.js';
+import { trackAcquisitionEvent } from '../lib/acquisitionAttribution.js';
 
 const ROLES = [
   {
@@ -31,7 +32,10 @@ export default function UniversalRegistrationPage() {
   const [searchParams] = useSearchParams();
   const referralCode = searchParams.get('ref') || '';
 
-  const selectRole = (role) => navigate(registrationDestination(role, referralCode));
+  const selectRole = (role) => {
+    trackAcquisitionEvent('role_selected', window.location, { role: role === 'customer' ? 'homeowner' : role });
+    navigate(registrationDestination(role, referralCode));
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_35%_8%,rgba(37,99,235,0.26),transparent_28%),linear-gradient(135deg,#020617_0%,#082044_52%,#0f172a_100%)] text-white">

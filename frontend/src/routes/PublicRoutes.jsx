@@ -4,9 +4,10 @@
 // v2026-02-09 — add legacy redirects for /customers/* into /app/customers/*
 // Keeps dispute routes and existing public pages.
 
-import React, { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import React, { lazy, Suspense, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import RouteLoadingFallback from '../components/RouteLoadingFallback.jsx';
+import { publicRouteEvent, trackAcquisitionEvent } from '../lib/acquisitionAttribution.js';
 
 const LandingPage = lazy(() => import('../components/LandingPage.jsx'));
 const LoginForm = lazy(() => import('../components/LoginForm.jsx'));
@@ -78,9 +79,27 @@ function PortalTokenRedirect() {
   return <Navigate to={`/portal/${encodeURIComponent(token)}`} replace />;
 }
 
+function PublicAttributionObserver() {
+  const location = useLocation();
+  useEffect(() => {
+    const eventType = publicRouteEvent(location.pathname);
+    if (!eventType) return;
+    const key = `mhb-attribution:${eventType}:${location.pathname}:${location.search}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch {
+      // Storage may be disabled; attribution remains best-effort.
+    }
+    trackAcquisitionEvent(eventType, location);
+  }, [location]);
+  return null;
+}
+
 export default function PublicRoutes() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
+      <PublicAttributionObserver />
       <Routes>
         {/* ✅ Legacy redirects (pre-/app routing) */}
         <Route

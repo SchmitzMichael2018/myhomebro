@@ -681,6 +681,8 @@ REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
     "proposal_review_short_link": get_env_var("PROPOSAL_REVIEW_SHORT_LINK_RATE", "60/hour"),
     "appointment_short_link": get_env_var("APPOINTMENT_SHORT_LINK_RATE", "60/hour"),
     "public_referral_link": get_env_var("PUBLIC_REFERRAL_LINK_RATE", "120/hour"),
+    "public_campaign_link": get_env_var("PUBLIC_CAMPAIGN_LINK_RATE", "120/hour"),
+    "public_attribution_event": get_env_var("PUBLIC_ATTRIBUTION_EVENT_RATE", "240/hour"),
     "public_estimate_appointment": get_env_var("PUBLIC_ESTIMATE_APPOINTMENT_RATE", "20/hour"),
     "public_estimate_appointment_confirmation": get_env_var("PUBLIC_ESTIMATE_APPOINTMENT_CONFIRMATION_RATE", "30/hour"),
 })

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import uuid
 from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.db import models
@@ -310,10 +311,43 @@ class ReferralProjectCredit(models.Model):
 
 
 class ReferralVisit(models.Model):
-    participant = models.ForeignKey(ReferralParticipant, on_delete=models.PROTECT, related_name="visits")
-    referral_code = models.CharField(max_length=20, db_index=True)
+    participant = models.ForeignKey(
+        ReferralParticipant,
+        on_delete=models.PROTECT,
+        related_name="visits",
+        null=True,
+        blank=True,
+    )
+    referral_code = models.CharField(max_length=20, blank=True, default="", db_index=True)
+    visitor_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     medium = models.CharField(max_length=24, blank=True, default="link")
     landing_page = models.CharField(max_length=255, blank=True, default="")
+    referrer_url = models.CharField(max_length=500, blank=True, default="")
+    referrer_domain = models.CharField(max_length=255, blank=True, default="")
+    first_source = models.CharField(max_length=64, blank=True, default="unknown", db_index=True)
+    first_medium = models.CharField(max_length=64, blank=True, default="unknown", db_index=True)
+    first_campaign = models.CharField(max_length=100, blank=True, default="")
+    first_content = models.CharField(max_length=100, blank=True, default="")
+    first_term = models.CharField(max_length=100, blank=True, default="")
+    last_source = models.CharField(max_length=64, blank=True, default="unknown", db_index=True)
+    last_medium = models.CharField(max_length=64, blank=True, default="unknown", db_index=True)
+    last_campaign = models.CharField(max_length=100, blank=True, default="")
+    last_content = models.CharField(max_length=100, blank=True, default="")
+    last_term = models.CharField(max_length=100, blank=True, default="")
+    last_landing_page = models.CharField(max_length=255, blank=True, default="")
+    last_referrer_url = models.CharField(max_length=500, blank=True, default="")
+    last_referrer_domain = models.CharField(max_length=255, blank=True, default="")
+    last_touch_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    campaign = models.ForeignKey(
+        "projects.MarketingCampaign",
+        on_delete=models.SET_NULL,
+        related_name="visits",
+        null=True,
+        blank=True,
+    )
+    known_roles = models.JSONField(default=list, blank=True)
+    excluded_from_reporting = models.BooleanField(default=False, db_index=True)
+    exclusion_reason = models.CharField(max_length=64, blank=True, default="")
     session_key = models.CharField(max_length=64, blank=True, default="", db_index=True)
     first_touch_at = models.DateTimeField(default=timezone.now, db_index=True)
     registered_user = models.ForeignKey(

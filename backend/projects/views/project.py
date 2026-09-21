@@ -91,5 +91,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         ser = self.get_serializer(data=data)
         ser.is_valid(raise_exception=True)
         self.perform_create(ser)
+        from projects.services.attribution import snapshot_project
+        snapshot_project(ser.instance, creator=request.user)
         headers = {"Location": f"{request.build_absolute_uri().rstrip('/')}/{ser.data.get('id')}/"}
         return Response(ser.data, status=status.HTTP_201_CREATED, headers=headers)

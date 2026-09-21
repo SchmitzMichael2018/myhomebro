@@ -45,6 +45,7 @@ The existing system is generalized in place. No parallel referral system is intr
 - `FoundingContractorAward` remains for backward compatibility and gains a participant plus independent `contractor` and `consumer` pools.
 - `ReferralEarning` becomes many-per-receipt with a unique `(referral, receipt)` constraint and per-fee maximum-pool snapshot.
 - A locked receipt transaction allocates at most 50% of the authoritative eligible platform fee across all eligible referred sides.
+- When eligible sides have different snapshotted rates, that 50% maximum pool is allocated proportionally by those rates. Integer-cent allocation uses deterministic floor division followed by one-cent remainder distribution in stable candidate order; the sum can never exceed the snapshotted maximum pool. For example, 50% and 25% sides have 2:1 weights and split the platform fee approximately 33.33% and 16.67%.
 - `ReferralVisit` records anonymous first-touch referral attribution. `/refer/<code>` preserves existing `/r/<code>` proposal links and redirects to role selection.
 - `ReferralProjectCredit` reserves immutable available earning entries and gates real payment funding until verified integration exists.
 - Contractor Stripe payouts are preserved. Homeowner/property-manager earnings remain independent of payout onboarding and use explicit payout-readiness state; unsupported money movement is not simulated.
