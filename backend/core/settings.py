@@ -119,6 +119,7 @@ FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 # must set this explicitly; web workers and management commands load the same .env.
 SITE_URL_CONFIGURED = bool(os.environ.get("SITE_URL", "").strip())
 SITE_URL = get_env_var("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+GOOGLE_SITE_VERIFICATION = get_env_var("GOOGLE_SITE_VERIFICATION", "").strip()
 # Development override only. Do not enable in production.
 CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE = get_bool(
     "CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE",

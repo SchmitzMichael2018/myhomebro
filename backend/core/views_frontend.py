@@ -9,6 +9,8 @@ from django.shortcuts import render
 from django.http import FileResponse, Http404, HttpResponseServerError
 from django.conf import settings
 
+from .seo import metadata_for_path
+
 logger = logging.getLogger("myhomebro")
 
 PWA_PUBLIC_ASSETS = {
@@ -48,10 +50,17 @@ def spa(request, *args, **kwargs):
         # Its supported CSP integration discovers this per-response nonce via
         # meta[name="csp-nonce"].
         csp_nonce = secrets.token_urlsafe(24)
+        context = metadata_for_path(request.path)
+        context.update(
+            {
+                "google_maps_api_key": google_maps_api_key,
+                "csp_nonce": csp_nonce,
+            }
+        )
         return render(
             request,
             "index.html",
-            {"google_maps_api_key": google_maps_api_key, "csp_nonce": csp_nonce},
+            context,
         )
     except Exception as exc:
         return HttpResponseServerError(f"SPA render error: {exc}")

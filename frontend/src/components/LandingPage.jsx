@@ -44,8 +44,8 @@ const platformHighlights = [
   },
   {
     icon: ShieldCheck,
-    title: 'Escrow-supported payments',
-    text: 'Keep funding and milestone approvals documented.',
+    title: 'Milestone-based project funding',
+    text: 'Fund milestones and release payment as work is approved.',
   },
   {
     icon: ClipboardList,
@@ -946,7 +946,7 @@ function VideoPreview({ navigate }) {
                   <div className="mt-2 grid gap-2 sm:grid-cols-3">
                     {[
                       ['Scope', 'AI organized'],
-                      ['Escrow', 'Funding ready'],
+                      ['Payments', 'Milestone controls'],
                       ['Docs', 'All in one place'],
                     ].map(([label, value]) => (
                       <div
@@ -1005,7 +1005,7 @@ function AudienceCards({ navigate }) {
         bullets={[
           'Get matched with qualified homeowners',
           'Manage projects in one simple platform',
-          'Get paid securely with escrow',
+          'Fund milestones and release payment as work is approved',
           'Grow your business and your reputation',
         ]}
         primaryLabel="Contractor Sign Up"
@@ -1166,8 +1166,8 @@ function TrustBand() {
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <TrustValueCard
             icon={ShieldCheck}
-            title="Escrow-Based Milestone Holds"
-            text="Milestone-based payment approval helps keep project funding organized and documented."
+            title="Milestone-Based Payment Controls"
+            text="Fund project milestones and keep payment approvals organized and documented."
             tone="amber"
           />
           <TrustValueCard

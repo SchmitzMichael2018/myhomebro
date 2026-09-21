@@ -97,7 +97,7 @@ export default function InviteContractorModal({
     <Modal visible={!!isOpen} onClose={onClose} title="Invite a Contractor">
       <form onSubmit={submitInvite} className="space-y-4">
         <p className="text-sm text-gray-600">
-          Invite your contractor to use MyHomeBro for secure escrow payments and project tracking.
+          Invite your contractor to use MyHomeBro for milestone-based project funding and project tracking.
           <br />
           <span className="font-medium">No customer account required.</span>
         </p>

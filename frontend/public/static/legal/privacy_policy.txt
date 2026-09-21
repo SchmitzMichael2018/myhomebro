@@ -1,6 +1,6 @@
 # MyHomeBro Privacy Policy
 
-**Effective and last updated: September 15, 2026**
+**Effective and last updated: September 21, 2026**
 
 This Privacy Policy explains how MyHomeBro LLC ("MyHomeBro," "we," "us," or "our") collects, uses, discloses, and protects personal data when you use MyHomeBro websites, applications, communications, public profiles, contractor websites, and related services (collectively, the "Platform"). It also explains the choices and rights available to you.
 
@@ -22,7 +22,8 @@ Depending on how you use the Platform, we may collect:
 - **Payment data:** payment-provider customer, account, charge, transfer, refund, payout, and bank or card identifiers; limited payment details such as brand and last four digits; amounts, status, fees, and transaction history. We do not ordinarily receive or store full card numbers or online-banking credentials entered directly into Stripe.
 - **Communications data:** email, text-message, call, push, and in-app delivery status; consent and opt-out records; support requests; and responses to reminders and notifications.
 - **Device and usage data:** IP address, browser, device type, operating system, identifiers, approximate location derived from IP, pages and features used, clicks, timestamps, referring pages, crash information, and security events.
-- **Public, directory, and lead-source data:** public business listings, service and location information, Google Places or similar directory data, referral source, campaign, website source, and search or marketplace interaction data.
+- **Public, directory, and lead-source data:** public business listings, service and location information, Google Places or similar directory data, referring site, first landing page, referral source, bounded campaign parameters (such as UTM source, medium, campaign, content, and term), and search or marketplace interaction data.
+- **First-party attribution data:** a random visitor token, first and meaningful last marketing touch, role selections, and basic account, project, and conversion events. We do not use browser fingerprinting for attribution, and we do not collect precise location for attribution.
 - **AI interaction data:** prompts, project context, files, selections, suggested content, feedback, and AI-generated output when you use Project Assistant or an AI-enabled feature.
 
 Please do not provide sensitive personal data that a feature does not request. Government identification, precise location, license records, financial information, and information about a person's home or occupancy may require additional care and are used only for the relevant feature, security, compliance, or support purpose.
@@ -51,7 +52,7 @@ We use personal data to:
 - operate public profiles, contractor websites, portfolios, reviews, and lead attribution at the user's direction;
 - provide Project Assistant, classification, drafting, summarization, search, and other AI-supported features;
 - detect fraud, abuse, duplicate claims, unsafe activity, unauthorized access, and violations of our Terms;
-- provide support, troubleshoot, analyze performance, maintain backups, and improve usability;
+- provide support, troubleshoot, analyze performance, measure campaign and referral effectiveness, understand basic conversion paths, prevent fraud, maintain backups, and improve the service and its usability;
 - comply with law, enforce agreements, establish or defend legal claims, and respond to lawful requests; and
 - send marketing only where permitted and consistent with your choices.
 
@@ -92,7 +93,7 @@ If Google or another source provides business or review information, we identify
 
 ## 9. Cookies, Local Storage, and Similar Technologies
 
-We and our providers may use cookies, local storage, pixels, and similar technologies to keep you signed in, remember preferences, secure the Platform, measure performance, understand feature use, and support communications or lead attribution. Browser settings can limit some technologies, but blocking essential storage may prevent account or payment features from working.
+We and our providers may use cookies, local storage, pixels, and similar technologies to keep you signed in, remember preferences, secure the Platform, measure performance, understand feature use, and support communications or lead attribution. MyHomeBro's current campaign and referral attribution is first-party: it records the referring site, landing page, campaign parameters, a random visitor token, and basic conversion events. It does not use browser fingerprinting or precise location. Browser settings can limit some technologies, but blocking essential storage may prevent account or payment features from working.
 
 Where required, we will request consent for nonessential technologies. We do not respond to all browser "Do Not Track" signals because there is no uniform standard, but we honor legally required opt-out mechanisms where applicable.
 

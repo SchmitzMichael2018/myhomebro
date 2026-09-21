@@ -44,25 +44,6 @@ export default function PublicFaqPage() {
   );
 
   useEffect(() => {
-    document.title = 'Frequently Asked Questions | MyHomeBro';
-    let description = document.querySelector('meta[name="description"]');
-    const created = !description;
-    if (!description) {
-      description = document.createElement('meta');
-      description.name = 'description';
-      document.head.appendChild(description);
-    }
-    const previous = description.content;
-    description.content =
-      'Clear answers about MyHomeBro projects, contractors, payments, refunds, disputes, AI assistance, privacy, and records.';
-    return () => {
-      document.title = 'MyHomeBro - Secure Escrow Payments';
-      if (created) description.remove();
-      else description.content = previous;
-    };
-  }, []);
-
-  useEffect(() => {
     const hashItem = questionFromHash(location.hash);
     if (!hashItem || !PUBLIC_FAQ_ITEMS.some((item) => item.id === hashItem))
       return;

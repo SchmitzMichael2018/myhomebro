@@ -1,7 +1,7 @@
 {
   "name": "MyHomeBro",
   "short_name": "MyHomeBro",
-  "description": "Contractor operations, Capture, agreements, and project workflows.",
+  "description": "Plan DIY projects, connect with contractors, manage agreements, track milestones, make project payments, and keep home improvements organized.",
   "start_url": "/app/dashboard?source=pwa",
   "scope": "/",
   "display": "standalone",
@@ -34,13 +34,13 @@
       "name": "Capture what happened",
       "short_name": "Capture",
       "url": "/app/capture?source=pwa-shortcut",
-      "icons": [{"src": "/favicon-192x192.png", "sizes": "192x192"}]
+      "icons": [{ "src": "/favicon-192x192.png", "sizes": "192x192" }]
     },
     {
       "name": "Capture Inbox",
       "short_name": "Inbox",
       "url": "/app/capture?source=pwa-shortcut",
-      "icons": [{"src": "/favicon-192x192.png", "sizes": "192x192"}]
+      "icons": [{ "src": "/favicon-192x192.png", "sizes": "192x192" }]
     }
   ]
 }

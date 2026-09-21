@@ -32,12 +32,16 @@ DOCUMENTS = {
         "template": "terms_of_service.html",
         "pdf": "terms_of_service.pdf",
         "label": "Terms of Service",
+        "public_path": "/legal/terms-of-service/",
+        "description": "Read the terms that govern use of the MyHomeBro platform.",
     },
     "privacy_policy": {
         "source": "privacy_policy.md",
         "template": "privacy_policy.html",
         "pdf": "privacy_policy.pdf",
         "label": "Privacy Policy",
+        "public_path": "/legal/privacy-policy/",
+        "description": "Learn how MyHomeBro collects, uses, and protects personal data.",
     },
 }
 
@@ -100,7 +104,7 @@ def _parse_markdown(markdown: str):
     return blocks
 
 
-def _render_html(markdown: str, label: str) -> str:
+def _render_html(markdown: str, label: str, public_path: str, description: str) -> str:
     blocks = _parse_markdown(markdown)
     body = []
     list_type = None
@@ -132,7 +136,14 @@ def _render_html(markdown: str, label: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MyHomeBro {html.escape(label)}</title>
+  <title>{html.escape(label)} | MyHomeBro</title>
+  <meta name="description" content="{html.escape(description, quote=True)}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://www.myhomebro.com{html.escape(public_path, quote=True)}">
+  <meta property="og:title" content="{html.escape(label)} | MyHomeBro">
+  <meta property="og:description" content="{html.escape(description, quote=True)}">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://www.myhomebro.com{html.escape(public_path, quote=True)}">
   <style>
     :root {{ color-scheme: light; }}
     * {{ box-sizing: border-box; }}
@@ -281,7 +292,12 @@ class Command(BaseCommand):
             markdown = source.read_text(encoding="utf-8")
             _write_utf8_lf(
                 template_dir / config["template"],
-                _render_html(markdown, config["label"]),
+                _render_html(
+                    markdown,
+                    config["label"],
+                    config["public_path"],
+                    config["description"],
+                ),
             )
             shutil.copyfile(source, frontend_static_dir / f"{slug}.md")
             shutil.copyfile(source, frontend_static_dir / f"{slug}.txt")

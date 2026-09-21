@@ -112,7 +112,7 @@ export default function AcceptInvitePage({ apiBaseUrl = "/api" }) {
       <div className="w-full max-w-lg bg-white rounded-2xl shadow p-6">
         <h1 className="text-2xl font-bold text-gray-900">You’ve been invited</h1>
         <p className="text-sm text-gray-600 mt-2">
-          A customer wants to use MyHomeBro for secure escrow payments and milestone approvals.
+          A customer wants to use MyHomeBro for milestone-based project funding and approvals.
         </p>
 
         <div className="mt-5 border rounded-xl p-4 bg-gray-50">

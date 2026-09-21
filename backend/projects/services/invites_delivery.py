@@ -138,7 +138,7 @@ def deliver_invite_notifications(*, request, invite) -> Dict[str, Any]:
 
     subject = f"MyHomeBro invite — {invite.homeowner_name} invited you"
     text_body = (
-        "You’ve been invited to use MyHomeBro for secure escrow payments.\n\n"
+        "You’ve been invited to use MyHomeBro for milestone-based project funding and payment controls.\n\n"
         f"Accept invite:\n{invite_url}\n"
     )
     html_body = (

@@ -5,9 +5,19 @@
 // Keeps dispute routes and existing public pages.
 
 import React, { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import {
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+  useParams,
+} from 'react-router-dom';
 import RouteLoadingFallback from '../components/RouteLoadingFallback.jsx';
-import { publicRouteEvent, trackAcquisitionEvent } from '../lib/acquisitionAttribution.js';
+import {
+  publicRouteEvent,
+  trackAcquisitionEvent,
+} from '../lib/acquisitionAttribution.js';
+import { applySeoMetadata } from '../lib/seoMetadata.js';
 
 const LandingPage = lazy(() => import('../components/LandingPage.jsx'));
 const LoginForm = lazy(() => import('../components/LoginForm.jsx'));
@@ -96,10 +106,19 @@ function PublicAttributionObserver() {
   return null;
 }
 
+function PublicSeoObserver() {
+  const location = useLocation();
+  useEffect(() => {
+    applySeoMetadata(location.pathname);
+  }, [location.pathname]);
+  return null;
+}
+
 export default function PublicRoutes() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
       <PublicAttributionObserver />
+      <PublicSeoObserver />
       <Routes>
         {/* ✅ Legacy redirects (pre-/app routing) */}
         <Route

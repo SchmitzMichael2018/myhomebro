@@ -37,6 +37,7 @@ from accounts.views import EmailLoginView
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 from .views_frontend import pwa_asset, spa as spa_index
+from .views_seo import robots_txt, sitemap_xml
 from .views_health import async_services_readiness
 
 try:
@@ -206,6 +207,8 @@ urlpatterns = [
     path("favicon-512x512.png", pwa_asset, {"filename": "favicon-512x512.png"}, name="pwa-icon-512"),
     path("apple-touch-icon.png", pwa_asset, {"filename": "apple-touch-icon.png"}, name="pwa-apple-icon"),
     path("pwa-maskable-512x512.png", pwa_asset, {"filename": "pwa-maskable-512x512.png"}, name="pwa-maskable-icon"),
+    path("robots.txt", robots_txt, name="robots-txt"),
+    path("sitemap.xml", sitemap_xml, name="sitemap-xml"),
 
     # Legal pages
     path("legal/terms-of-service/", TermsOfServiceView.as_view(), name="terms-of-service"),

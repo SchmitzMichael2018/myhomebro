@@ -1,10 +1,11 @@
 from pathlib import Path
 
 from django.conf import settings
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class LegalDocumentTests(SimpleTestCase):
     def test_public_terms_are_current_and_link_privacy(self):
         response = self.client.get(reverse("terms-of-service"))
@@ -20,7 +21,7 @@ class LegalDocumentTests(SimpleTestCase):
         response = self.client.get(reverse("privacy-policy"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "September 15, 2026")
+        self.assertContains(response, "September 21, 2026")
         self.assertContains(response, "Stripe")
         self.assertContains(response, "Project Assistant")
         self.assertContains(response, "Privacy Request")
