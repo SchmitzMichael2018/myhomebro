@@ -1,5 +1,8 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import re
+import threading
+import time
 from unittest.mock import patch
 
 from django.conf import settings
@@ -7,7 +10,13 @@ from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.tokens import default_token_generator
 from django.core.cache import cache
 from django.core import mail, signing
-from django.test import RequestFactory, TestCase, override_settings
+from django.db import close_old_connections, connection
+from django.test import (
+    RequestFactory,
+    TestCase,
+    TransactionTestCase,
+    override_settings,
+)
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.encoding import force_bytes
@@ -19,6 +28,7 @@ from accounts.admin import CustomUserAdmin
 from accounts.models import AccountSecurityEvent, PhoneVerificationChallenge, User
 from accounts.services.verification import (
     request_phone_code,
+    rollback_email_verification_version,
     send_verification_email,
     user_from_email_token,
     verification_token,
@@ -317,6 +327,17 @@ class AccountVerificationTests(TestCase):
         user.refresh_from_db()
         self.assertEqual(user.email_verification_token_version, 3)
 
+    def test_failed_rollback_cannot_overwrite_newer_version(self):
+        user = self._pending_user(email_verification_token_version=3)
+        updated = rollback_email_verification_version(
+            user.pk,
+            reserved_version=2,
+            previous_version=1,
+        )
+        user.refresh_from_db()
+        self.assertEqual(updated, 0)
+        self.assertEqual(user.email_verification_token_version, 3)
+
     def test_resend_is_throttled_by_normalized_email_and_client_ip(self):
         endpoint = reverse("accounts_api:verification-resend-email")
         cache.clear()
@@ -491,3 +512,107 @@ class AccountVerificationTests(TestCase):
         report = acquisition_report()
         self.assertEqual(report["source_funnel"]["campaign"]["signups"], 1)
         self.assertEqual(report["funnel_events"]["account_created"], 1)
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    ACCOUNT_EMAIL_ISSUANCE_WAIT_SECONDS=5,
+)
+class ConcurrentEmailVerificationIssuanceTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            "concurrent@example.com",
+            "Strong-Test-Password-982!",
+            verification_state=User.VerificationState.PENDING_EMAIL,
+            is_active=False,
+        )
+
+    def _issue(self):
+        close_old_connections()
+        try:
+            user = User.objects.get(pk=self.user.pk)
+            return send_verification_email(user)
+        finally:
+            close_old_connections()
+
+    def test_overlapping_failure_does_not_block_newer_success(self):
+        first_delivery_started = threading.Event()
+        release_first_delivery = threading.Event()
+        calls = 0
+        calls_lock = threading.Lock()
+
+        def delivery(*args, **kwargs):
+            nonlocal calls
+            with calls_lock:
+                calls += 1
+                call_number = calls
+            self.assertFalse(connection.in_atomic_block)
+            if call_number == 1:
+                first_delivery_started.set()
+                self.assertTrue(release_first_delivery.wait(timeout=5))
+                raise RuntimeError("first delivery failed")
+            return 1
+
+        with patch("accounts.services.verification.send_mail", side_effect=delivery):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                failed = executor.submit(self._issue)
+                self.assertTrue(first_delivery_started.wait(timeout=5))
+                succeeded = executor.submit(self._issue)
+                time.sleep(0.1)
+                self.assertFalse(succeeded.done())
+                release_first_delivery.set()
+                with self.assertRaises(RuntimeError):
+                    failed.result(timeout=5)
+                replacement_token = succeeded.result(timeout=5)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email_verification_token_version, 1)
+        self.assertEqual(user_from_email_token(replacement_token), self.user)
+
+    def test_overlapping_successes_are_serialized_and_latest_token_wins(self):
+        first_delivery_started = threading.Event()
+        release_first_delivery = threading.Event()
+        state_lock = threading.Lock()
+        active_deliveries = 0
+        maximum_active_deliveries = 0
+        calls = 0
+
+        def delivery(*args, **kwargs):
+            nonlocal active_deliveries, maximum_active_deliveries, calls
+            with state_lock:
+                calls += 1
+                call_number = calls
+                active_deliveries += 1
+                maximum_active_deliveries = max(
+                    maximum_active_deliveries, active_deliveries
+                )
+            self.assertFalse(connection.in_atomic_block)
+            try:
+                if call_number == 1:
+                    first_delivery_started.set()
+                    self.assertTrue(release_first_delivery.wait(timeout=5))
+                return 1
+            finally:
+                with state_lock:
+                    active_deliveries -= 1
+
+        with patch("accounts.services.verification.send_mail", side_effect=delivery):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(self._issue)
+                self.assertTrue(first_delivery_started.wait(timeout=5))
+                second = executor.submit(self._issue)
+                time.sleep(0.1)
+                self.assertFalse(second.done())
+                release_first_delivery.set()
+                first_token = first.result(timeout=5)
+                second_token = second.result(timeout=5)
+
+        self.assertEqual(maximum_active_deliveries, 1)
+        with self.assertRaises(signing.BadSignature):
+            user_from_email_token(first_token)
+        self.assertEqual(user_from_email_token(second_token), self.user)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email_verification_token_version, 2)
