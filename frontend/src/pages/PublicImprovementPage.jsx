@@ -9,6 +9,7 @@ const sections = [
   ['Preparation', 'preparation'],
   ['Safety considerations', 'safety_guidance'],
   ['Cost considerations', 'cost_guidance'],
+  ['Tools to plan for', 'tools_guidance'],
   ['Common issues to avoid', 'common_mistakes'],
 ];
 

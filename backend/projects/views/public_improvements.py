@@ -27,7 +27,7 @@ def serialize_improvement(template, *, detail=False):
         "slug": template.public_slug,
         "category_slug": template.public_category_slug,
         "category_name": category_label(template.public_category_slug),
-        "title": template.name,
+        "title": template.public_title or template.name,
         "summary": template.public_summary,
         "difficulty": template.difficulty,
         "difficulty_label": template.get_difficulty_display() if template.difficulty else "",
@@ -38,7 +38,7 @@ def serialize_improvement(template, *, detail=False):
         "reviewed_at": template.public_reviewed_at,
         "published_at": template.public_published_at,
         "canonical_path": f"/improvements/{template.public_category_slug}/{template.public_slug}/",
-        "seo_title": template.seo_title or f"{template.name}: DIY & Project Guide | MyHomeBro",
+        "seo_title": template.seo_title or f"{template.public_title or template.name}: DIY & Project Guide | MyHomeBro",
         "seo_description": template.seo_description or template.public_summary,
         "social_image": template.social_image or DEFAULT_SOCIAL_IMAGE,
     }
@@ -49,6 +49,7 @@ def serialize_improvement(template, *, detail=False):
             "intro": template.public_intro or template.description,
             "scope": template.default_scope,
             "cost_guidance": template.cost_guidance,
+            "tools_guidance": template.tools_guidance,
             "preparation": template.preparation,
             "safety_guidance": template.safety_guidance,
             "common_mistakes": template.common_mistakes,
@@ -89,6 +90,7 @@ class PublicImprovementLibraryView(APIView):
         if query:
             queryset = queryset.filter(
                 Q(name__icontains=query)
+                | Q(public_title__icontains=query)
                 | Q(project_type__icontains=query)
                 | Q(project_subtype__icontains=query)
                 | Q(public_summary__icontains=query)

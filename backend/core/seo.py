@@ -62,7 +62,7 @@ def improvement_metadata(template):
     )
     image_path = template.social_image or "/static/social/myhomebro-default-1200x630.png"
     return {
-        "seo_title": template.seo_title or f"{template.name}: DIY & Project Guide | MyHomeBro",
+        "seo_title": template.seo_title or f"{template.public_title or template.name}: DIY & Project Guide | MyHomeBro",
         "seo_description": template.seo_description or template.public_summary,
         "seo_social_description": template.seo_description or template.public_summary,
         "seo_canonical_url": canonical_url,

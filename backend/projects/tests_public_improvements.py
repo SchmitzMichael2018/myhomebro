@@ -24,15 +24,15 @@ class PublicImprovementLibraryTests(TestCase):
             email="reviewer@example.com", password="not-used"
         )
         cls.published = cls._template(
-            "Replace Bathroom Vanity", "replace-bathroom-vanity", "published"
+            "QA Replace Bathroom Vanity", "qa-replace-bathroom-vanity", "published"
         )
         cls.related = cls._template(
-            "Replace Bathroom Faucet", "replace-bathroom-faucet", "published"
+            "QA Replace Bathroom Faucet", "qa-replace-bathroom-faucet", "published"
         )
         cls.published.related_public_templates.add(cls.related)
-        cls.draft = cls._template("Replace Toilet", "replace-toilet", "draft")
+        cls.draft = cls._template("QA Replace Toilet", "qa-replace-toilet", "draft")
         cls.archived = cls._template(
-            "Install Shower Door", "install-shower-door", "archived"
+            "QA Install Shower Door", "qa-install-shower-door", "archived"
         )
 
     @classmethod
@@ -70,41 +70,41 @@ class PublicImprovementLibraryTests(TestCase):
 
     def test_published_detail_has_related_content_and_private_states_404(self):
         response = self.client.get(
-            "/api/projects/public/improvements/bathroom/replace-bathroom-vanity/"
+            "/api/projects/public/improvements/bathroom/qa-replace-bathroom-vanity/"
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["related"][0]["id"], self.related.id)
         self.assertEqual(
-            self.client.get("/api/projects/public/improvements/bathroom/replace-toilet/").status_code,
+            self.client.get("/api/projects/public/improvements/bathroom/qa-replace-toilet/").status_code,
             404,
         )
         self.assertEqual(
-            self.client.get("/api/projects/public/improvements/bathroom/install-shower-door/").status_code,
+            self.client.get("/api/projects/public/improvements/bathroom/qa-install-shower-door/").status_code,
             404,
         )
 
     def test_shell_metadata_canonical_and_slug_redirect(self):
         response = self.client.get(
-            "/improvements/bathroom/replace-bathroom-vanity/"
+            "/improvements/bathroom/qa-replace-bathroom-vanity/"
         )
-        self.assertContains(response, "Replace Bathroom Vanity: DIY &amp; Project Guide | MyHomeBro")
+        self.assertContains(response, "QA Replace Bathroom Vanity: DIY &amp; Project Guide | MyHomeBro")
         self.assertContains(
             response,
-            'href="https://www.myhomebro.com/improvements/bathroom/replace-bathroom-vanity/"',
+            'href="https://www.myhomebro.com/improvements/bathroom/qa-replace-bathroom-vanity/"',
         )
         self.assertContains(
             response,
             "https://www.myhomebro.com/static/social/myhomebro-default-1200x630.png",
         )
 
-        self.published.public_slug = "replace-a-bathroom-vanity"
+        self.published.public_slug = "qa-replace-a-bathroom-vanity"
         self.published.save()
         redirect = self.client.get(
-            "/improvements/bathroom/replace-bathroom-vanity/"
+            "/improvements/bathroom/qa-replace-bathroom-vanity/"
         )
         self.assertRedirects(
             redirect,
-            "/improvements/bathroom/replace-a-bathroom-vanity/",
+            "/improvements/bathroom/qa-replace-a-bathroom-vanity/",
             status_code=301,
             fetch_redirect_response=False,
         )
@@ -113,9 +113,9 @@ class PublicImprovementLibraryTests(TestCase):
         body = self.client.get("/sitemap.xml").content.decode()
         self.assertIn("/improvements/", body)
         self.assertIn("/improvements/bathroom/", body)
-        self.assertIn("replace-bathroom-vanity", body)
-        self.assertNotIn("replace-toilet", body)
-        self.assertNotIn("install-shower-door", body)
+        self.assertIn("qa-replace-bathroom-vanity", body)
+        self.assertNotIn("qa-replace-toilet", body)
+        self.assertNotIn("qa-install-shower-door", body)
 
     def test_publication_validation_and_social_override(self):
         invalid = ProjectTemplate(
@@ -130,7 +130,7 @@ class PublicImprovementLibraryTests(TestCase):
         self.published.full_clean()
         self.published.save()
         response = self.client.get(
-            "/api/projects/public/improvements/bathroom/replace-bathroom-vanity/"
+            "/api/projects/public/improvements/bathroom/qa-replace-bathroom-vanity/"
         )
         self.assertEqual(response.json()["social_image"], "/static/social/vanity-1200x630.png")
 

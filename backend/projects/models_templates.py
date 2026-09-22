@@ -149,11 +149,13 @@ class ProjectTemplate(models.Model):
         db_index=True,
     )
     public_summary = models.CharField(max_length=320, blank=True, default="")
+    public_title = models.CharField(max_length=255, blank=True, default="")
     public_intro = models.TextField(blank=True, default="")
     difficulty = models.CharField(max_length=24, choices=Difficulty.choices, blank=True, default="")
     estimated_duration_min_days = models.PositiveIntegerField(null=True, blank=True)
     estimated_duration_max_days = models.PositiveIntegerField(null=True, blank=True)
     cost_guidance = models.TextField(blank=True, default="")
+    tools_guidance = models.TextField(blank=True, default="")
     preparation = models.TextField(blank=True, default="")
     safety_guidance = models.TextField(blank=True, default="")
     common_mistakes = models.TextField(blank=True, default="")

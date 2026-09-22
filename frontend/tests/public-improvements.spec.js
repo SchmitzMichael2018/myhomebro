@@ -15,6 +15,8 @@ const improvement = {
   estimated_duration_min_days: 1,
   estimated_duration_max_days: 2,
   cost_guidance: '',
+  tools_guidance:
+    'Plan for measuring, leveling, fastening, and plumbing tools appropriate to the work.',
   preparation: 'Confirm measurements and protect adjacent finishes.',
   safety_guidance:
     'Follow manufacturer instructions and stop when professional work is required.',
@@ -97,6 +99,9 @@ test('public library search, category, breadcrumbs, metadata, and CTAs work', as
   );
   await expect(page.getByTestId('diy-this-project')).toBeVisible();
   await expect(page.getByTestId('get-contractor-help')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Tools to plan for' })
+  ).toBeVisible();
   await expect
     .poll(() =>
       page
