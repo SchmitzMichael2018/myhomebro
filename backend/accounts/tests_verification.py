@@ -83,6 +83,24 @@ class AccountVerificationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(User.objects.filter(email="new.contractor@example.com").exists())
 
+    @override_settings(TURNSTILE_REQUIRED=True, TURNSTILE_TEST_BYPASS=False, TURNSTILE_SECRET_KEY="configured-secret")
+    def test_turnstile_rejects_missing_token_before_account_creation(self):
+        response = self.register(turnstile_token="")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(email="new.contractor@example.com").exists())
+
+    @override_settings(TURNSTILE_REQUIRED=True, TURNSTILE_TEST_BYPASS=False, TURNSTILE_SECRET_KEY="configured-secret")
+    @patch("accounts.services.verification.urlopen")
+    def test_turnstile_verifies_valid_token_before_account_creation(self, urlopen):
+        response_body = urlopen.return_value.__enter__.return_value
+        response_body.read.return_value = b'{"success": true}'
+        response = self.register(turnstile_token="valid-provider-token")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(email="new.contractor@example.com").exists())
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://challenges.cloudflare.com/turnstile/v0/siteverify")
+        self.assertIn(b"response=valid-provider-token", request.data)
+
     def test_pending_login_routes_to_setup_without_tokens(self):
         user = self._pending_user()
         response = self.client.post("/api/accounts/auth/login/", {"email": user.email, "password": "Strong-Test-Password-982!"}, format="json")

@@ -6,6 +6,7 @@ import api, { extractApiErrorMessage, setTokens } from '../api';
 import logo from '../assets/myhomebro_logo.png';
 import { customerContinuationDestination } from '../lib/universalRegistration.js';
 import TurnstileWidget from '../components/TurnstileWidget.jsx';
+import { TURNSTILE_CONFIGURED, TURNSTILE_STATE } from '../components/turnstileState.js';
 
 const propertyTypes = [
   ['single_family', 'Single family'],
@@ -98,6 +99,9 @@ export default function CustomerAccountOnboardingPage() {
   const [portalToken, setPortalToken] = useState('');
   const [propertyProfileId, setPropertyProfileId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileState, setTurnstileState] = useState(
+    TURNSTILE_CONFIGURED ? TURNSTILE_STATE.LOADING : TURNSTILE_STATE.DISABLED
+  );
   const [error, setError] = useState('');
 
   const activeStepIndex = useMemo(() => {
@@ -135,6 +139,10 @@ export default function CustomerAccountOnboardingPage() {
   const submitAccount = async (event) => {
     event.preventDefault();
     setError('');
+    if (TURNSTILE_CONFIGURED && (turnstileState !== TURNSTILE_STATE.VERIFIED || !accountForm.turnstile_token.trim())) {
+      setError('Complete the security check to continue.');
+      return;
+    }
     if (accountForm.password !== accountForm.password_confirm) {
       setError('Passwords do not match.');
       return;
@@ -398,7 +406,7 @@ export default function CustomerAccountOnboardingPage() {
                   autoComplete="name"
                 />
               </Field>
-              <TurnstileWidget onToken={setTurnstileToken} />
+              <TurnstileWidget onToken={setTurnstileToken} onStateChange={setTurnstileState} />
               <Field
                 label="Email"
                 hint="If you later submit a project, we'll link it to this account automatically."
@@ -447,11 +455,13 @@ export default function CustomerAccountOnboardingPage() {
               <button
                 data-testid="customer-account-create-submit"
                 type="submit"
-                disabled={loading}
+                disabled={loading || (TURNSTILE_CONFIGURED && turnstileState !== TURNSTILE_STATE.VERIFIED)}
+                aria-describedby={TURNSTILE_CONFIGURED ? 'customer-security-context' : undefined}
                 className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-950/25 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-60"
               >
                 {loading ? 'Creating account...' : 'Create Free Account'}
               </button>
+              {TURNSTILE_CONFIGURED && turnstileState !== TURNSTILE_STATE.VERIFIED ? <p id="customer-security-context" className="text-sm text-sky-100/70">Complete the security check before creating your account.</p> : null}
             </form>
           ) : null}
 

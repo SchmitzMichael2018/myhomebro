@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
 import TurnstileWidget from './TurnstileWidget.jsx';
+import { TURNSTILE_CONFIGURED, TURNSTILE_STATE } from './turnstileState.js';
 
 export function ContractorSignupForm({ embedded = false, onComplete }) {
   const navigate = useNavigate();
@@ -13,6 +14,9 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
   const firstRef = useRef(null);
 
   const [loading, setLoading] = useState(false);
+  const [turnstileState, setTurnstileState] = useState(
+    TURNSTILE_CONFIGURED ? TURNSTILE_STATE.LOADING : TURNSTILE_STATE.DISABLED
+  );
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
@@ -89,6 +93,10 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (TURNSTILE_CONFIGURED && (turnstileState !== TURNSTILE_STATE.VERIFIED || !form.turnstile_token.trim())) {
+      toast.error('Complete the security check to continue.');
+      return;
+    }
     const err = validate();
     if (err) {
       toast.error(err);
@@ -110,7 +118,6 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
       };
 
       const { data, __used_url } = await registerContractor(payload);
-      // eslint-disable-next-line no-console
       console.log("✅ Contractor register used endpoint:", __used_url);
 
       if (data?.access) {
@@ -135,7 +142,6 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
       const status = err2?.response?.status;
       if (status === 404) {
         toast.error("Signup endpoint not found on the server.");
-        // eslint-disable-next-line no-console
         console.error("SignUpForm 404:", err2);
         return;
       }
@@ -148,7 +154,6 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
         err2?.message ||
         "Registration failed.";
       toast.error(String(msg));
-      // eslint-disable-next-line no-console
       console.error("SignUpForm error:", err2);
     } finally {
       setLoading(false);
@@ -269,11 +274,12 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
             <span>.</span>
           </span>
         </label>
-        <TurnstileWidget onToken={setTurnstileToken} />
+        <TurnstileWidget onToken={setTurnstileToken} onStateChange={setTurnstileState} />
 
-        <button type="submit" disabled={loading} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
+        <button type="submit" disabled={loading || (TURNSTILE_CONFIGURED && turnstileState !== TURNSTILE_STATE.VERIFIED)} aria-describedby={TURNSTILE_CONFIGURED ? 'contractor-security-context' : undefined} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition disabled:cursor-not-allowed disabled:opacity-60">
           {loading ? "Signing Up..." : "Sign Up"}
         </button>
+        {TURNSTILE_CONFIGURED && turnstileState !== TURNSTILE_STATE.VERIFIED ? <p id="contractor-security-context" className="text-sm text-slate-600">Complete the security check before creating your account.</p> : null}
       </form>
     </div>
   );
