@@ -120,8 +120,10 @@ class ResendVerificationEmailView(APIView):
         last = AccountSecurityEvent.objects.filter(user=user, event_type="verification_email_sent").order_by("-created_at").first()
         if last and last.created_at > timezone.now() - timedelta(seconds=cooldown):
             log_event("verification_rate_limited", user=user, request=request, metadata={"scope": "email"})
-            remaining = cooldown - (timezone.now() - last.created_at).total_seconds()
-            return Response({**generic, "cooldown_seconds": max(1, math.ceil(remaining))})
+            if session_is_valid:
+                remaining = cooldown - (timezone.now() - last.created_at).total_seconds()
+                return Response({**generic, "cooldown_seconds": max(1, math.ceil(remaining))})
+            return Response(generic)
         try:
             send_verification_email(user, request=request)
         except Exception:

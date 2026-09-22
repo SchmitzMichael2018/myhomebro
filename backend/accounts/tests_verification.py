@@ -2,6 +2,7 @@ from datetime import timedelta
 import re
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.tokens import default_token_generator
 from django.core.cache import cache
@@ -19,6 +20,7 @@ from accounts.models import AccountSecurityEvent, PhoneVerificationChallenge, Us
 from accounts.services.verification import (
     request_phone_code,
     send_verification_email,
+    user_from_email_token,
     verification_token,
     verify_phone_code,
 )
@@ -234,6 +236,13 @@ class AccountVerificationTests(TestCase):
 
     def test_public_resend_does_not_leak_ineligible_or_unknown_status(self):
         eligible = self._pending_user(email="eligible@example.com")
+        cooldown_eligible = self._pending_user(email="cooldown@example.com")
+        send_verification_email(cooldown_eligible, request=self._request())
+        AccountSecurityEvent.objects.filter(
+            user=cooldown_eligible,
+            event_type="verification_email_sent",
+        ).update(created_at=timezone.now() - timedelta(seconds=17))
+        mail.outbox.clear()
         verified = User.objects.create_user(
             "verified-resend@example.com",
             "Strong-Test-Password-982!",
@@ -250,11 +259,18 @@ class AccountVerificationTests(TestCase):
             verification_state=User.VerificationState.SUSPICIOUS,
             trust_classification=User.TrustClassification.SUSPICIOUS,
         )
+        spam = self._pending_user(
+            email="spam@example.com",
+            trust_classification=User.TrustClassification.SPAM_FRAUD,
+        )
         expected = None
         for email in (
+            eligible.email,
+            cooldown_eligible.email,
             verified.email,
             disabled.email,
             suspended.email,
+            spam.email,
             "unknown@example.com",
         ):
             with self.subTest(email=email):
@@ -266,12 +282,40 @@ class AccountVerificationTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 expected = expected or response.data
                 self.assertEqual(response.data, expected)
-        self.assertEqual(len(mail.outbox), 0)
-        self.assertFalse(
-            AccountSecurityEvent.objects.filter(
-                user=eligible, event_type="verification_email_sent"
-            ).exists()
-        )
+                self.assertEqual(
+                    response.data["cooldown_seconds"],
+                    settings.ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS,
+                )
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_failed_replacement_delivery_preserves_previous_token(self):
+        user = self._pending_user()
+        previous_token = send_verification_email(user, request=self._request())
+        previous_version = user.email_verification_token_version
+
+        with patch(
+            "accounts.services.verification.send_mail",
+            side_effect=RuntimeError("delivery unavailable"),
+        ):
+            with self.assertRaises(RuntimeError):
+                send_verification_email(user, request=self._request())
+
+        user.refresh_from_db()
+        self.assertEqual(user.email_verification_token_version, previous_version)
+        self.assertEqual(user_from_email_token(previous_token), user)
+
+    def test_repeated_successful_issuance_only_accepts_latest_token(self):
+        user = self._pending_user()
+        first_token = send_verification_email(user, request=self._request())
+        second_token = send_verification_email(user, request=self._request())
+        third_token = send_verification_email(user, request=self._request())
+
+        for superseded_token in (first_token, second_token):
+            with self.assertRaises(signing.BadSignature):
+                user_from_email_token(superseded_token)
+        self.assertEqual(user_from_email_token(third_token), user)
+        user.refresh_from_db()
+        self.assertEqual(user.email_verification_token_version, 3)
 
     def test_resend_is_throttled_by_normalized_email_and_client_ip(self):
         endpoint = reverse("accounts_api:verification-resend-email")

@@ -12,7 +12,6 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import F
 from django.utils import timezone
 
 from accounts.models import AccountSecurityEvent, PhoneVerificationChallenge, User
@@ -65,16 +64,12 @@ def user_from_token(token):
     return User.objects.get(pk=payload["user"])
 
 
-def email_verification_token(user):
-    User.objects.filter(pk=user.pk).update(
-        email_verification_token_version=F("email_verification_token_version") + 1
-    )
-    user.refresh_from_db(fields=["email_verification_token_version"])
+def email_verification_token(user, version):
     return signing.dumps(
         {
             "user": user.pk,
             "purpose": "email_verification",
-            "version": user.email_verification_token_version,
+            "version": version,
         },
         salt=EMAIL_TOKEN_SALT,
         compress=True,
@@ -121,16 +116,22 @@ def log_event(event_type, *, user=None, request=None, metadata=None):
 
 
 def send_verification_email(user, *, request=None):
-    token = email_verification_token(user)
-    url = f"{str(settings.SITE_URL).rstrip('/')}/api/accounts/auth/verify-account-email/{token}/"
-    send_mail(
-        "Verify your MyHomeBro email",
-        "Thanks for creating your MyHomeBro account.\n\nVerify your email address to continue setting up your account:\n"
-        f"{url}\n\nIf you didn't create this account, you can ignore this message.",
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False,
-    )
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+        next_version = locked_user.email_verification_token_version + 1
+        token = email_verification_token(locked_user, next_version)
+        url = f"{str(settings.SITE_URL).rstrip('/')}/api/accounts/auth/verify-account-email/{token}/"
+        locked_user.email_verification_token_version = next_version
+        locked_user.save(update_fields=["email_verification_token_version"])
+        send_mail(
+            "Verify your MyHomeBro email",
+            "Thanks for creating your MyHomeBro account.\n\nVerify your email address to continue setting up your account:\n"
+            f"{url}\n\nIf you didn't create this account, you can ignore this message.",
+            settings.DEFAULT_FROM_EMAIL,
+            [locked_user.email],
+            fail_silently=False,
+        )
+    user.email_verification_token_version = next_version
     log_event("verification_email_sent", user=user, request=request)
     return token
 
