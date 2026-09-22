@@ -13,6 +13,7 @@ const ContractorDashboard = lazy(() => import("../components/ContractorDashboard
 const AdminDashboard = lazy(() => import("../pages/AdminDashboard.jsx"));
 const AdminContractorDirectory = lazy(() => import("../pages/admin/AdminContractorDirectory.jsx"));
 const AdminMarketplacePage = lazy(() => import("../pages/admin/AdminMarketplacePage.jsx"));
+const AdminRequestsPage = lazy(() => import("../pages/admin/AdminRequestsPage.jsx"));
 const AdminMaintenancePage = lazy(() => import("../pages/admin/AdminMaintenancePage.jsx"));
 const AdminReimbursementsPage = lazy(() => import("../pages/admin/AdminReimbursementsPage.jsx"));
 const AdminReviewsPage = lazy(() => import("../pages/admin/AdminReviewsPage.jsx"));
@@ -150,6 +151,7 @@ export function protectedRoutes() {
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>
           <Route path="admin" element={<AdminDashboard />} />
+          <Route path="admin/requests" element={<AdminRequestsPage />} />
           <Route path="admin/marketplace" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/analytics" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/verification" element={<AdminMarketplacePage />} />

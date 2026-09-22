@@ -138,9 +138,10 @@ except Exception:  # pragma: no cover
 
 # ✅ NEW: Project Intake model (guarded)
 try:
-    from .models_project_intake import ProjectIntake  # type: ignore
+    from .models_project_intake import ProjectIntake, ProjectIntakeClassificationEvent  # type: ignore
 except Exception:  # pragma: no cover
     ProjectIntake = None  # type: ignore
+    ProjectIntakeClassificationEvent = None  # type: ignore
 
 try:
     from .models_customer_portal import (  # type: ignore
@@ -457,7 +458,7 @@ if ProposalActivity is not None:
 if ProjectIntake is not None:
     @admin.register(ProjectIntake)
     class ProjectIntakeAdmin(admin.ModelAdmin):
-        actions = ("mark_real", "mark_test", "mark_spam_fraud", "mark_archived")
+        actions = ("mark_real", "mark_test", "mark_suspicious", "mark_spam_fraud", "mark_archived", "restore")
         list_display = (
             "id",
             "customer_name",
@@ -499,7 +500,23 @@ if ProjectIntake is not None:
         )
 
         def _classify(self, request, queryset, value):
-            queryset.update(traffic_classification=value, classified_at=timezone.now(), classified_by=request.user)
+            for intake in queryset:
+                previous = intake.traffic_classification
+                if previous == value:
+                    continue
+                if value == "archived":
+                    intake.classification_before_archive = previous
+                intake.traffic_classification = value
+                intake.classified_at = timezone.now()
+                intake.classified_by = request.user
+                intake.save(update_fields=("traffic_classification", "classified_at", "classified_by", "classification_before_archive", "updated_at"))
+                ProjectIntakeClassificationEvent.objects.create(
+                    intake=intake,
+                    previous_classification=previous,
+                    new_classification=value,
+                    actor=request.user,
+                    reason="Django admin bulk action",
+                )
 
         @admin.action(description="Classify selected requests as Real")
         def mark_real(self, request, queryset):
@@ -509,6 +526,10 @@ if ProjectIntake is not None:
         def mark_test(self, request, queryset):
             self._classify(request, queryset, "test")
 
+        @admin.action(description="Classify selected requests as Suspicious")
+        def mark_suspicious(self, request, queryset):
+            self._classify(request, queryset, "suspicious")
+
         @admin.action(description="Classify selected requests as Spam / fraud")
         def mark_spam_fraud(self, request, queryset):
             self._classify(request, queryset, "spam_fraud")
@@ -516,6 +537,11 @@ if ProjectIntake is not None:
         @admin.action(description="Archive selected requests")
         def mark_archived(self, request, queryset):
             self._classify(request, queryset, "archived")
+
+        @admin.action(description="Restore selected archived requests")
+        def restore(self, request, queryset):
+            for intake in queryset.filter(traffic_classification="archived"):
+                self._classify(request, queryset.filter(pk=intake.pk), intake.classification_before_archive or "real")
 
         fieldsets = (
             (

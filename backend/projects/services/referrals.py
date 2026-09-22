@@ -342,6 +342,9 @@ def _homeowner_for_receipt(receipt):
 
 
 def _candidate_referrals_for_receipt(receipt):
+    agreement = receipt.agreement or getattr(receipt.invoice, "agreement", None)
+    if agreement and agreement.source_intakes.filter(traffic_classification__in=("test", "spam_fraud")).exists():
+        return []
     rows = []
     contractor = _contractor_for_receipt(receipt)
     if contractor:

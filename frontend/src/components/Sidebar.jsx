@@ -303,6 +303,7 @@ export default function Sidebar({ variant = "desktop" }) {
           {isOnAdminRoute && (
             <div className="mt-2 space-y-1">
               <SubItem to="/app/admin" label="Overview" />
+              <SubItem to="/app/admin/requests" label="Requests" />
               <SubItem to="/app/admin/marketplace" label="Marketplace" />
               <SubItem to="/app/admin/maintenance" label="Maintenance" />
               <SubItem to="/app/admin/reimbursements" label="Reimbursements" />

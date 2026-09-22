@@ -42,8 +42,12 @@ from .views_reimbursements import (
     AdminReimbursements,
 )
 from .views_promotions import AdminPlatformFeePromotionDetail, AdminPlatformFeePromotions
+from .views_requests import AdminRequestBulkAction, AdminRequestDetail, AdminRequests
 
 urlpatterns = [
+    path("requests/", AdminRequests.as_view(), name="admin-requests"),
+    path("requests/bulk-action/", AdminRequestBulkAction.as_view(), name="admin-request-bulk-action"),
+    path("requests/<int:request_id>/", AdminRequestDetail.as_view(), name="admin-request-detail"),
     path("overview/", AdminOverview.as_view(), name="admin-overview"),
     path("goals/", AdminGoals.as_view(), name="admin-goals"),
 

@@ -600,7 +600,7 @@ def _admin_operations_payload(today, month_start) -> dict:
             operations["users"]["kpis"]["new_homeowners"] = Homeowner.objects.count()
 
     if ProjectIntake is not None:
-        intake_qs = ProjectIntake.objects.all()
+        intake_qs = ProjectIntake.objects.exclude(traffic_classification__in=("test", "spam_fraud", "archived"))
         saved_backlog = intake_qs.filter(post_submit_flow="multi_contractor", public_lead__isnull=True, agreement__isnull=True)
         operations["marketplace"]["kpis"]["saved_request_backlog"] = saved_backlog.count()
         operations["marketplace"]["routing_queue"] = [
@@ -625,7 +625,11 @@ def _admin_operations_payload(today, month_start) -> dict:
         open_bid_statuses = ["new", "ready_for_review", "pending_customer_response", "follow_up", "qualified"]
         lead_qs = PublicContractorLead.objects.all()
         operations["marketplace"]["kpis"]["open_bids"] = lead_qs.filter(status__in=open_bid_statuses).count()
-        marketplace_intakes = ProjectIntake.objects.filter(post_submit_flow="multi_contractor") if ProjectIntake is not None else None
+        marketplace_intakes = (
+            ProjectIntake.objects.filter(post_submit_flow="multi_contractor")
+            .exclude(traffic_classification__in=("test", "spam_fraud", "archived"))
+            if ProjectIntake is not None else None
+        )
         request_count = marketplace_intakes.count() if marketplace_intakes is not None else 0
         bid_count = lead_qs.count()
         operations["marketplace"]["health"]["average_bids_per_request"] = round(bid_count / request_count, 2) if request_count else 0

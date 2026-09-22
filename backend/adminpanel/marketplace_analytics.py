@@ -102,7 +102,9 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
     trade_filter = _safe_text(params.get("trade")).lower()
     contractor_status = _safe_text(params.get("contractor_status")).lower()
 
-    intake_qs = ProjectIntake.objects.filter(post_submit_flow="multi_contractor")
+    intake_qs = ProjectIntake.objects.filter(post_submit_flow="multi_contractor").exclude(
+        traffic_classification__in=("test", "spam_fraud", "archived")
+    )
     if date_from:
         intake_qs = intake_qs.filter(Q(submitted_at__gte=date_from) | Q(created_at__gte=date_from))
     if date_to:

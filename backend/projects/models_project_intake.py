@@ -18,6 +18,7 @@ class ProjectIntake(models.Model):
     TRAFFIC_CLASSIFICATION_CHOICES = [
         ("real", "Real"),
         ("test", "Test"),
+        ("suspicious", "Suspicious"),
         ("spam_fraud", "Spam / fraud"),
         ("archived", "Archived"),
     ]
@@ -122,6 +123,7 @@ class ProjectIntake(models.Model):
     traffic_classification = models.CharField(max_length=20, choices=TRAFFIC_CLASSIFICATION_CHOICES, default="real", db_index=True)
     classified_at = models.DateTimeField(null=True, blank=True)
     classified_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="classified_project_intakes")
+    classification_before_archive = models.CharField(max_length=20, choices=TRAFFIC_CLASSIFICATION_CHOICES, blank=True, default="")
 
     source_template = models.ForeignKey(
         "projects.ProjectTemplate",
@@ -281,6 +283,18 @@ class ProjectIntake(models.Model):
             ),
         ]
         return "\n".join([p for p in parts if p])
+
+
+class ProjectIntakeClassificationEvent(models.Model):
+    project_intake = models.ForeignKey(ProjectIntake, on_delete=models.PROTECT, related_name="classification_events")
+    previous_classification = models.CharField(max_length=20, blank=True, default="")
+    new_classification = models.CharField(max_length=20)
+    actor = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="project_intake_classification_events")
+    reason = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
 
 
 def project_intake_clarification_photo_upload_to(instance, filename):

@@ -155,6 +155,7 @@ def _saved_marketplace_requests_payload() -> dict[str, Any]:
                 contractor__isnull=True,
             )
         )
+        .exclude(traffic_classification__in=("test", "spam_fraud", "archived"))
         .order_by("-post_submit_flow_selected_at", "-created_at", "-id")[:100]
     )
     rows = [_saved_marketplace_request_row(intake) for intake in intakes]

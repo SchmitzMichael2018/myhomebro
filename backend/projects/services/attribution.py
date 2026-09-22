@@ -321,7 +321,7 @@ def acquisition_report():
     by_source = list(included_visits.values("first_source", "first_medium").annotate(visitors=Count("id")).order_by("first_source", "first_medium"))
     event_totals = dict(AttributionEvent.objects.filter(
         Q(visitor__isnull=True) | Q(visitor__excluded_from_reporting=False)
-    ).exclude(excluded_users).values("event_type").annotate(total=Count("id")).values_list("event_type", "total"))
+    ).exclude(excluded_users).exclude(project__agreement__source_intakes__traffic_classification__in=excluded_classes).values("event_type").annotate(total=Count("id", distinct=True)).values_list("event_type", "total"))
     by_campaign = list(included_visits.values("first_campaign", "first_content").exclude(first_campaign="").annotate(visitors=Count("id")).order_by("first_campaign", "first_content"))
     by_improvement = list(
         AttributionEvent.objects.filter(
@@ -366,7 +366,7 @@ def acquisition_report():
     included_project_snapshots = ProjectAttributionSnapshot.objects.exclude(
         Q(customer_user__trust_classification__in=excluded_classes)
         | Q(contractor_user__trust_classification__in=excluded_classes)
-    )
+    ).exclude(project__agreement__source_intakes__traffic_classification__in=excluded_classes)
     funded_project_ids = set(AttributionEvent.objects.filter(event_type="project_funded", project__isnull=False).values_list("project_id", flat=True))
     for snapshot in included_project_snapshots.iterator():
         source = source_name(snapshot.customer_attribution)
@@ -377,7 +377,7 @@ def acquisition_report():
     included_revenue = RevenueAttributionSnapshot.objects.exclude(
         Q(customer_user__trust_classification__in=excluded_classes)
         | Q(contractor_user__trust_classification__in=excluded_classes)
-    )
+    ).exclude(project__agreement__source_intakes__traffic_classification__in=excluded_classes)
     for row in included_revenue.iterator():
         customer_source = source_name(row.customer_attribution)
         customer_bucket = bucket(customer_source)

@@ -48,7 +48,7 @@ from .models_contractor_discovery import (  # noqa: F401
 from .models_quick_capture import ProjectAssistantCaptureSession, ProjectAssistantPreparedAction  # noqa: E402,F401
 from .models_smart_capture import AIUsageLedger, ContractorAsset, ProjectAssistantSmartCaptureSession  # noqa: E402,F401
 from .models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement  # noqa: E402,F401
-from .models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
+from .models_project_intake import ProjectIntake, ProjectIntakeClassificationEvent, ProjectIntakeClarificationPhoto
 from .models_project_taxonomy import ProjectType, ProjectSubtype  # noqa: E402,F401
 from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus  # noqa: E402,F401
 from .models_subcontractor import (  # noqa: E402,F401
