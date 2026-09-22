@@ -139,11 +139,15 @@ test('a rejected registration discards the consumed challenge before retry', asy
 
 test('contractor registration also discards a challenge after rejection', async ({ page }) => {
   await page.addInitScript(runtimeSource);
-  await page.route('**/api/accounts/auth/contractor-register/', (route) => route.fulfill({
-    status: 400,
-    contentType: 'application/json',
-    body: JSON.stringify({ detail: 'Registration could not be completed.' }),
-  }));
+  const submittedResponses = [];
+  await page.route('**/api/accounts/auth/contractor-register/', (route) => {
+    submittedResponses.push(route.request().postDataJSON()?.turnstile_token);
+    return route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'Registration could not be completed.' }),
+    });
+  });
   await page.goto('/signup', { waitUntil: 'domcontentloaded' });
   await page.getByRole('textbox', { name: 'First Name' }).fill('QA');
   await page.getByRole('textbox', { name: 'Last Name' }).fill('Example');
@@ -159,6 +163,13 @@ test('contractor registration also discards a challenge after rejection', async 
   await expect(submit).toBeDisabled();
   await expect(page.getByTestId('turnstile-status')).toHaveText('Complete the security check to continue.');
   await expect.poll(() => page.evaluate(() => window.__turnstileRenderCount)).toBe(2);
+  await page.evaluate(() => window.__turnstileOptions.callback('local-second-challenge'));
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect.poll(() => submittedResponses.length).toBe(2);
+  expect(submittedResponses[0]).toBeTruthy();
+  expect(submittedResponses[1]).toBeTruthy();
+  expect(submittedResponses[1]).not.toBe(submittedResponses[0]);
 });
 
 test('SPA unmount and remount cleans up and creates no duplicate widget', async ({ page }) => {
