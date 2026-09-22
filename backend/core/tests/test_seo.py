@@ -42,10 +42,14 @@ class SeoFoundationTests(TestCase):
     @patch("accounts.services.verification._send_sms")
     @patch("accounts.services.verification.send_verification_email")
     def test_turnstile_diagnostic_is_public_but_not_indexable(self, send_email, send_sms):
-        response = self.client.get("/turnstile-diagnostic/")
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'content="noindex, nofollow"')
-        self.assertContains(response, 'href="https://www.myhomebro.com/turnstile-diagnostic"')
+        for path, canonical in (
+            ("/turnstile-diagnostic/", "https://www.myhomebro.com/turnstile-diagnostic"),
+            ("/turnstile-diagnostic/production/", "https://www.myhomebro.com/turnstile-diagnostic/production"),
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'content="noindex, nofollow"')
+            self.assertContains(response, f'href="{canonical}"')
 
         sitemap = self.client.get(reverse("sitemap-xml")).content.decode()
         robots = self.client.get(reverse("robots-txt")).content.decode()

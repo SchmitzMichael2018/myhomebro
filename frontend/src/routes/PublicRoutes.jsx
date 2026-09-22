@@ -171,6 +171,7 @@ export default function PublicRoutes() {
         <Route path="/verify-account" element={<AccountVerificationPage />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/turnstile-diagnostic" element={<TurnstileDiagnosticPage />} />
+        <Route path="/turnstile-diagnostic/production" element={<TurnstileDiagnosticPage mode="production" />} />
 
         {/* Public signature / magic links */}
         <Route path="/agreements/sign/:id" element={<HomeownerSign />} />

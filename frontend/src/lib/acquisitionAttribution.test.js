@@ -25,5 +25,6 @@ describe('acquisition attribution', () => {
     ).toBeNull();
     expect(publicRouteEvent('/legal/privacy')).toBeNull();
     expect(publicRouteEvent('/turnstile-diagnostic/')).toBeNull();
+    expect(publicRouteEvent('/turnstile-diagnostic/production/')).toBeNull();
   });
 });

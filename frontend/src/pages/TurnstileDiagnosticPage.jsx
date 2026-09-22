@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  diagnosticSiteKey,
   TURNSTILE_DIAGNOSTIC_SCRIPT_URL,
-  TURNSTILE_DIAGNOSTIC_SITE_KEY,
 } from './turnstileDiagnosticConfig.js';
 
 // Temporary diagnostic infrastructure. Remove after production Turnstile diagnosis.
@@ -14,13 +14,18 @@ const StatusRow = ({ label, value, testId }) => (
   </div>
 );
 
-export default function TurnstileDiagnosticPage() {
+export default function TurnstileDiagnosticPage({ mode = 'test' }) {
   const containerRef = useRef(null);
   const widgetIdRef = useRef(null);
   const [scriptStatus, setScriptStatus] = useState('SCRIPT REQUESTED');
   const [runtimeStatus, setRuntimeStatus] = useState('WINDOW.TURNSTILE UNAVAILABLE');
   const [widgetStatus, setWidgetStatus] = useState('WIDGET NOT RENDERED');
   const [challengeStatus, setChallengeStatus] = useState('CHALLENGE NOT VERIFIED');
+  const isProductionMode = mode === 'production';
+  const siteKey = diagnosticSiteKey(
+    mode,
+    import.meta.env.VITE_TURNSTILE_SITE_KEY
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +33,11 @@ export default function TurnstileDiagnosticPage() {
 
     const renderWidget = () => {
       if (cancelled || !containerRef.current) return;
+      if (!siteKey) {
+        setWidgetStatus('WIDGET FAILED');
+        setChallengeStatus('CHALLENGE ERROR');
+        return;
+      }
       if (!window.turnstile?.render) {
         setRuntimeStatus('WINDOW.TURNSTILE UNAVAILABLE');
         return;
@@ -35,12 +45,12 @@ export default function TurnstileDiagnosticPage() {
       setRuntimeStatus('WINDOW.TURNSTILE AVAILABLE');
       try {
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
-          sitekey: TURNSTILE_DIAGNOSTIC_SITE_KEY,
+          sitekey: siteKey,
           callback: () => setChallengeStatus('CHALLENGE VERIFIED'),
           'expired-callback': () => setChallengeStatus('CHALLENGE NOT VERIFIED'),
           'error-callback': () => {
             setWidgetStatus('WIDGET FAILED');
-            setChallengeStatus('CHALLENGE NOT VERIFIED');
+            setChallengeStatus('CHALLENGE ERROR');
           },
         });
         setWidgetStatus('WIDGET RENDERED');
@@ -87,7 +97,7 @@ export default function TurnstileDiagnosticPage() {
         }
       }
     };
-  }, []);
+  }, [siteKey]);
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-12 text-white" data-testid="turnstile-diagnostic">
@@ -98,6 +108,7 @@ export default function TurnstileDiagnosticPage() {
           This page checks only whether the browser can load and render Cloudflare Turnstile. It does not create or modify MyHomeBro data.
         </p>
         <dl className="mt-6 rounded-xl border border-white/10 px-4" role="status" aria-live="polite">
+          <StatusRow label="Site key mode" value={isProductionMode ? 'PRODUCTION' : 'TEST'} testId="diagnostic-key-mode" />
           <StatusRow label="Cloudflare script" value={scriptStatus} testId="diagnostic-script-status" />
           <StatusRow label="Runtime" value={runtimeStatus} testId="diagnostic-runtime-status" />
           <StatusRow label="Widget" value={widgetStatus} testId="diagnostic-widget-status" />

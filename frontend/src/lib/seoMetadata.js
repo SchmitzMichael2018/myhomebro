@@ -43,6 +43,7 @@ const ROUTES = {
   '/start-project': { title: 'Start a Home Project | MyHomeBro', index: false },
   '/forgot-password': { title: 'Reset Password | MyHomeBro', index: false },
   '/turnstile-diagnostic': { title: 'Turnstile Diagnostic | MyHomeBro', index: false },
+  '/turnstile-diagnostic/production': { title: 'Turnstile Diagnostic | MyHomeBro', index: false },
   '/legal/terms-of-service': {
     title: 'Terms of Service | MyHomeBro',
     description: 'Read the terms that govern use of the MyHomeBro platform.',

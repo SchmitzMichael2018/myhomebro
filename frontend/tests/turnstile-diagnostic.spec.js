@@ -25,6 +25,7 @@ test('temporary diagnostic isolates Cloudflare loading from registration and bus
 
   await page.goto('/turnstile-diagnostic/');
   await expect(page.getByRole('heading', { name: 'MyHomeBro Turnstile Diagnostic' })).toBeVisible();
+  await expect(page.getByTestId('diagnostic-key-mode')).toHaveText('TEST');
   await expect(page.getByTestId('diagnostic-script-status')).toHaveText('SCRIPT LOADED');
   await expect(page.getByTestId('diagnostic-runtime-status')).toHaveText('WINDOW.TURNSTILE AVAILABLE');
   await expect(page.getByTestId('diagnostic-widget-status')).toHaveText('WIDGET RENDERED');
@@ -37,6 +38,40 @@ test('temporary diagnostic isolates Cloudflare loading from registration and bus
 
   await page.evaluate(() => window.__diagnosticCallback('ignored-diagnostic-token'));
   await expect(page.getByTestId('diagnostic-challenge-status')).toHaveText('CHALLENGE VERIFIED');
+});
+
+test('production diagnostic uses the compiled public site key without displaying it', async ({ page }) => {
+  const businessRequests = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith('/api/') && /register|verification|sms|referral|projects\/|intake/i.test(pathname)) {
+      businessRequests.push(request.url());
+    }
+  });
+  await page.route('https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/javascript',
+    body: `window.turnstile = {
+      render(container, options) {
+        window.__productionDiagnosticOptions = options;
+        container.textContent = 'Mock production-key widget';
+        return 'production-diagnostic-widget';
+      }, remove() {}
+    };`,
+  }));
+
+  await page.goto('/turnstile-diagnostic/production/');
+  await expect(page.getByTestId('diagnostic-key-mode')).toHaveText('PRODUCTION');
+  await expect(page.getByTestId('diagnostic-widget-status')).toHaveText('WIDGET RENDERED');
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow');
+  expect(await page.evaluate(() => window.__productionDiagnosticOptions.sitekey)).toBe('production-public-site-key-for-diagnostic');
+  await expect(page.getByTestId('turnstile-diagnostic')).not.toContainText('production-public-site-key-for-diagnostic');
+  expect(await page.content()).not.toContain('TURNSTILE_SECRET_KEY');
+  expect(businessRequests).toEqual([]);
+
+  await page.evaluate(() => window.__productionDiagnosticOptions['error-callback']('safe-provider-code'));
+  await expect(page.getByTestId('diagnostic-challenge-status')).toHaveText('CHALLENGE ERROR');
+  await expect(page.getByTestId('turnstile-diagnostic')).not.toContainText('safe-provider-code');
 });
 
 test('diagnostic reports a safe script failure without calling APIs', async ({ page }) => {

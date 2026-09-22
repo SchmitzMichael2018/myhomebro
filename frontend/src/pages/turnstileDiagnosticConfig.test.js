@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  diagnosticSiteKey,
   TURNSTILE_DIAGNOSTIC_SCRIPT_URL,
   TURNSTILE_DIAGNOSTIC_SITE_KEY,
 } from './turnstileDiagnosticConfig.js';
@@ -18,5 +19,15 @@ describe('temporary Turnstile diagnostic configuration', () => {
       '1x0000000000000000000000000000000AA'
     );
     expect(TURNSTILE_DIAGNOSTIC_SITE_KEY).toHaveLength(24);
+  });
+
+  it('selects the compiled public production site key only in production mode', () => {
+    expect(diagnosticSiteKey('test', 'public-production-key')).toBe(
+      TURNSTILE_DIAGNOSTIC_SITE_KEY
+    );
+    expect(diagnosticSiteKey('production', ' public-production-key ')).toBe(
+      'public-production-key'
+    );
+    expect(diagnosticSiteKey('production', '')).toBe('');
   });
 });
