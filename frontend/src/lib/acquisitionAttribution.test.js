@@ -24,5 +24,6 @@ describe('acquisition attribution', () => {
       publicRouteEvent('/improvements/bathroom/replace-bathroom-vanity/')
     ).toBeNull();
     expect(publicRouteEvent('/legal/privacy')).toBeNull();
+    expect(publicRouteEvent('/turnstile-diagnostic/')).toBeNull();
   });
 });

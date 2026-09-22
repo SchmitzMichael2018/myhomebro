@@ -22,6 +22,7 @@ def robots_txt(request):
         "Disallow: /my-records/",
         "Disallow: /internal/",
         "Disallow: /debug/",
+        "Disallow: /turnstile-diagnostic/",
         "Disallow: /stripe/",
         "Disallow: /agreements/sign/",
         "Disallow: /agreements/magic/",

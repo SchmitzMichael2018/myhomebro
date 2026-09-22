@@ -1,5 +1,6 @@
 import json
 from xml.etree import ElementTree
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -37,6 +38,21 @@ class SeoFoundationTests(TestCase):
         self.assertContains(
             private, 'href="https://www.myhomebro.com/portal/private-token"'
         )
+
+    @patch("accounts.services.verification._send_sms")
+    @patch("accounts.services.verification.send_verification_email")
+    def test_turnstile_diagnostic_is_public_but_not_indexable(self, send_email, send_sms):
+        response = self.client.get("/turnstile-diagnostic/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'content="noindex, nofollow"')
+        self.assertContains(response, 'href="https://www.myhomebro.com/turnstile-diagnostic"')
+
+        sitemap = self.client.get(reverse("sitemap-xml")).content.decode()
+        robots = self.client.get(reverse("robots-txt")).content.decode()
+        self.assertNotIn("turnstile-diagnostic", sitemap)
+        self.assertIn("Disallow: /turnstile-diagnostic/", robots)
+        send_email.assert_not_called()
+        send_sms.assert_not_called()
 
     def test_homepage_json_ld_is_truthful_and_valid(self):
         response = self.client.get("/")

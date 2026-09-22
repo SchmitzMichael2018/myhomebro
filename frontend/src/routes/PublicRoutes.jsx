@@ -81,6 +81,7 @@ const UniversalRegistrationPage = lazy(
 );
 const EmailVerifiedPage = lazy(() => import('../pages/EmailVerifiedPage.jsx'));
 const AccountVerificationPage = lazy(() => import('../pages/AccountVerificationPage.jsx'));
+const TurnstileDiagnosticPage = lazy(() => import('../pages/TurnstileDiagnosticPage.jsx'));
 const PublicCaptureQrPage = lazy(
   () => import('../pages/PublicCaptureQrPage.jsx')
 );
@@ -169,6 +170,7 @@ export default function PublicRoutes() {
         <Route path="/email-verified" element={<EmailVerifiedPage />} />
         <Route path="/verify-account" element={<AccountVerificationPage />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/turnstile-diagnostic" element={<TurnstileDiagnosticPage />} />
 
         {/* Public signature / magic links */}
         <Route path="/agreements/sign/:id" element={<HomeownerSign />} />
