@@ -1,5 +1,7 @@
 from urllib.parse import urlencode
 from datetime import timedelta
+import hashlib
+import math
 
 from django.conf import settings
 from django.core import signing
@@ -7,15 +9,18 @@ from django.http import HttpResponseRedirect
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import ScopedRateThrottle, SimpleRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import AccountSecurityEvent, User
 from accounts.services.verification import (
     log_event,
+    is_email_verification_eligible,
+    normalize_account_email,
     request_phone_code,
     send_verification_email,
+    user_from_email_token,
     user_from_token,
     verification_token,
     verify_phone_code,
@@ -45,7 +50,7 @@ class VerifyAccountEmailView(APIView):
 
     def get(self, request, token):
         try:
-            user = user_from_token(token)
+            user = user_from_email_token(token)
             if not user.email_verified_at:
                 user.email_verified_at = timezone.now()
                 user.is_verified = True
@@ -70,29 +75,62 @@ class VerificationStatusView(APIView):
             return Response({"detail": "Verification session expired."}, status=400)
 
 
+class VerificationEmailAddressThrottle(SimpleRateThrottle):
+    scope = "verification_email_address"
+
+    def get_cache_key(self, request, view):
+        email = normalize_account_email(request.data.get("email"))
+        if not email:
+            try:
+                email = normalize_account_email(
+                    user_from_token(request.data.get("verification_session", "")).email
+                )
+            except Exception:
+                return None
+        ident = hashlib.sha256(email.encode("utf-8")).hexdigest()
+        return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
 class ResendVerificationEmailView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, VerificationEmailAddressThrottle]
     throttle_scope = "verification_email"
 
     def post(self, request):
-        generic = {"detail": "If this account still needs email verification, a new message has been sent."}
+        cooldown = getattr(settings, "ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS", 60)
+        generic = {
+            "detail": "If this account is eligible, a new verification email has been sent.",
+            "cooldown_seconds": cooldown,
+        }
+        session_is_valid = False
+        user = None
         try:
             user = user_from_token(request.data.get("verification_session", ""))
+            session_is_valid = True
         except Exception:
+            email = normalize_account_email(request.data.get("email"))
+            if email:
+                user = User.objects.filter(email__iexact=email).first()
+        supplied_email = normalize_account_email(request.data.get("email"))
+        if user and supplied_email and normalize_account_email(user.email) != supplied_email:
             return Response(generic)
-        if user.email_verified_at:
+        if not user or not is_email_verification_eligible(user):
             return Response(generic)
         last = AccountSecurityEvent.objects.filter(user=user, event_type="verification_email_sent").order_by("-created_at").first()
-        if last and last.created_at > timezone.now() - timedelta(seconds=getattr(settings, "ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS", 60)):
+        if last and last.created_at > timezone.now() - timedelta(seconds=cooldown):
             log_event("verification_rate_limited", user=user, request=request, metadata={"scope": "email"})
-            return Response(generic)
+            remaining = cooldown - (timezone.now() - last.created_at).total_seconds()
+            return Response({**generic, "cooldown_seconds": max(1, math.ceil(remaining))})
         try:
             send_verification_email(user, request=request)
         except Exception:
             log_event("verification_email_delivery_failed", user=user, request=request)
-            return Response({"detail": "We could not send the email right now. Please try again later."}, status=503)
+            if session_is_valid:
+                return Response(
+                    {"detail": "We could not send the email right now. Please try again later."},
+                    status=503,
+                )
         return Response(generic)
 
 

@@ -11,7 +11,7 @@ from io import BytesIO
 import logging
 
 from .serializers import ContractorRegistrationSerializer, CustomerRegistrationSerializer
-from .services.verification import apply_registration_risk_flags, log_event, safe_continuation, send_verification_email, verification_token, verify_turnstile
+from .services.verification import apply_registration_risk_flags, log_event, normalize_account_email, safe_continuation, send_verification_email, verification_token, verify_turnstile
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -53,7 +53,7 @@ class EmailLoginView(APIView):
 
     def post(self, request, *args, **kwargs):
         try:
-            email = (request.data.get("email") or "").strip().lower()
+            email = normalize_account_email(request.data.get("email"))
             password = request.data.get("password") or ""
             if not email or not password:
                 return Response({"detail": "Invalid email or password."},
@@ -74,10 +74,26 @@ class EmailLoginView(APIView):
                                     status=status.HTTP_401_UNAUTHORIZED)
 
             if not user.is_active:
-                if user.verification_state == User.VerificationState.DISABLED or user.trust_classification == User.TrustClassification.SPAM_FRAUD:
+                if (
+                    user.verification_state
+                    in {
+                        User.VerificationState.DISABLED,
+                        User.VerificationState.SUSPICIOUS,
+                    }
+                    or user.trust_classification
+                    in {
+                        User.TrustClassification.SUSPICIOUS,
+                        User.TrustClassification.SPAM_FRAUD,
+                    }
+                ):
                     return Response({"detail": "This account is unavailable."}, status=status.HTTP_403_FORBIDDEN)
                 return Response({
                     "detail": "Finish setting up your account.",
+                    "code": (
+                        "email_verification_required"
+                        if not user.email_verified_at
+                        else "account_verification_required"
+                    ),
                     "verification_state": user.verification_state,
                     "email_verified": bool(user.email_verified_at),
                     "phone_verified": bool(user.phone_verified_at),
@@ -99,9 +115,9 @@ class EmailLoginView(APIView):
                 },
             }, status=status.HTTP_200_OK)
 
-        except Exception as exc:
+        except Exception:
             # Log server-side detail; return safe message to client
-            logger.exception("Login error for email=%s", request.data.get("email"))
+            logger.exception("Login request failed")
             return Response(
                 {"detail": "Server error while processing login."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

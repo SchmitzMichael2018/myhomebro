@@ -11,6 +11,7 @@ import toast from "react-hot-toast";
 import { resolveAuthenticatedEntry } from "../lib/contractorOnboardingRoute.js";
 import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
 import logo from "../assets/myhomebro_logo.png";
+import PendingEmailVerificationNotice from "./PendingEmailVerificationNotice.jsx";
 
 export default function LoginForm({ redirectTo = "/dashboard" }) {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [pendingVerification, setPendingVerification] = useState(null);
 
   const [form, setForm] = useState({ email: "", password: "" });
 
@@ -47,6 +49,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
 
   const onChange = (e) => {
     const { name, value } = e.target;
+    setPendingVerification(null);
     setForm((s) => ({ ...s, [name]: value }));
   };
 
@@ -130,14 +133,24 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         navigate(redirectTo);
       }
     } catch (err) {
-      if (err?.response?.status === 403 && err?.response?.data?.verification_session) {
-        const token = err.response.data.verification_session;
+      const responseData = err?.response?.data;
+      if (
+        err?.response?.status === 403 &&
+        responseData?.code === "email_verification_required" &&
+        responseData?.verification_session
+      ) {
+        setPendingVerification({
+          verificationSession: responseData.verification_session,
+        });
+        return;
+      }
+      if (err?.response?.status === 403 && responseData?.verification_session) {
+        const token = responseData.verification_session;
         sessionStorage.setItem('mhb-verification-session', token);
         navigate(`/verify-account?verification_session=${encodeURIComponent(token)}`);
         return;
       }
       toast.error(getLoginErrorMessage(err));
-      console.error("LoginForm error:", err);
     } finally {
       setLoading(false);
     }
@@ -212,6 +225,13 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         <div className="text-xs text-slate-600">
           Sign in to accept the invite and import the customer as a client.
         </div>
+      ) : null}
+
+      {pendingVerification ? (
+        <PendingEmailVerificationNotice
+          email={form.email}
+          verificationSession={pendingVerification.verificationSession}
+        />
       ) : null}
 
       <button

@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import api, { getAccessToken, setTokens } from "../api";
 import CustomerDashboard from "../components/CustomerDashboard.jsx";
 import Modal from "../components/Modal.jsx";
+import PendingEmailVerificationNotice from "../components/PendingEmailVerificationNotice.jsx";
 import logo from "../assets/myhomebro_logo.png";
 import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
 
@@ -201,6 +202,7 @@ export default function CustomerPortalPage() {
   const [loginForm, setLoginForm] = useState({ email: suggestedEmail, password: "" });
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [pendingVerification, setPendingVerification] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ password: "", password_confirm: "" });
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState("");
@@ -564,6 +566,17 @@ export default function CustomerPortalPage() {
       setPortal(data);
       toast.success("Welcome back to your Customer Portal.");
     } catch (error) {
+      const responseData = error?.response?.data;
+      if (
+        error?.response?.status === 403 &&
+        responseData?.code === "email_verification_required" &&
+        responseData?.verification_session
+      ) {
+        setPendingVerification({
+          verificationSession: responseData.verification_session,
+        });
+        return;
+      }
       const message = getLoginErrorMessage(error);
       setLoginError(message);
       toast.error(message);
@@ -774,6 +787,7 @@ export default function CustomerPortalPage() {
                     onChange={(event) => {
                       setLoginForm((prev) => ({ ...prev, email: event.target.value }));
                       setLoginError("");
+                      setPendingVerification(null);
                     }}
                     placeholder="Email"
                     className="min-h-12 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-base text-white outline-none placeholder:text-slate-500 focus:border-amber-300"
@@ -786,6 +800,7 @@ export default function CustomerPortalPage() {
                     onChange={(event) => {
                       setLoginForm((prev) => ({ ...prev, password: event.target.value }));
                       setLoginError("");
+                      setPendingVerification(null);
                     }}
                     placeholder="Password"
                     className="min-h-12 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-base text-white outline-none placeholder:text-slate-500 focus:border-amber-300"
@@ -795,6 +810,14 @@ export default function CustomerPortalPage() {
                     <div data-testid="customer-portal-login-error" className="rounded-xl border border-rose-300/35 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
                       {loginError}
                     </div>
+                  ) : null}
+                  {pendingVerification ? (
+                    <PendingEmailVerificationNotice
+                      email={loginForm.email}
+                      verificationSession={
+                        pendingVerification.verificationSession
+                      }
+                    />
                   ) : null}
                   <button
                     type="submit"

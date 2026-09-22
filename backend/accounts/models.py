@@ -71,6 +71,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     duplicate_phone_risk = models.BooleanField(default=False, db_index=True)
     verification_continuation = models.CharField(max_length=500, blank=True, default="")
     verification_role = models.CharField(max_length=32, blank=True, default="")
+    email_verification_token_version = models.PositiveIntegerField(default=0)
     date_joined = models.DateTimeField(default=timezone.now)
 
     # Custom related_names to avoid clashes with the default User model's relations.
