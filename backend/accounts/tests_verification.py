@@ -101,6 +101,21 @@ class AccountVerificationTests(TestCase):
         self.assertEqual(request.full_url, "https://challenges.cloudflare.com/turnstile/v0/siteverify")
         self.assertIn(b"response=valid-provider-token", request.data)
 
+    @override_settings(TURNSTILE_REQUIRED=True, TURNSTILE_TEST_BYPASS=False, TURNSTILE_SECRET_KEY="configured-secret")
+    @patch("accounts.services.verification.urlopen")
+    def test_turnstile_rejection_logs_only_safe_category(self, urlopen):
+        urlopen.return_value.__enter__.return_value.read.return_value = (
+            b'{"success": false, "error-codes": ["timeout-or-duplicate", "untrusted-provider-text"]}'
+        )
+        with self.assertLogs("accounts.services.verification", level="INFO") as captured:
+            response = self.register(turnstile_token="sensitive-test-response")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(email="new.contractor@example.com").exists())
+        self.assertIn("timeout-or-duplicate", captured.output[0])
+        self.assertNotIn("sensitive-test-response", str(captured.output))
+        self.assertNotIn("configured-secret", str(captured.output))
+        self.assertNotIn("untrusted-provider-text", str(captured.output))
+
     def test_pending_login_routes_to_setup_without_tokens(self):
         user = self._pending_user()
         response = self.client.post("/api/accounts/auth/login/", {"email": user.email, "password": "Strong-Test-Password-982!"}, format="json")

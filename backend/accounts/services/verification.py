@@ -19,6 +19,11 @@ from projects.services.sms_service import normalize_phone_to_e164
 
 logger = logging.getLogger(__name__)
 TOKEN_SALT = "accounts.verification.v1"
+TURNSTILE_SAFE_ERROR_CODES = frozenset({
+    "missing-input-secret", "invalid-input-secret", "missing-input-response",
+    "invalid-input-response", "bad-request", "timeout-or-duplicate",
+    "internal-error",
+})
 
 
 def client_ip(request):
@@ -85,14 +90,24 @@ def verify_turnstile(token, request):
     secret = str(getattr(settings, "TURNSTILE_SECRET_KEY", "")).strip()
     if not required and not secret:
         return True
-    if not secret or not token:
+    if not secret:
+        logger.warning("Turnstile verification rejected: secret_not_configured")
+        return False
+    if not token:
+        logger.info("Turnstile verification rejected: token_missing")
         return False
     body = urlencode({"secret": secret, "response": token, "remoteip": client_ip(request) or ""}).encode()
     try:
         with urlopen(Request("https://challenges.cloudflare.com/turnstile/v0/siteverify", data=body), timeout=5) as response:
-            return bool(json.loads(response.read().decode()).get("success"))
-    except Exception:
-        logger.warning("Turnstile verification unavailable", exc_info=True)
+            result = json.loads(response.read().decode())
+            if result.get("success"):
+                return True
+            codes = result.get("error-codes") or []
+            safe_codes = sorted({code for code in codes if isinstance(code, str) and code in TURNSTILE_SAFE_ERROR_CODES})
+            logger.info("Turnstile verification rejected: %s", ",".join(safe_codes) or "provider_rejected")
+            return False
+    except Exception as exc:
+        logger.warning("Turnstile verification unavailable: %s", type(exc).__name__)
         return False
 
 

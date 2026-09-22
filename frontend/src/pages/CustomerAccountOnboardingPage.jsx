@@ -102,6 +102,7 @@ export default function CustomerAccountOnboardingPage() {
   const [turnstileState, setTurnstileState] = useState(
     TURNSTILE_CONFIGURED ? TURNSTILE_STATE.LOADING : TURNSTILE_STATE.DISABLED
   );
+  const [turnstileAttempt, setTurnstileAttempt] = useState(0);
   const [error, setError] = useState('');
 
   const activeStepIndex = useMemo(() => {
@@ -169,6 +170,13 @@ export default function CustomerAccountOnboardingPage() {
       });
       setStep('verify');
     } catch (err) {
+      // Siteverify consumes a token even when later form validation fails.
+      // Never offer another submission with the same challenge response.
+      if (TURNSTILE_CONFIGURED) {
+        setTurnstileState(TURNSTILE_STATE.LOADING);
+        setTurnstileToken('');
+        setTurnstileAttempt((current) => current + 1);
+      }
       const message = extractApiErrorMessage(err);
       const accountExists =
         err?.response?.status === 400 &&
@@ -406,7 +414,7 @@ export default function CustomerAccountOnboardingPage() {
                   autoComplete="name"
                 />
               </Field>
-              <TurnstileWidget onToken={setTurnstileToken} onStateChange={setTurnstileState} />
+              <TurnstileWidget key={turnstileAttempt} onToken={setTurnstileToken} onStateChange={setTurnstileState} />
               <Field
                 label="Email"
                 hint="If you later submit a project, we'll link it to this account automatically."

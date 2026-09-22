@@ -17,6 +17,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
   const [turnstileState, setTurnstileState] = useState(
     TURNSTILE_CONFIGURED ? TURNSTILE_STATE.LOADING : TURNSTILE_STATE.DISABLED
   );
+  const [turnstileAttempt, setTurnstileAttempt] = useState(0);
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
@@ -139,6 +140,12 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
         navigate("/");
       }
     } catch (err2) {
+      // A failed request may have consumed the response at Siteverify.
+      if (TURNSTILE_CONFIGURED) {
+        setTurnstileState(TURNSTILE_STATE.LOADING);
+        setTurnstileToken('');
+        setTurnstileAttempt((current) => current + 1);
+      }
       const status = err2?.response?.status;
       if (status === 404) {
         toast.error("Signup endpoint not found on the server.");
@@ -274,7 +281,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
             <span>.</span>
           </span>
         </label>
-        <TurnstileWidget onToken={setTurnstileToken} onStateChange={setTurnstileState} />
+        <TurnstileWidget key={turnstileAttempt} onToken={setTurnstileToken} onStateChange={setTurnstileState} />
 
         <button type="submit" disabled={loading || (TURNSTILE_CONFIGURED && turnstileState !== TURNSTILE_STATE.VERIFIED)} aria-describedby={TURNSTILE_CONFIGURED ? 'contractor-security-context' : undefined} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition disabled:cursor-not-allowed disabled:opacity-60">
           {loading ? "Signing Up..." : "Sign Up"}
