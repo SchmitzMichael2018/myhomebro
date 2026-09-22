@@ -12,7 +12,7 @@ from projects.models import Agreement, Contractor, ContractorPublicProfile, Home
 from projects.models_customer_portal import SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings
+from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness
 
 
 class AdminMarketplaceTests(TestCase):
@@ -91,6 +91,79 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(austin["counts"]["total_discovered"], 1)
         self.assertEqual(austin["counts"]["claimed_contractors"], 1)
         self.assertFalse(austin["enabled"])
+
+    def test_legacy_saved_request_without_location_is_not_nearing_ready_or_routable(self):
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_MYHOMEBRO,
+            google_place_id="unlocated-legacy-listing",
+            business_name="Unlocated directory entry",
+            primary_trade="flooring",
+        )
+        intake = ProjectIntake.objects.create(
+            lead_source="landing_page", status="submitted",
+            ai_project_title="Legacy project", ai_project_type="Flooring",
+        )
+
+        self.assertEqual(location_readiness("", "")["status"], "location_missing")
+        response = self.client.get("/api/projects/admin/marketplace/")
+        self.assertEqual(response.status_code, 200, response.data)
+        saved = response.json()["saved_marketplace_requests"]
+        row = next(item for item in saved["results"] if item["id"] == intake.id)
+        self.assertEqual(row["marketplace_status"], "location_missing")
+        self.assertFalse(row["location_complete"])
+        self.assertFalse(row["routable_now"])
+        self.assertEqual(row["city"], "")
+        self.assertEqual(row["state"], "")
+        self.assertEqual(row["customer_email"], "")
+        self.assertEqual(saved["summary"]["blocked_location_missing"], 1)
+        self.assertEqual(saved["summary"]["blocked_disabled"], 0)
+        self.assertNotIn(", ", saved["by_location"])
+        intake.project_postal_code = "78701"
+        intake.save(update_fields=["project_postal_code"])
+        partial = self.client.get("/api/projects/admin/marketplace/").json()["saved_marketplace_requests"]["results"][0]
+        self.assertEqual(partial["zip"], "78701")
+        self.assertEqual(partial["marketplace_status"], "location_missing")
+        route = self.client.post("/api/projects/admin/marketplace/route-intake/", {"intake_id": intake.id}, format="json")
+        self.assertEqual(route.status_code, 202)
+        self.assertEqual(route.json()["created_count"], 0)
+
+    def test_saved_request_recovers_complete_customer_address_and_linked_contact(self):
+        homeowner = Homeowner.objects.create(
+            created_by=self.claimed_contractor,
+            full_name="Linked Customer", email="linked@example.com",
+            phone_number="5550102000",
+        )
+        intake = ProjectIntake.objects.create(
+            lead_source="landing_page", status="submitted", homeowner=homeowner,
+            project_city=" Austin ", customer_city="Dallas", customer_state="TX",
+            customer_postal_code="75201", ai_project_type="Roofing",
+        )
+        # A partial project address must not be combined with the customer state.
+        response = self.client.get("/api/projects/admin/marketplace/")
+        self.assertEqual(response.status_code, 200, response.data)
+        row = next(item for item in response.json()["saved_marketplace_requests"]["results"] if item["id"] == intake.id)
+        self.assertEqual((row["city"], row["state"], row["zip"]), ("Dallas", "TX", "75201"))
+        self.assertTrue(row["location_complete"])
+        self.assertEqual(row["customer_name"], homeowner.full_name)
+        self.assertEqual(row["customer_email"], homeowner.email)
+        self.assertEqual(row["customer_phone"], homeowner.phone_number)
+        self.assertNotEqual(row["marketplace_status"], "location_missing")
+        self.assertFalse(row["marketplace_enabled"])
+        detail = self.client.get(f"/api/projects/admin/requests/{intake.id}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["customer"]["email"], homeowner.email)
+
+        intake.project_city = ""
+        intake.same_as_customer_address = False
+        intake.save(update_fields=["project_city", "same_as_customer_address"])
+        separate_address = self.client.get("/api/projects/admin/marketplace/").json()["saved_marketplace_requests"]["results"][0]
+        self.assertEqual(separate_address["marketplace_status"], "location_missing")
+
+        intake.customer_city = ""
+        intake.save(update_fields=["customer_city"])
+        route = self.client.post("/api/projects/admin/marketplace/route-intake/", {"intake_id": intake.id}, format="json")
+        self.assertEqual(route.status_code, 202)
+        self.assertEqual(route.json()["marketplace"]["status"], "location_missing")
 
     def test_marketplace_analytics_reports_funnel_city_and_contractor_conversion(self):
         profile = ContractorPublicProfile.objects.create(contractor=self.claimed_contractor)

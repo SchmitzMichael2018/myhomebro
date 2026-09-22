@@ -70,6 +70,7 @@ export default function AdminRequestsPage() {
   const [action, setAction] = useState("mark_test");
   const [detail, setDetail] = useState(null);
   const query = params.toString();
+  const requestedId = params.get("request");
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -105,6 +106,23 @@ export default function AdminRequestsPage() {
   const openDetail = async (id) => {
     try { const response = await api.get(`/projects/admin/requests/${id}/`); setDetail(response.data); }
     catch { setError("Request details could not be loaded."); }
+  };
+  useEffect(() => {
+    if (!requestedId || !/^\d+$/.test(requestedId)) return;
+    let active = true;
+    api.get(`/projects/admin/requests/${requestedId}/`)
+      .then((response) => { if (active) setDetail(response.data); })
+      .catch(() => { if (active) setError("Request details could not be loaded."); });
+    return () => { active = false; };
+  }, [requestedId]);
+
+  const closeDetail = () => {
+    setDetail(null);
+    if (requestedId) {
+      const next = new URLSearchParams(params);
+      next.delete("request");
+      setParams(next, { replace: true });
+    }
   };
 
   return <main className="min-h-screen bg-slate-950 px-4 py-6 text-sky-50 sm:px-6" data-testid="admin-requests-page">
@@ -151,6 +169,6 @@ export default function AdminRequestsPage() {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm"><span>Page {data.pagination?.page || 1} of {data.pagination?.total_pages || 1} · {data.pagination?.total || 0} matching requests</span><div className="flex items-center gap-2"><select className={inputClass} aria-label="Rows per page" value={params.get("page_size") || "25"} onChange={(event) => update("page_size", event.target.value)}><option value="25">25</option><option value="50">50</option><option value="100">100</option></select><button type="button" disabled={!data.pagination?.has_previous} onClick={() => update("page", String((data.pagination?.page || 1) - 1))} className="rounded-lg border border-white/15 px-3 py-2 disabled:opacity-40">Previous</button><button type="button" disabled={!data.pagination?.has_next} onClick={() => update("page", String((data.pagination?.page || 1) + 1))} className="rounded-lg border border-white/15 px-3 py-2 disabled:opacity-40">Next</button></div></div>
     </div>
-    <DetailPanel detail={detail} onClose={() => setDetail(null)} />
+    <DetailPanel detail={detail} onClose={closeDetail} />
   </main>;
 }

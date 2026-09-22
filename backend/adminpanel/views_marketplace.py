@@ -21,7 +21,7 @@ from .marketplace_analytics import build_marketplace_analytics
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness, normalize_location_value
+from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, normalize_location_value
 from projects.services.workflow_notifications import notify_contractor_verification_status
 from projects.services.contractor_reviews import contractor_performance_summary
 from projects.services.contractor_discovery import build_contractor_recommendations
@@ -98,7 +98,8 @@ def _marketplace_request_counts(intake: ProjectIntake) -> dict[str, int]:
 
 
 def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
-    readiness = location_readiness(getattr(intake, "project_city", "") or getattr(intake, "customer_city", ""), getattr(intake, "project_state", "") or getattr(intake, "customer_state", ""))
+    city, state, zip_code = intake_marketplace_location(intake)
+    readiness = location_readiness(city, state)
     counts = _marketplace_request_counts(intake)
     cap = int(readiness.get("max_bids_per_request") or 5)
     routed_count = max(counts.values() or [0])
@@ -107,7 +108,9 @@ def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
     eligible_count = len(eligible_marketplace_listings(intake)) if enabled else 0
     already_routed = routed_count > 0
     routable_now = enabled and not at_cap and eligible_count > routed_count
-    if not enabled:
+    if not city or not state:
+        reason = "Location unavailable. View the request and obtain the project city and state before routing."
+    elif not enabled:
         reason = "Marketplace is not enabled for this location yet."
     elif at_cap:
         reason = "Bid cap already reached."
@@ -127,10 +130,13 @@ def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
         "request_title": _intake_title(intake),
         "project_type": _safe_text(getattr(intake, "ai_project_type", "")),
         "project_subtype": _safe_text(getattr(intake, "ai_project_subtype", "")),
-        "city": normalize_location_value(getattr(intake, "project_city", "") or getattr(intake, "customer_city", "")),
-        "state": normalize_location_value(getattr(intake, "project_state", "") or getattr(intake, "customer_state", "")),
-        "customer_name": _safe_text(getattr(intake, "customer_name", "")),
-        "customer_email": _safe_text(getattr(intake, "customer_email", "")),
+        "city": city,
+        "state": state,
+        "zip": zip_code,
+        "location_complete": bool(city and state),
+        "customer_name": _safe_text(intake.customer_name) or _safe_text(getattr(intake.homeowner, "full_name", "")) or _safe_text(getattr(intake.public_lead, "full_name", "")),
+        "customer_email": _safe_text(intake.customer_email) or _safe_text(getattr(intake.homeowner, "email", "")) or _safe_text(getattr(intake.public_lead, "email", "")),
+        "customer_phone": _safe_text(intake.customer_phone) or _safe_text(getattr(intake.homeowner, "phone_number", "")) or _safe_text(getattr(intake.public_lead, "phone", "")),
         "submitted_at": _safe_dt(getattr(intake, "post_submit_flow_selected_at", None) or getattr(intake, "submitted_at", None) or getattr(intake, "created_at", None)),
         "marketplace_status": readiness.get("status"),
         "marketplace_enabled": enabled,
@@ -147,7 +153,7 @@ def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
 
 def _saved_marketplace_requests_payload() -> dict[str, Any]:
     intakes = list(
-        ProjectIntake.objects.filter(
+        ProjectIntake.objects.select_related("homeowner", "public_lead").filter(
             Q(post_submit_flow="multi_contractor")
             | Q(
                 lead_source=PublicContractorLead.SOURCE_LANDING_PAGE,
@@ -163,7 +169,8 @@ def _saved_marketplace_requests_payload() -> dict[str, Any]:
         "saved_not_routed": sum(1 for row in rows if row["routed_status"] == "not_routed"),
         "routable_now": sum(1 for row in rows if row["routable_now"]),
         "already_routed": sum(1 for row in rows if row["already_routed"]),
-        "blocked_disabled": sum(1 for row in rows if not row["marketplace_enabled"]),
+        "blocked_location_missing": sum(1 for row in rows if not row["location_complete"]),
+        "blocked_disabled": sum(1 for row in rows if row["location_complete"] and not row["marketplace_enabled"]),
         "blocked_no_eligible_contractors": sum(
             1
             for row in rows
@@ -173,6 +180,8 @@ def _saved_marketplace_requests_payload() -> dict[str, Any]:
     }
     by_location: dict[tuple[str, str], dict[str, int]] = {}
     for row in rows:
+        if not row["location_complete"]:
+            continue
         key = (row["city"], row["state"])
         bucket = by_location.setdefault(
             key,

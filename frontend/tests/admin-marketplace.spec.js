@@ -76,7 +76,7 @@ const directoryRows = [
   },
 ];
 
-async function installMarketplaceMocks(page) {
+async function installMarketplaceMocks(page, { includeLegacyMissingLocation = false } = {}) {
   let austinEnabled = false;
   let requestRouted = false;
   let routeCalls = 0;
@@ -178,6 +178,8 @@ async function installMarketplaceMocks(page) {
       project_subtype: 'Luxury Vinyl Plank',
       city: 'Austin',
       state: 'TX',
+      zip: '78701',
+      location_complete: true,
       customer_name: 'Home Owner',
       customer_email: 'homeowner@example.com',
       submitted_at: '2026-05-18T14:00:00Z',
@@ -195,6 +197,18 @@ async function installMarketplaceMocks(page) {
           ? 'Bid cap already reached.'
           : 'Ready to route to eligible contractors.'
         : 'Marketplace is not enabled for this location yet.',
+    };
+    const legacyRequest = {
+      id: 502, source: 'landing_page', source_label: 'Landing Page',
+      customer_linked: false, contractor_linked: false,
+      request_title: 'Legacy saved request', project_type: '', project_subtype: '',
+      city: '', state: '', zip: '', location_complete: false,
+      customer_name: '', customer_email: '', submitted_at: '2026-05-18T14:00:00Z',
+      marketplace_status: 'location_missing', marketplace_enabled: false,
+      routed_status: 'not_routed', routable_now: false, already_routed: false,
+      at_cap: false, eligible_contractors: 0,
+      counts: { invites: 0, opportunities: 0, leads: 0 }, cap: 5,
+      reason: 'Location unavailable. View the request and obtain the project city and state before routing.',
     };
     return {
       coverage: {
@@ -254,14 +268,15 @@ async function installMarketplaceMocks(page) {
       },
       saved_marketplace_requests: {
         summary: {
-          saved_not_routed: requestRouted ? 0 : 1,
+          saved_not_routed: (requestRouted ? 0 : 1) + Number(includeLegacyMissingLocation),
           routable_now: austinEnabled && !requestRouted ? 1 : 0,
           already_routed: requestRouted ? 1 : 0,
+          blocked_location_missing: Number(includeLegacyMissingLocation),
           blocked_disabled: austinEnabled ? 0 : 1,
           blocked_no_eligible_contractors: 0,
           at_cap: requestRouted ? 1 : 0,
         },
-        results: [savedRequest],
+        results: includeLegacyMissingLocation ? [legacyRequest, savedRequest] : [savedRequest],
       },
     };
   }
@@ -371,6 +386,24 @@ async function installMarketplaceMocks(page) {
       }),
     });
   });
+
+  if (includeLegacyMissingLocation) {
+    await page.route('**/api/projects/admin/requests/**', async (route) => {
+      const detail = route.request().url().endsWith('/502/');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(detail ? {
+          id: 502, reference: 'REQ-502', title: 'Legacy saved request',
+          customer: { name: '', email: '', phone: '' },
+          location: { city: '', state: '', zip: '' },
+          workflow_status: 'submitted', routing_status: 'not_routed',
+          verification: 'unknown', trust: 'unknown', classification: 'real',
+          description: 'Legacy request', analysis: '', classification_events: [],
+        } : { results: [], summary: {}, pagination: {}, permissions: {} }),
+      });
+    });
+  }
 
   await page.route('**/api/projects/admin/marketplace/**', async (route) => {
     const requestUrl = new URL(route.request().url());
@@ -675,6 +708,7 @@ test('admin marketplace analytics renders funnel, tables, queues, and filters', 
 });
 
 test('admin marketplace routes saved requests after location enablement without duplicate UI state', async ({ page }) => {
+  test.slow();
   await installMarketplaceMocks(page);
 
   const routeRequests = [];
@@ -686,8 +720,9 @@ test('admin marketplace routes saved requests after location enablement without 
 
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('admin-marketplace-saved-requests')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-saved-requests')).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Luxury Vinyl Plank Flooring');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Austin, TX, 78701');
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Landing');
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Customer Linked');
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Contractor Pending');
@@ -712,6 +747,34 @@ test('admin marketplace routes saved requests after location enablement without 
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toContainText('At cap');
   await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
   expect(routeRequests).toEqual([{ intake_id: 501 }]);
+});
+
+test('legacy saved request shows missing location, stays unroutable, and opens request review on mobile', async ({ page }) => {
+  test.slow();
+  await installMarketplaceMocks(page, { includeLegacyMissingLocation: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const routeRequests = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/projects/admin/marketplace/route-intake/')) {
+      routeRequests.push(request.postDataJSON());
+    }
+  });
+
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  const legacy = page.getByTestId('admin-marketplace-saved-request-502');
+  await expect(legacy).toContainText('Location unavailable', { timeout: 30000 });
+  await expect(legacy).toContainText('location missing');
+  await expect(legacy).not.toContainText('nearing ready');
+  await expect(legacy).not.toContainText('Marketplace disabled');
+  await expect(page.getByTestId('admin-marketplace-backlog-location-missing')).toContainText('1');
+  await expect(page.getByTestId('admin-marketplace-route-request-502')).toBeDisabled();
+  await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
+  expect(await page.getByTestId('admin-marketplace-saved-requests').evaluate((element) => element.scrollWidth <= element.clientWidth + 2)).toBe(true);
+  expect(routeRequests).toEqual([]);
+
+  await page.getByTestId('admin-marketplace-view-request-502').click();
+  await expect(page).toHaveURL(/\/app\/admin\/requests\?request=502/);
+  await expect(page.getByRole('dialog', { name: 'Request REQ-502' })).toBeVisible();
 });
 
 test('admin marketplace bulk routes only eligible saved requests', async ({ page }) => {

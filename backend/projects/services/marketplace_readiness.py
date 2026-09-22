@@ -24,6 +24,7 @@ DEFAULT_MIN_VERIFIED_CONTRACTORS = 10
 DEFAULT_MIN_STRIPE_READY_CONTRACTORS = 5
 DEFAULT_MIN_TRADE_CATEGORIES = 6
 DEFAULT_MAX_BIDS_PER_REQUEST = 5
+LOCATION_MISSING_STATUS = "location_missing"
 
 CORE_TRADE_CATEGORIES = {
     "carpentry",
@@ -53,6 +54,20 @@ class MarketplaceThresholds:
 
 def normalize_location_value(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
+
+
+def intake_marketplace_location(intake: ProjectIntake) -> tuple[str, str, str]:
+    # A project and customer address must not be spliced into a fictitious location.
+    for prefix in ("project", "customer"):
+        if prefix == "customer" and not intake.same_as_customer_address:
+            continue
+        city = normalize_location_value(getattr(intake, f"{prefix}_city", ""))
+        state = normalize_location_value(getattr(intake, f"{prefix}_state", ""))
+        if city and state:
+            return city, state, normalize_location_value(getattr(intake, f"{prefix}_postal_code", ""))
+    project_zip = normalize_location_value(intake.project_postal_code)
+    customer_zip = normalize_location_value(intake.customer_postal_code) if intake.same_as_customer_address else ""
+    return "", "", project_zip or customer_zip
 
 
 def normalize_trade(value: Any) -> str:
@@ -219,6 +234,26 @@ def _request_trades(intake: ProjectIntake) -> set[str]:
 def location_readiness(city: str, state: str) -> dict[str, Any]:
     city = normalize_location_value(city)
     state = normalize_location_value(state)
+    if not city or not state:
+        thresholds = marketplace_thresholds()
+        return {
+            "city": city, "state": state, "status": LOCATION_MISSING_STATUS,
+            "enabled": False, "manual_enabled": False, "manual_approval_required": True,
+            "thresholds": thresholds.__dict__,
+            "counts": {
+                "total_discovered": 0, "claimed_contractors": 0,
+                "verified_contractors": 0, "stripe_ready_contractors": 0,
+                "trade_categories": 0, "request_volume": 0, "avg_bids_per_request": 0.0,
+            },
+            "checks": {
+                "claimed_contractors": False, "verified_contractors": False,
+                "stripe_ready_contractors": False, "trade_categories": False,
+                "manual_enabled": False,
+            },
+            "trades_represented": [], "missing_trade_coverage": sorted(CORE_TRADE_CATEGORIES),
+            "max_bids_per_request": thresholds.max_bids_per_request,
+            "location_id": None, "admin_notes": "",
+        }
     location = get_marketplace_location(city, state)
     thresholds = marketplace_thresholds(location)
     listings = list(_location_listing_qs(city, state))
@@ -295,13 +330,12 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
 
 
 def marketplace_enabled_for_intake(intake: ProjectIntake) -> dict[str, Any]:
-    city = intake.project_city or intake.customer_city
-    state = intake.project_state or intake.customer_state
-    if not normalize_location_value(city) or not normalize_location_value(state):
+    city, state, _zip_code = intake_marketplace_location(intake)
+    if not city or not state:
         return {
             "city": normalize_location_value(city),
             "state": normalize_location_value(state),
-            "status": MarketplaceLocation.STATUS_NOT_READY,
+            "status": LOCATION_MISSING_STATUS,
             "enabled": False,
             "message": "We need a project city and state before routing this request to eligible contractors.",
         }
@@ -314,8 +348,9 @@ def marketplace_enabled_for_intake(intake: ProjectIntake) -> dict[str, Any]:
 
 
 def eligible_marketplace_listings(intake: ProjectIntake):
-    city = intake.project_city or intake.customer_city
-    state = intake.project_state or intake.customer_state
+    city, state, _zip_code = intake_marketplace_location(intake)
+    if not city or not state:
+        return []
     request_trades = _request_trades(intake)
     qs = _location_listing_qs(city, state).filter(claimed_profile=True, claimed_contractor__isnull=False, manually_reviewed=True)
     rows = []

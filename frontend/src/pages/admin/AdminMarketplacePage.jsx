@@ -233,6 +233,7 @@ function formatDate(value) {
 
 function routeButtonCopy(row) {
   if (row?.routable_now) return "Route Now";
+  if (row?.marketplace_status === "location_missing") return "Location required";
   if (!row?.marketplace_enabled) return "Marketplace disabled";
   if (row?.at_cap) return "At cap";
   return "Not routable";
@@ -945,10 +946,11 @@ export default function AdminMarketplacePage() {
               sub="Requests saved for multi-contractor routing. Route only after the city is enabled and eligible claimed contractors are available."
               testId="admin-marketplace-saved-requests"
             >
-              <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard label="Saved Not Routed" value={savedRequests.summary?.saved_not_routed || 0} sub="Waiting on routing" testId="admin-marketplace-backlog-saved" />
                 <MetricCard label="Routable Now" value={savedRequests.summary?.routable_now || 0} sub="Enabled locations" tone="emerald" testId="admin-marketplace-backlog-routable" />
                 <MetricCard label="Already Routed" value={savedRequests.summary?.already_routed || 0} sub="Has invites or bids" testId="admin-marketplace-backlog-routed" />
+                <MetricCard label="Location Missing" value={savedRequests.summary?.blocked_location_missing || 0} sub="Needs request review" tone="amber" testId="admin-marketplace-backlog-location-missing" />
                 <MetricCard label="Disabled Location" value={savedRequests.summary?.blocked_disabled || 0} sub="City not enabled" tone="amber" testId="admin-marketplace-backlog-disabled" />
                 <MetricCard label="No Eligible Contractors" value={savedRequests.summary?.blocked_no_eligible_contractors || 0} sub="Claimed supply gap" tone="amber" testId="admin-marketplace-backlog-no-eligible" />
                 <MetricCard label="At Cap" value={savedRequests.summary?.at_cap || 0} sub="Max bids reached" tone="emerald" testId="admin-marketplace-backlog-at-cap" />
@@ -967,75 +969,36 @@ export default function AdminMarketplacePage() {
                   Route All Eligible Requests
                 </button>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead>
-                    <tr>
-                      <th className={tableHeadClass}>Request</th>
-                      <th className={tableHeadClass}>Location</th>
-                      <th className={tableHeadClass}>Customer</th>
-                      <th className={tableHeadClass}>Routing Status</th>
-                      <th className={tableHeadClass}>Counts</th>
-                      <th className={tableHeadClass}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(savedRequests.results || []).length ? (savedRequests.results || []).map((row) => (
-                      <tr key={row.id} data-testid={`admin-marketplace-saved-request-${row.id}`} className="hover:bg-white/5">
-                        <td className={tableCellClass}>
-                          <div className="font-extrabold text-white">{row.request_title}</div>
-                          <div className="mt-1 text-xs text-sky-100/70">{row.project_type || "Project type pending"} {row.project_subtype ? `| ${row.project_subtype}` : ""}</div>
-                          <div className="mt-1 text-xs text-sky-100/55">Submitted {formatDate(row.submitted_at)}</div>
-                          <div className="mt-3 flex flex-wrap gap-2" data-testid={`admin-marketplace-request-badges-${row.id}`}>
-                            {metadataBadges(row).map((badge) => (
-                              <Badge key={`${row.id}-${badge.label}`} tone={badge.tone}>{badge.label}</Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className={tableCellClass}>
-                          <div className="font-bold text-sky-50">{row.city}, {row.state}</div>
-                          <div className="mt-2">
-                            <Badge tone={row.marketplace_enabled ? "emerald" : "amber"}>{row.marketplace_enabled ? "Enabled" : "Disabled"}</Badge>
-                          </div>
-                        </td>
-                        <td className={tableCellClass}>
-                          <div className="font-bold text-sky-50">{row.customer_name || "Customer"}</div>
-                          <div className="mt-1 text-xs text-sky-100/70">{row.customer_email || "Email not listed"}</div>
-                        </td>
-                        <td className={tableCellClass}>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge tone={row.routable_now ? "emerald" : row.at_cap ? "sky" : row.marketplace_enabled ? "amber" : "rose"}>
-                              {String(row.routed_status || "not_routed").replace(/_/g, " ")}
-                            </Badge>
-                            <Badge>{String(row.marketplace_status || "not_ready").replace(/_/g, " ")}</Badge>
-                          </div>
-                          <div className="mt-2 max-w-sm text-xs text-sky-100/70">{row.reason || "No routing note available."}</div>
-                        </td>
-                        <td className={tableCellClass}>
-                          <div className="text-xs text-sky-100/80">
-                            {row.counts?.invites || 0} invites | {row.counts?.opportunities || 0} opportunities | {row.counts?.leads || 0} leads
-                          </div>
-                          <div className="mt-1 text-xs text-sky-100/65">{row.eligible_contractors || 0} eligible contractors | Cap {row.cap || 5}</div>
-                        </td>
-                        <td className={tableCellClass}>
-                          <button
-                            type="button"
-                            data-testid={`admin-marketplace-route-request-${row.id}`}
-                            onClick={() => routeSavedRequest(row)}
-                            disabled={!row.routable_now || routingIds[row.id]}
-                            className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {routingIds[row.id] ? "Routing..." : routeButtonCopy(row)}
-                          </button>
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td className={tableCellClass} colSpan={6}>No saved marketplace requests yet.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="grid gap-3 xl:grid-cols-2">
+                {(savedRequests.results || []).length ? savedRequests.results.map((row) => (
+                  <article key={row.id} data-testid={`admin-marketplace-saved-request-${row.id}`} className="min-w-0 rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="break-words font-extrabold text-white">{row.request_title}</div>
+                        <div className="mt-1 text-xs text-sky-100/70">{row.project_type || "Project type pending"}{row.project_subtype ? ` · ${row.project_subtype}` : ""}</div>
+                        <div className="mt-1 text-xs text-sky-100/55">Submitted {formatDate(row.submitted_at)}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2" data-testid={`admin-marketplace-request-badges-${row.id}`}>
+                        {metadataBadges(row).map((badge) => <Badge key={`${row.id}-${badge.label}`} tone={badge.tone}>{badge.label}</Badge>)}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 border-t border-white/10 pt-3 text-sm sm:grid-cols-2">
+                      <div className="min-w-0"><div className="text-xs text-sky-100/55">Location</div><div className="break-words font-bold text-sky-50">{row.location_complete ? [row.city, row.state, row.zip].filter(Boolean).join(", ") : "Location unavailable"}</div>{!row.location_complete && row.zip ? <div className="text-xs text-sky-100/65">ZIP on file: {row.zip}</div> : null}</div>
+                      <div className="min-w-0"><div className="text-xs text-sky-100/55">Customer</div><div className="break-words font-bold text-sky-50">{row.customer_name || "Customer not identified"}</div><div className="break-all text-xs text-sky-100/70">{row.customer_email || "Email not listed"}</div></div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge tone={row.routable_now ? "emerald" : row.at_cap ? "sky" : "amber"}>{String(row.routed_status || "not_routed").replace(/_/g, " ")}</Badge>
+                      <Badge tone={row.marketplace_status === "location_missing" ? "rose" : "slate"}>{String(row.marketplace_status || "not_ready").replace(/_/g, " ")}</Badge>
+                      {row.location_complete ? <Badge tone={row.marketplace_enabled ? "emerald" : "amber"}>{row.marketplace_enabled ? "Marketplace enabled" : "Marketplace disabled"}</Badge> : null}
+                    </div>
+                    <p className="mt-2 text-xs text-sky-100/70">{row.reason || "No routing note available."}</p>
+                    <div className="mt-3 text-xs text-sky-100/65">{row.counts?.invites || 0} invites · {row.counts?.opportunities || 0} opportunities · {row.counts?.leads || 0} leads · {row.eligible_contractors || 0} eligible · Cap {row.cap || 5}</div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button type="button" data-testid={`admin-marketplace-view-request-${row.id}`} onClick={() => navigate(`/app/admin/requests?request=${row.id}`)} className="rounded-lg border border-sky-200/30 px-3 py-1.5 text-xs font-extrabold text-sky-100 hover:bg-sky-300/10">View Request</button>
+                      <button type="button" data-testid={`admin-marketplace-route-request-${row.id}`} onClick={() => routeSavedRequest(row)} disabled={!row.routable_now || routingIds[row.id]} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-50">{routingIds[row.id] ? "Routing..." : routeButtonCopy(row)}</button>
+                    </div>
+                  </article>
+                )) : <p className="text-sm text-sky-100/70">No saved marketplace requests yet.</p>}
               </div>
             </Section>
 

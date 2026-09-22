@@ -39,7 +39,7 @@ def _base_queryset():
     verification = User.objects.filter(email__iexact=OuterRef("customer_email")).values("verification_state")[:1]
     acquisition = AccountAcquisition.objects.filter(user__email__iexact=OuterRef("customer_email")).values("first_touch")[:1]
     return (
-        ProjectIntake.objects.select_related("homeowner", "contractor", "agreement", "classified_by", "source_template")
+        ProjectIntake.objects.select_related("homeowner", "public_lead", "contractor", "agreement", "classified_by", "source_template")
         .annotate(
             invite_count=Count("discovery_invites", distinct=True),
             opportunity_count=Count("contractor_opportunities", distinct=True),
@@ -171,7 +171,11 @@ def _row(row, detail=False):
     payload = {
         "id": row.pk, "reference": f"REQ-{row.pk}",
         "title": row.ai_project_title or row.ai_project_type or row.accomplishment_text[:80] or f"Request #{row.pk}",
-        "customer": {"name": row.customer_name, "email": row.customer_email, "phone": row.customer_phone},
+        "customer": {
+            "name": row.customer_name or getattr(row.homeowner, "full_name", "") or getattr(row.public_lead, "full_name", ""),
+            "email": row.customer_email or getattr(row.homeowner, "email", "") or getattr(row.public_lead, "email", ""),
+            "phone": row.customer_phone or getattr(row.homeowner, "phone_number", "") or getattr(row.public_lead, "phone", ""),
+        },
         "location": {"city": row.project_city or row.customer_city, "state": row.project_state or row.customer_state, "zip": row.project_postal_code or row.customer_postal_code},
         "service": row.ai_project_subtype or row.ai_project_type or "Unclassified",
         "source": _source(row), "trust": row.customer_trust or "unknown", "verification": row.customer_verification or "unknown",
