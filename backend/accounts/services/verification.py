@@ -3,16 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-import time
-import uuid
-from contextlib import contextmanager
 from datetime import timedelta
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
-from django.core.cache import cache
 from django.core import signing
 from django.core.mail import send_mail
 from django.db import transaction
@@ -80,24 +76,6 @@ def email_verification_token(user, version):
     )
 
 
-@contextmanager
-def verification_email_issuance_lock(user_id):
-    key = f"account-verification-email-issuance:{user_id}"
-    owner = uuid.uuid4().hex
-    lock_timeout = getattr(settings, "ACCOUNT_EMAIL_ISSUANCE_LOCK_SECONDS", 300)
-    wait_seconds = getattr(settings, "ACCOUNT_EMAIL_ISSUANCE_WAIT_SECONDS", 30)
-    deadline = time.monotonic() + wait_seconds
-    while not cache.add(key, owner, timeout=lock_timeout):
-        if time.monotonic() >= deadline:
-            raise RuntimeError("Verification email issuance is already in progress.")
-        time.sleep(0.05)
-    try:
-        yield
-    finally:
-        if cache.get(key) == owner:
-            cache.delete(key)
-
-
 def reserve_email_verification_version(user_id):
     while True:
         current_version = User.objects.values_list(
@@ -159,25 +137,24 @@ def log_event(event_type, *, user=None, request=None, metadata=None):
 
 
 def send_verification_email(user, *, request=None):
-    with verification_email_issuance_lock(user.pk):
-        previous_version, next_version = reserve_email_verification_version(user.pk)
-        current_user = User.objects.get(pk=user.pk)
-        token = email_verification_token(current_user, next_version)
-        url = f"{str(settings.SITE_URL).rstrip('/')}/api/accounts/auth/verify-account-email/{token}/"
-        try:
-            send_mail(
-                "Verify your MyHomeBro email",
-                "Thanks for creating your MyHomeBro account.\n\nVerify your email address to continue setting up your account:\n"
-                f"{url}\n\nIf you didn't create this account, you can ignore this message.",
-                settings.DEFAULT_FROM_EMAIL,
-                [current_user.email],
-                fail_silently=False,
-            )
-        except Exception:
-            rollback_email_verification_version(
-                user.pk, next_version, previous_version
-            )
-            raise
+    previous_version, next_version = reserve_email_verification_version(user.pk)
+    current_user = User.objects.get(pk=user.pk)
+    token = email_verification_token(current_user, next_version)
+    url = f"{str(settings.SITE_URL).rstrip('/')}/api/accounts/auth/verify-account-email/{token}/"
+    try:
+        send_mail(
+            "Verify your MyHomeBro email",
+            "Thanks for creating your MyHomeBro account.\n\nVerify your email address to continue setting up your account:\n"
+            f"{url}\n\nIf you didn't create this account, you can ignore this message.",
+            settings.DEFAULT_FROM_EMAIL,
+            [current_user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        rollback_email_verification_version(
+            user.pk, next_version, previous_version
+        )
+        raise
     user.email_verification_token_version = next_version
     log_event("verification_email_sent", user=user, request=request)
     return token

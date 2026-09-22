@@ -2,7 +2,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import re
 import threading
-import time
 from unittest.mock import patch
 
 from django.conf import settings
@@ -28,6 +27,7 @@ from accounts.admin import CustomUserAdmin
 from accounts.models import AccountSecurityEvent, PhoneVerificationChallenge, User
 from accounts.services.verification import (
     request_phone_code,
+    reserve_email_verification_version,
     rollback_email_verification_version,
     send_verification_email,
     user_from_email_token,
@@ -514,15 +514,11 @@ class AccountVerificationTests(TestCase):
         self.assertEqual(report["funnel_events"]["account_created"], 1)
 
 
-@override_settings(
-    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-    ACCOUNT_EMAIL_ISSUANCE_WAIT_SECONDS=5,
-)
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class ConcurrentEmailVerificationIssuanceTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
-        cache.clear()
         self.user = User.objects.create_user(
             "concurrent@example.com",
             "Strong-Test-Password-982!",
@@ -538,79 +534,89 @@ class ConcurrentEmailVerificationIssuanceTests(TransactionTestCase):
         finally:
             close_old_connections()
 
+    @staticmethod
+    def _delivery_version(args):
+        token = re.search(r"/verify-account-email/([^/]+)/", args[1]).group(1)
+        return signing.loads(
+            token,
+            salt="accounts.email_verification.v2",
+        )["version"]
+
     def test_overlapping_failure_does_not_block_newer_success(self):
-        first_delivery_started = threading.Event()
-        release_first_delivery = threading.Event()
-        calls = 0
-        calls_lock = threading.Lock()
+        first_reserved = threading.Event()
+        release_first_reservation = threading.Event()
 
         def delivery(*args, **kwargs):
-            nonlocal calls
-            with calls_lock:
-                calls += 1
-                call_number = calls
             self.assertFalse(connection.in_atomic_block)
-            if call_number == 1:
-                first_delivery_started.set()
-                self.assertTrue(release_first_delivery.wait(timeout=5))
+            if self._delivery_version(args) == 1:
                 raise RuntimeError("first delivery failed")
             return 1
 
-        with patch("accounts.services.verification.send_mail", side_effect=delivery):
+        def reserve(user_id):
+            reservation = reserve_email_verification_version(user_id)
+            if reservation[1] == 1:
+                first_reserved.set()
+                self.assertTrue(release_first_reservation.wait(timeout=5))
+            return reservation
+
+        with (
+            patch("accounts.services.verification.send_mail", side_effect=delivery),
+            patch("accounts.services.verification.log_event"),
+            patch(
+                "accounts.services.verification.reserve_email_verification_version",
+                side_effect=reserve,
+            ),
+        ):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 failed = executor.submit(self._issue)
-                self.assertTrue(first_delivery_started.wait(timeout=5))
+                self.assertTrue(first_reserved.wait(timeout=5))
                 succeeded = executor.submit(self._issue)
-                time.sleep(0.1)
-                self.assertFalse(succeeded.done())
-                release_first_delivery.set()
+                replacement_token = succeeded.result(timeout=5)
+                release_first_reservation.set()
                 with self.assertRaises(RuntimeError):
                     failed.result(timeout=5)
-                replacement_token = succeeded.result(timeout=5)
 
         self.user.refresh_from_db()
-        self.assertEqual(self.user.email_verification_token_version, 1)
+        self.assertEqual(self.user.email_verification_token_version, 2)
         self.assertEqual(user_from_email_token(replacement_token), self.user)
 
-    def test_overlapping_successes_are_serialized_and_latest_token_wins(self):
-        first_delivery_started = threading.Event()
-        release_first_delivery = threading.Event()
-        state_lock = threading.Lock()
-        active_deliveries = 0
-        maximum_active_deliveries = 0
-        calls = 0
+    def test_overlapping_successes_only_accept_highest_reserved_version(self):
+        first_reserved = threading.Event()
+        release_first_reservation = threading.Event()
+        second_delivery_started = threading.Event()
+        delivery_barrier = threading.Barrier(2)
 
         def delivery(*args, **kwargs):
-            nonlocal active_deliveries, maximum_active_deliveries, calls
-            with state_lock:
-                calls += 1
-                call_number = calls
-                active_deliveries += 1
-                maximum_active_deliveries = max(
-                    maximum_active_deliveries, active_deliveries
-                )
             self.assertFalse(connection.in_atomic_block)
-            try:
-                if call_number == 1:
-                    first_delivery_started.set()
-                    self.assertTrue(release_first_delivery.wait(timeout=5))
-                return 1
-            finally:
-                with state_lock:
-                    active_deliveries -= 1
+            if self._delivery_version(args) == 2:
+                second_delivery_started.set()
+            delivery_barrier.wait(timeout=5)
+            return 1
 
-        with patch("accounts.services.verification.send_mail", side_effect=delivery):
+        def reserve(user_id):
+            reservation = reserve_email_verification_version(user_id)
+            if reservation[1] == 1:
+                first_reserved.set()
+                self.assertTrue(release_first_reservation.wait(timeout=5))
+            return reservation
+
+        with (
+            patch("accounts.services.verification.send_mail", side_effect=delivery),
+            patch("accounts.services.verification.log_event"),
+            patch(
+                "accounts.services.verification.reserve_email_verification_version",
+                side_effect=reserve,
+            ),
+        ):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 first = executor.submit(self._issue)
-                self.assertTrue(first_delivery_started.wait(timeout=5))
+                self.assertTrue(first_reserved.wait(timeout=5))
                 second = executor.submit(self._issue)
-                time.sleep(0.1)
-                self.assertFalse(second.done())
-                release_first_delivery.set()
+                self.assertTrue(second_delivery_started.wait(timeout=5))
+                release_first_reservation.set()
                 first_token = first.result(timeout=5)
                 second_token = second.result(timeout=5)
 
-        self.assertEqual(maximum_active_deliveries, 1)
         with self.assertRaises(signing.BadSignature):
             user_from_email_token(first_token)
         self.assertEqual(user_from_email_token(second_token), self.user)
