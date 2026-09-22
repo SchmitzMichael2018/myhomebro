@@ -10,6 +10,17 @@ from django.conf import settings
 
 @override_settings(SECURE_SSL_REDIRECT=False)
 class FrontendContentSecurityPolicyTests(SimpleTestCase):
+    @staticmethod
+    def _directives(html):
+        match = re.search(r'<meta http-equiv="Content-Security-Policy" content="(.*?)"\s*/>', html, re.S)
+        if not match:
+            return {}
+        return {
+            parts[0]: parts[1:]
+            for directive in match.group(1).split(";")
+            if (parts := directive.split())
+        }
+
     def test_spa_meta_policy_allows_only_documented_connect_resources(self):
         template = get_template("index.html")
         expected_template = Path(settings.BASE_DIR).parent / "templates" / "index.html"
@@ -30,6 +41,31 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         self.assertEqual(html.count('http-equiv="Content-Security-Policy"'), 1)
         self.assertIn("object-src 'none'", html)
         self.assertEqual(settings.SECURE_CROSS_ORIGIN_OPENER_POLICY, "unsafe-none")
+
+    def test_turnstile_has_only_its_required_csp_permissions(self):
+        template = get_template("index.html")
+        html = Path(template.origin.name).read_text(encoding="utf-8")
+        directives = self._directives(html)
+        turnstile_origin = "https://challenges.cloudflare.com"
+
+        self.assertIn(turnstile_origin, directives["script-src"])
+        self.assertIn(turnstile_origin, directives["frame-src"])
+        self.assertNotIn(turnstile_origin, directives["connect-src"])
+        self.assertNotIn("https://*.cloudflare.com", directives["script-src"])
+        self.assertNotIn("https:", directives["script-src"])
+        self.assertNotIn("*", directives["script-src"])
+        self.assertNotIn("https://untrusted.example", directives["script-src"])
+
+    def test_turnstile_change_preserves_stripe_and_google_allowances(self):
+        template = get_template("index.html")
+        directives = self._directives(Path(template.origin.name).read_text(encoding="utf-8"))
+
+        for origin in ("https://js.stripe.com", "https://connect-js.stripe.com", "https://maps.googleapis.com", "https://maps.gstatic.com"):
+            self.assertIn(origin, directives["script-src"])
+        for origin in ("https://connect-js.stripe.com", "https://js.stripe.com", "https://hooks.stripe.com"):
+            self.assertIn(origin, directives["frame-src"])
+        for origin in ("https://api.stripe.com", "https://maps.googleapis.com", "https://maps.gstatic.com", "https://places.googleapis.com"):
+            self.assertIn(origin, directives["connect-src"])
 
     def test_both_spa_templates_keep_the_same_policy(self):
         root = Path(settings.BASE_DIR).parent
