@@ -134,7 +134,9 @@ class PasswordResetRequestView(APIView):
         email = (serializer.validated_data.get("email") or "").strip().lower()
 
         if email:
-            users = User.objects.filter(email__iexact=email, is_active=True)
+            users = User.objects.filter(email__iexact=email).exclude(
+                verification_state=User.VerificationState.DISABLED
+            )
             for u in users:
                 send_reset_email(u)
 

@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Home, Lock, Mail, ShieldCheck } from 'lucide-react';
 
 import api, { extractApiErrorMessage, setTokens } from '../api';
 import logo from '../assets/myhomebro_logo.png';
 import { customerContinuationDestination } from '../lib/universalRegistration.js';
+import TurnstileWidget from '../components/TurnstileWidget.jsx';
 
 const propertyTypes = [
   ['single_family', 'Single family'],
@@ -81,6 +82,8 @@ export default function CustomerAccountOnboardingPage() {
     phone_number: '',
     password: '',
     password_confirm: '',
+    company_website: '',
+    turnstile_token: '',
   });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [propertyForm, setPropertyForm] = useState({
@@ -106,6 +109,10 @@ export default function CustomerAccountOnboardingPage() {
 
   const updateAccount = (field, value) =>
     setAccountForm((current) => ({ ...current, [field]: value }));
+  const setTurnstileToken = useCallback(
+    (token) => setAccountForm((current) => ({ ...current, turnstile_token: token })),
+    []
+  );
   const updateLogin = (field, value) =>
     setLoginForm((current) => ({ ...current, [field]: value }));
   const updateProperty = (field, value) =>
@@ -134,14 +141,20 @@ export default function CustomerAccountOnboardingPage() {
     }
     setLoading(true);
     try {
-      await api.post('/accounts/auth/customer-register/', {
+      const registration = await api.post('/accounts/auth/customer-register/', {
         full_name: accountForm.full_name,
         email: accountForm.email,
         phone_number: accountForm.phone_number,
         password: accountForm.password,
         account_type: accountType,
         referral_code: referralCode,
+        continuation: requestedNext,
+        company_website: accountForm.company_website,
+        turnstile_token: accountForm.turnstile_token,
       });
+      if (registration.data?.verification_session) {
+        sessionStorage.setItem('mhb-verification-session', registration.data.verification_session);
+      }
       setLoginForm({
         email: accountForm.email.trim().toLowerCase(),
         password: '',
@@ -375,6 +388,7 @@ export default function CustomerAccountOnboardingPage() {
               className="space-y-4"
               onSubmit={submitAccount}
             >
+              <div aria-hidden="true" className="absolute -left-[10000px] h-px w-px overflow-hidden"><label>Company website<input value={accountForm.company_website} onChange={(event) => updateAccount('company_website', event.target.value)} tabIndex={-1} autoComplete="off" /></label></div>
               <Field label="Full name">
                 <TextInput
                   data-testid="customer-account-name"
@@ -384,6 +398,7 @@ export default function CustomerAccountOnboardingPage() {
                   autoComplete="name"
                 />
               </Field>
+              <TurnstileWidget onToken={setTurnstileToken} />
               <Field
                 label="Email"
                 hint="If you later submit a project, we'll link it to this account automatically."
@@ -459,10 +474,14 @@ export default function CustomerAccountOnboardingPage() {
               <button
                 type="button"
                 data-testid="customer-account-verified-continue"
-                onClick={() => setStep('signin')}
+                onClick={() => {
+                  const token = sessionStorage.getItem('mhb-verification-session');
+                  if (token) navigate(`/verify-account?verification_session=${encodeURIComponent(token)}`);
+                  else setStep('signin');
+                }}
                 className="w-full rounded-xl border border-amber-300/45 bg-amber-300/12 px-5 py-3 font-semibold text-amber-100 hover:bg-amber-300/18"
               >
-                I verified my email
+                Continue verification
               </button>
             </div>
           ) : null}

@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model, authenticate
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse
 from django.views import View
@@ -10,6 +11,7 @@ from io import BytesIO
 import logging
 
 from .serializers import ContractorRegistrationSerializer, CustomerRegistrationSerializer
+from .services.verification import apply_registration_risk_flags, log_event, safe_continuation, send_verification_email, verification_token, verify_turnstile
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -72,7 +74,16 @@ class EmailLoginView(APIView):
                                     status=status.HTTP_401_UNAUTHORIZED)
 
             if not user.is_active:
-                return Response({"detail": "Email not verified. Please verify your account."},
+                if user.verification_state == User.VerificationState.DISABLED or user.trust_classification == User.TrustClassification.SPAM_FRAUD:
+                    return Response({"detail": "This account is unavailable."}, status=status.HTTP_403_FORBIDDEN)
+                return Response({
+                    "detail": "Finish setting up your account.",
+                    "verification_state": user.verification_state,
+                    "email_verified": bool(user.email_verified_at),
+                    "phone_verified": bool(user.phone_verified_at),
+                    "verification_session": verification_token(user),
+                    "continuation": user.verification_continuation,
+                },
                                 status=status.HTTP_403_FORBIDDEN)
 
             refresh = RefreshToken.for_user(user)
@@ -105,13 +116,32 @@ class ContractorRegistrationView(APIView):
 
     def post(self, request, *args, **kwargs):
         payload = request.data.copy()
+        if payload.get("company_website"):
+            return Response({"message": "Registration received. Please check your email to continue."}, status=201)
+        if not verify_turnstile(payload.get("turnstile_token", ""), request):
+            return Response({"detail": "We could not verify this registration. Please try again."}, status=400)
         payload.setdefault("referral_code", request.session.get("referral_code", ""))
         serializer = ContractorRegistrationSerializer(data=payload, context={"request": request})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()
+        user.verification_role = "contractor"
+        user.verification_continuation = safe_continuation(payload.get("continuation"))
+        user.save(update_fields=["verification_role", "verification_continuation"])
+        apply_registration_risk_flags(user, request=request)
+        email_sent = True
+        try:
+            send_verification_email(user, request=request)
+        except Exception:
+            email_sent = False
+            logger.exception("Verification email delivery failed for user_id=%s", user.pk)
+            log_event("verification_email_delivery_failed", user=user, request=request)
         self._mark_referral_visit_registered(request, user, role="contractor")
-        return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)
+        response = serializer.to_representation(user)
+        response.update({"next_step": "verify_email", "verification_session": verification_token(user)})
+        if not email_sent:
+            response["message"] = "Account created, but the verification email could not be sent. Use Resend verification email to try again."
+        return Response(response, status=status.HTTP_201_CREATED)
 
     @staticmethod
     def _mark_referral_visit_registered(request, user, *, role):
@@ -125,9 +155,17 @@ class CustomerRegistrationView(APIView):
     Email verification is sent by the customer registration serializer.
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "account_registration"
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "account_registration"
 
     def post(self, request, *args, **kwargs):
         payload = request.data.copy()
+        if payload.get("company_website"):
+            return Response({"ok": True, "message": "Account created. Please check your email to continue.", "next_step": "verify_email"}, status=201)
+        if not verify_turnstile(payload.get("turnstile_token", ""), request):
+            return Response({"detail": "We could not verify this registration. Please try again."}, status=400)
         payload.setdefault("referral_code", request.session.get("referral_code", ""))
         serializer = CustomerRegistrationSerializer(data=payload, context={"request": request})
         if not serializer.is_valid():
@@ -135,5 +173,20 @@ class CustomerRegistrationView(APIView):
         user = serializer.save()
         account_type = str(payload.get("account_type") or "individual")
         role = "property_manager" if account_type == "property_management_company" else "homeowner"
+        user.verification_role = role
+        user.verification_continuation = safe_continuation(payload.get("continuation"))
+        user.save(update_fields=["verification_role", "verification_continuation"])
+        apply_registration_risk_flags(user, request=request)
+        email_sent = True
+        try:
+            send_verification_email(user, request=request)
+        except Exception:
+            email_sent = False
+            logger.exception("Verification email delivery failed for user_id=%s", user.pk)
+            log_event("verification_email_delivery_failed", user=user, request=request)
         ContractorRegistrationView._mark_referral_visit_registered(request, user, role=role)
-        return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)
+        response = serializer.to_representation(user)
+        response["verification_session"] = verification_token(user)
+        if not email_sent:
+            response["message"] = "Account created, but the verification email could not be sent. Use Resend verification email to try again."
+        return Response(response, status=status.HTTP_201_CREATED)

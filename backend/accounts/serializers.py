@@ -28,25 +28,8 @@ def customer_accounts_require_email_verification() -> bool:
 
 
 def send_customer_account_verification_email(user) -> None:
-    uid = urlsafe_base64_encode(force_bytes(user.pk))
-    token = default_token_generator.make_token(user)
-    try:
-        verify_url = reverse("accounts:verify_email", kwargs={"uidb64": uid, "token": token})
-    except NoReverseMatch:
-        verify_url = reverse("verify_email", kwargs={"uidb64": uid, "token": token})
-    full_url = f"{getattr(settings, 'SITE_URL', '').rstrip()}{verify_url}"
-    send_mail(
-        "Verify Your Email - MyHomeBro",
-        (
-            "Welcome to MyHomeBro!\n\n"
-            "Please verify your email address to finish setting up your customer account:\n"
-            f"{full_url}\n\n"
-            "-- MyHomeBro"
-        ),
-        getattr(settings, "DEFAULT_FROM_EMAIL", "info@myhomebro.com"),
-        [user.email],
-        fail_silently=False,
-    )
+    from accounts.services.verification import send_verification_email
+    send_verification_email(user)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -197,7 +180,7 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
         trim_whitespace=False,
     )
     phone_number = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default=""
+        write_only=True, required=True, allow_blank=False
     )
     referral_code = serializers.CharField(
         write_only=True, required=False, allow_blank=True, default="", max_length=20
@@ -213,6 +196,13 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
         if not email:
             raise serializers.ValidationError({"email": ["This field is required."]})
         attrs["email"] = email
+        if not attrs.get("first_name", "").strip() or not attrs.get("last_name", "").strip():
+            raise serializers.ValidationError({"first_name": ["First and last name are required."]})
+        from projects.services.sms_service import normalize_phone_to_e164
+        phone = normalize_phone_to_e164(attrs.get("phone_number"))
+        if not phone.startswith("+") or not phone[1:].isdigit() or not 8 <= len(phone[1:]) <= 15:
+            raise serializers.ValidationError({"phone_number": ["Enter a valid mobile number."]})
+        attrs["phone_number"] = phone
         return attrs
 
     def validate_email(self, value):
@@ -240,8 +230,10 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
                     user.save(update_fields=["phone_number"])
 
                 # Email verification gating
-                user.is_active = not REQUIRE_EMAIL_VERIFICATION
-                user.save(update_fields=["is_active"])
+                user.is_active = False
+                user.verification_state = User.VerificationState.PENDING_EMAIL
+                user.phone_number_normalized = phone
+                user.save(update_fields=["is_active", "verification_state", "phone_number_normalized"])
 
                 # Create Contractor; only pass fields that certainly exist
                 # (Assumes Contractor has at least user + phone)
@@ -286,11 +278,6 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
             "contractor": SafeContractorSerializer(contractor).data if contractor else None,
         }
 
-        if user.is_active:
-            refresh = RefreshToken.for_user(user)
-            payload["refresh"] = str(refresh)
-            payload["access"] = str(refresh.access_token)
-
         return payload
 
 
@@ -301,7 +288,7 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
 class CustomerRegistrationSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=255)
     email = serializers.EmailField()
-    phone_number = serializers.CharField(required=False, allow_blank=True, default="")
+    phone_number = serializers.CharField(required=True, allow_blank=False)
     account_type = serializers.ChoiceField(
         choices=Homeowner.ACCOUNT_TYPE_CHOICES,
         default=Homeowner.ACCOUNT_TYPE_INDIVIDUAL,
@@ -328,6 +315,13 @@ class CustomerRegistrationSerializer(serializers.Serializer):
             raise serializers.ValidationError("Enter your full name.")
         return cleaned
 
+    def validate_phone_number(self, value):
+        from projects.services.sms_service import normalize_phone_to_e164
+        phone = normalize_phone_to_e164(value)
+        if not phone.startswith("+") or not phone[1:].isdigit() or not 8 <= len(phone[1:]) <= 15:
+            raise serializers.ValidationError("Enter a valid mobile number.")
+        return phone
+
     def create(self, validated_data):
         full_name = validated_data["full_name"].strip()
         email = validated_data["email"].strip().lower()
@@ -343,10 +337,11 @@ class CustomerRegistrationSerializer(serializers.Serializer):
                     first_name=first_name,
                     last_name=last_name,
                 )
-                require_verification = customer_accounts_require_email_verification()
-                user.is_active = not require_verification
-                user.is_verified = not require_verification
-                update_fields = ["is_active", "is_verified"]
+                user.is_active = False
+                user.is_verified = False
+                user.verification_state = User.VerificationState.PENDING_EMAIL
+                user.phone_number_normalized = phone
+                update_fields = ["is_active", "is_verified", "verification_state", "phone_number_normalized"]
                 if hasattr(user, "phone_number"):
                     user.phone_number = phone
                     update_fields.append("phone_number")
@@ -391,8 +386,6 @@ class CustomerRegistrationSerializer(serializers.Serializer):
 
         self.homeowner = homeowner
         self.homeowner_created = created
-        if customer_accounts_require_email_verification():
-            send_customer_account_verification_email(user)
         return user
 
     def to_representation(self, user):
@@ -419,10 +412,6 @@ class CustomerRegistrationSerializer(serializers.Serializer):
                 "created": bool(getattr(self, "homeowner_created", False)),
             },
         }
-        if user.is_active:
-            refresh = RefreshToken.for_user(user)
-            payload["refresh"] = str(refresh)
-            payload["access"] = str(refresh.access_token)
         return payload
 
 
@@ -456,12 +445,21 @@ class ChangeEmailSerializer(serializers.Serializer):
         new_email = self.validated_data["new_email"]
 
         user.email = new_email
+        user.email_verified_at = None
+        user.is_verified = False
+        if user.verification_state != User.VerificationState.LEGACY_UNVERIFIED:
+            user.verification_state = User.VerificationState.PENDING_EMAIL
+            user.is_active = False
 
         # If you use email-as-username, keep username in sync
         if hasattr(user, "username"):
             user.username = new_email
 
-        user.save(update_fields=["email", "username"])
+        update_fields = ["email", "email_verified_at", "is_verified", "verification_state", "is_active"]
+        if hasattr(user, "username"):
+            update_fields.append("username")
+        user.save(update_fields=update_fields)
+        send_customer_account_verification_email(user)
         return user
 
 
@@ -496,6 +494,35 @@ class ChangePasswordSerializer(serializers.Serializer):
 
         user.set_password(new)
         user.save(update_fields=["password"])
+        return user
+
+
+class ChangePhoneSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_phone_number = serializers.CharField()
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        if not user.check_password(attrs["current_password"]):
+            raise serializers.ValidationError({"current_password": "Incorrect password."})
+        from projects.services.sms_service import normalize_phone_to_e164
+        phone = normalize_phone_to_e164(attrs["new_phone_number"])
+        if not phone.startswith("+") or not phone[1:].isdigit() or not 8 <= len(phone[1:]) <= 15:
+            raise serializers.ValidationError({"new_phone_number": "Enter a valid mobile number."})
+        attrs["new_phone_number"] = phone
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.context["request"].user
+        phone = self.validated_data["new_phone_number"]
+        user.phone_number = phone
+        user.phone_number_normalized = phone
+        user.phone_verified_at = None
+        user.duplicate_phone_risk = False
+        if user.verification_state != User.VerificationState.LEGACY_UNVERIFIED:
+            user.verification_state = User.VerificationState.PENDING_PHONE
+            user.is_active = False
+        user.save(update_fields=["phone_number", "phone_number_normalized", "phone_verified_at", "duplicate_phone_risk", "verification_state", "is_active"])
         return user
 
 
@@ -537,7 +564,9 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         # Decode the user id
         try:
             user_id = force_str(urlsafe_base64_decode(uidb64))
-            user = User.objects.get(pk=user_id, is_active=True)
+            user = User.objects.get(pk=user_id)
+            if user.verification_state == User.VerificationState.DISABLED:
+                raise User.DoesNotExist
         except Exception:
             raise serializers.ValidationError(
                 {"uid": ["Invalid or expired reset link."]}

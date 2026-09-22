@@ -676,6 +676,9 @@ INVOICE_AUTO_RELEASE_HOURS = int(get_env_var("INVOICE_AUTO_RELEASE_HOURS", "72")
 DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED = get_bool("DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED", default=False)
 
 REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
+    "account_registration": get_env_var("ACCOUNT_REGISTRATION_RATE", "20/hour"),
+    "verification_email": get_env_var("ACCOUNT_VERIFICATION_EMAIL_RATE", "10/hour"),
+    "verification_sms": get_env_var("ACCOUNT_VERIFICATION_SMS_RATE", "10/hour"),
     "capture_qr_public": get_env_var("CAPTURE_QR_PUBLIC_RATE", "30/hour"),
     "capture_qr_token": get_env_var("CAPTURE_QR_TOKEN_RATE", "15/hour"),
     "capture_conversational": get_env_var("CAPTURE_CONVERSATIONAL_RATE", "60/hour"),
@@ -687,6 +690,26 @@ REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
     "public_estimate_appointment": get_env_var("PUBLIC_ESTIMATE_APPOINTMENT_RATE", "20/hour"),
     "public_estimate_appointment_confirmation": get_env_var("PUBLIC_ESTIMATE_APPOINTMENT_CONFIRMATION_RATE", "30/hour"),
 })
+
+ACCOUNT_VERIFICATION_TOKEN_MAX_AGE = int(get_env_var("ACCOUNT_VERIFICATION_TOKEN_MAX_AGE", "86400"))
+ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS = int(get_env_var("ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS", "60"))
+ACCOUNT_OTP_TTL_SECONDS = int(get_env_var("ACCOUNT_OTP_TTL_SECONDS", "600"))
+ACCOUNT_OTP_RESEND_COOLDOWN_SECONDS = int(get_env_var("ACCOUNT_OTP_RESEND_COOLDOWN_SECONDS", "60"))
+ACCOUNT_OTP_MAX_SENDS_PER_HOUR = int(get_env_var("ACCOUNT_OTP_MAX_SENDS_PER_HOUR", "5"))
+ACCOUNT_OTP_MAX_SENDS_PER_PHONE_HOUR = int(get_env_var("ACCOUNT_OTP_MAX_SENDS_PER_PHONE_HOUR", "5"))
+ACCOUNT_OTP_MAX_SENDS_PER_IP_HOUR = int(get_env_var("ACCOUNT_OTP_MAX_SENDS_PER_IP_HOUR", "10"))
+ACCOUNT_OTP_MAX_SENDS_PER_SESSION_HOUR = int(get_env_var("ACCOUNT_OTP_MAX_SENDS_PER_SESSION_HOUR", "5"))
+ACCOUNT_OTP_MAX_ATTEMPTS = int(get_env_var("ACCOUNT_OTP_MAX_ATTEMPTS", "5"))
+ACCOUNT_VERIFICATION_SMS_BACKEND = get_env_var("ACCOUNT_VERIFICATION_SMS_BACKEND", "disabled").strip().lower()
+ACCOUNT_DISPOSABLE_EMAIL_DOMAINS = tuple(
+    domain.strip().lower()
+    for domain in get_env_var("ACCOUNT_DISPOSABLE_EMAIL_DOMAINS", "").split(",")
+    if domain.strip()
+)
+TURNSTILE_SITE_KEY = get_env_var("TURNSTILE_SITE_KEY", required=False)
+TURNSTILE_SECRET_KEY = get_env_var("TURNSTILE_SECRET_KEY", required=False)
+TURNSTILE_REQUIRED = get_bool("TURNSTILE_REQUIRED", default=not DEBUG)
+TURNSTILE_TEST_BYPASS = get_bool("TURNSTILE_TEST_BYPASS", default=False)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -375,6 +375,12 @@ def _candidate_referrals_for_receipt(receipt):
 def _activate_referral_for_fee(referral, *, at):
     if referral.status in {ContractorReferral.STATUS_EXPIRED, ContractorReferral.STATUS_DISQUALIFIED}:
         return False
+    referred_user = referral.referred_user
+    if referred_user is not None:
+        if referred_user.trust_classification in {"test", "spam_fraud"}:
+            return False
+        if referred_user.verification_state != "legacy_unverified" and not referred_user.has_full_verification:
+            return False
     if referral.earning_starts_at is None:
         if at > referral.activation_deadline:
             referral.status = ContractorReferral.STATUS_EXPIRED

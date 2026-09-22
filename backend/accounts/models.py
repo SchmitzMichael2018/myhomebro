@@ -36,6 +36,19 @@ class CustomUserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    class VerificationState(models.TextChoices):
+        PENDING_EMAIL = "pending_email", "Pending email"
+        PENDING_PHONE = "pending_phone", "Pending phone"
+        VERIFIED = "verified", "Verified"
+        LEGACY_UNVERIFIED = "legacy_unverified", "Legacy unverified"
+        SUSPICIOUS = "suspicious", "Suspicious"
+        DISABLED = "disabled", "Disabled"
+
+    class TrustClassification(models.TextChoices):
+        NORMAL = "normal", "Normal"
+        TEST = "test", "Test"
+        SUSPICIOUS = "suspicious", "Suspicious"
+        SPAM_FRAUD = "spam_fraud", "Spam / fraud"
     """
     Custom User model that uses email for authentication.
     """
@@ -50,6 +63,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False) # Staff users can access the admin site.
     is_verified = models.BooleanField(default=False, help_text="Designates whether the user has verified their email address.")
+    verification_state = models.CharField(max_length=24, choices=VerificationState.choices, default=VerificationState.LEGACY_UNVERIFIED, db_index=True)
+    trust_classification = models.CharField(max_length=20, choices=TrustClassification.choices, default=TrustClassification.NORMAL, db_index=True)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
+    phone_number_normalized = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    duplicate_phone_risk = models.BooleanField(default=False, db_index=True)
+    verification_continuation = models.CharField(max_length=500, blank=True, default="")
+    verification_role = models.CharField(max_length=32, blank=True, default="")
     date_joined = models.DateTimeField(default=timezone.now)
 
     # Custom related_names to avoid clashes with the default User model's relations.
@@ -97,3 +118,28 @@ class User(AbstractBaseUser, PermissionsMixin):
         Returns the short name for the user.
         """
         return self.first_name
+
+    @property
+    def has_full_verification(self):
+        return bool(self.email_verified_at and self.phone_verified_at)
+
+
+class PhoneVerificationChallenge(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="phone_verification_challenges")
+    phone_number_e164 = models.CharField(max_length=32, db_index=True)
+    code_hash = models.CharField(max_length=255)
+    sent_at = models.DateTimeField(default=timezone.now, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    failed_attempts = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    request_ip = models.GenericIPAddressField(null=True, blank=True)
+    session_key = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+
+class AccountSecurityEvent(models.Model):
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="security_events")
+    event_type = models.CharField(max_length=64, db_index=True)
+    request_ip = models.GenericIPAddressField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)

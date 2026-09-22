@@ -313,17 +313,21 @@ def snapshot_revenue(receipt):
 
 
 def acquisition_report():
-    included_visits = ReferralVisit.objects.filter(excluded_from_reporting=False)
+    excluded_users = Q(user__trust_classification__in=("test", "spam_fraud"))
+    excluded_classes = ("test", "spam_fraud")
+    included_visits = ReferralVisit.objects.filter(excluded_from_reporting=False).exclude(
+        registered_user__trust_classification__in=excluded_classes
+    )
     by_source = list(included_visits.values("first_source", "first_medium").annotate(visitors=Count("id")).order_by("first_source", "first_medium"))
     event_totals = dict(AttributionEvent.objects.filter(
         Q(visitor__isnull=True) | Q(visitor__excluded_from_reporting=False)
-    ).values("event_type").annotate(total=Count("id")).values_list("event_type", "total"))
+    ).exclude(excluded_users).values("event_type").annotate(total=Count("id")).values_list("event_type", "total"))
     by_campaign = list(included_visits.values("first_campaign", "first_content").exclude(first_campaign="").annotate(visitors=Count("id")).order_by("first_campaign", "first_content"))
     by_improvement = list(
         AttributionEvent.objects.filter(
             object_type="improvement",
             event_type__in=("improvement_template_view", "diy_project_started", "hire_pro_clicked"),
-        )
+        ).exclude(excluded_users)
         .values("object_id", "event_type")
         .annotate(total=Count("id"))
         .order_by("object_id", "event_type")
@@ -332,7 +336,7 @@ def acquisition_report():
         AttributionEvent.objects.filter(
             object_type="improvement",
             event_type__in=("improvement_template_view", "diy_project_started", "hire_pro_clicked"),
-        )
+        ).exclude(excluded_users)
         .values("metadata__category", "event_type")
         .annotate(total=Count("id"))
         .order_by("metadata__category", "event_type")
@@ -351,7 +355,7 @@ def acquisition_report():
 
     for row in by_source:
         bucket(row["first_source"])["visitors"] += row["visitors"]
-    for acquisition in AccountAcquisition.objects.all().iterator():
+    for acquisition in AccountAcquisition.objects.exclude(user__trust_classification__in=("test", "spam_fraud")).iterator():
         source = str((acquisition.first_touch or {}).get("source") or "unknown")
         bucket(source)["signups"] += 1
         if acquisition.profile_completed_at:
@@ -359,14 +363,22 @@ def acquisition_report():
         for role in acquisition.roles or []:
             if role in by_role:
                 by_role[role] += 1
+    included_project_snapshots = ProjectAttributionSnapshot.objects.exclude(
+        Q(customer_user__trust_classification__in=excluded_classes)
+        | Q(contractor_user__trust_classification__in=excluded_classes)
+    )
     funded_project_ids = set(AttributionEvent.objects.filter(event_type="project_funded", project__isnull=False).values_list("project_id", flat=True))
-    for snapshot in ProjectAttributionSnapshot.objects.all().iterator():
+    for snapshot in included_project_snapshots.iterator():
         source = source_name(snapshot.customer_attribution)
         bucket(source)["projects"] += 1
         if snapshot.project_id in funded_project_ids:
             bucket(source)["funded_projects"] += 1
     revenue_by_contractor_source = {}
-    for row in RevenueAttributionSnapshot.objects.all().iterator():
+    included_revenue = RevenueAttributionSnapshot.objects.exclude(
+        Q(customer_user__trust_classification__in=excluded_classes)
+        | Q(contractor_user__trust_classification__in=excluded_classes)
+    )
+    for row in included_revenue.iterator():
         customer_source = source_name(row.customer_attribution)
         customer_bucket = bucket(customer_source)
         customer_bucket["platform_fee_cents"] += row.eligible_platform_fee_cents
@@ -379,7 +391,7 @@ def acquisition_report():
         contractor_bucket["platform_fee_cents"] += row.eligible_platform_fee_cents
         contractor_bucket["referral_reward_cents"] += row.total_referral_reward_cents
         contractor_bucket["retained_revenue_cents"] += row.retained_platform_fee_cents
-    revenue = RevenueAttributionSnapshot.objects.aggregate(platform_fees=Sum("eligible_platform_fee_cents"), referral_rewards=Sum("total_referral_reward_cents"), retained_revenue=Sum("retained_platform_fee_cents"))
+    revenue = included_revenue.aggregate(platform_fees=Sum("eligible_platform_fee_cents"), referral_rewards=Sum("total_referral_reward_cents"), retained_revenue=Sum("retained_platform_fee_cents"))
     return {"by_source": by_source, "source_funnel": source_funnel, "by_role": by_role,
             "revenue_by_contractor_source": revenue_by_contractor_source, "by_campaign_content": by_campaign,
             "by_improvement": by_improvement,

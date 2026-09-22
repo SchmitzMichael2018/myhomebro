@@ -1,6 +1,6 @@
 # MyHomeBro Privacy Policy
 
-**Effective and last updated: September 21, 2026**
+**Effective and last updated: September 22, 2026**
 
 This Privacy Policy explains how MyHomeBro LLC ("MyHomeBro," "we," "us," or "our") collects, uses, discloses, and protects personal data when you use MyHomeBro websites, applications, communications, public profiles, contractor websites, and related services (collectively, the "Platform"). It also explains the choices and rights available to you.
 
@@ -14,7 +14,7 @@ MyHomeBro generally determines how personal data is used to operate the Platform
 
 Depending on how you use the Platform, we may collect:
 
-- **Account and contact data:** name, email address, phone number, login and security information, communication preferences, role, and account status.
+- **Account and contact data:** name, email address, phone number, login and security information, communication preferences, role, account status, and email- and mobile-ownership verification status and timestamps.
 - **Business and verification data:** company name, service categories, service areas, licenses, insurance details, tax or business identifiers, authorized representatives, public profile, and verification results.
 - **Property and project data:** service addresses, property and unit details, project requests, measurements, scope, schedules, budgets, estimates, agreements, amendments, milestones, work orders, assignments, maintenance requests, warranties, and completion records.
 - **Resident and team data:** resident, employee, subcontractor, vendor, or property-management contact information and the access, assignment, or invitation relationship supplied by an authorized user.
@@ -44,14 +44,14 @@ If you provide information about another person, you represent that you are auth
 
 We use personal data to:
 
-- create, authenticate, secure, and support accounts;
+- create, authenticate, secure, and support accounts, including sending email links and one-time transactional text-message codes to verify account contact information;
 - route project and maintenance requests, match users, and manage opportunities;
 - prepare and manage estimates, agreements, amendments, signatures, schedules, work records, warranties, and property history;
 - process and reconcile funding, direct payments, draws, expenses, Platform fees, transfers, refunds, and disputes;
 - send requested or necessary service communications and maintain consent, delivery, and opt-out records;
 - operate public profiles, contractor websites, portfolios, reviews, and lead attribution at the user's direction;
 - provide Project Assistant, classification, drafting, summarization, search, and other AI-supported features;
-- detect fraud, abuse, duplicate claims, unsafe activity, unauthorized access, and violations of our Terms;
+- detect fraud, abuse, duplicate accounts or verified mobile-number reuse, unsafe activity, unauthorized access, and violations of our Terms, and classify records for security review;
 - provide support, troubleshoot, analyze performance, measure campaign and referral effectiveness, understand basic conversion paths, prevent fraud, maintain backups, and improve the service and its usability;
 - comply with law, enforce agreements, establish or defend legal claims, and respond to lawful requests; and
 - send marketing only where permitted and consistent with your choices.
@@ -100,6 +100,8 @@ Where required, we will request consent for nonessential technologies. We do not
 ## 10. Communications Choices
 
 You may change available notification settings in the Platform. You can unsubscribe from marketing email through the message link. For texts, reply **STOP** to opt out, **START** to resume, or **HELP** for help. Transactional message frequency varies and message and data rates may apply.
+
+An account-verification text is a transactional security message requested during account setup or a mobile-number change. Receiving or completing that verification does not enroll you in promotional texts or replace the Platform's separate marketing and contractor-message consent records.
 
 Opting out of one channel does not prevent essential account, security, legal, or transaction notices through another channel. We retain consent and opt-out records as needed to honor your choice and demonstrate compliance.
 

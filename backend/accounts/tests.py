@@ -40,9 +40,11 @@ class LoginMessageTests(TestCase):
 
 
 @override_settings(
+    DEBUG=True,
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     ACCOUNTS_REQUIRE_EMAIL_VERIFICATION=True,
     SITE_URL="https://www.myhomebro.com",
+    TURNSTILE_TEST_BYPASS=True,
 )
 class CustomerAccountRegistrationTests(TestCase):
     def setUp(self):
@@ -71,9 +73,9 @@ class CustomerAccountRegistrationTests(TestCase):
         self.assertFalse(user.is_verified)
         homeowner = Homeowner.objects.get(email__iexact="pat.customer@example.com")
         self.assertEqual(homeowner.full_name, "Pat Homeowner")
-        self.assertEqual(homeowner.phone_number, "(555) 111-2222")
+        self.assertEqual(homeowner.phone_number, "+15551112222")
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("/api/accounts/auth/verify-email/", mail.outbox[0].body)
+        self.assertIn("/api/accounts/auth/verify-account-email/", mail.outbox[0].body)
 
     def test_property_manager_registration_creates_property_management_account(self):
         response = self.client.post(

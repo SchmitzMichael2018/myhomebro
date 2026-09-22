@@ -1,10 +1,11 @@
 // src/components/SignUpForm.jsx
 // v2026-02-10b — fix signup 404 by using real backend routes under /accounts/auth/*
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
+import TurnstileWidget from './TurnstileWidget.jsx';
 
 export function ContractorSignupForm({ embedded = false, onComplete }) {
   const navigate = useNavigate();
@@ -20,6 +21,8 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
     passwordConfirm: "",
     phone: "",
     agree: false,
+    company_website: "",
+    turnstile_token: "",
   });
 
   useEffect(() => {
@@ -46,6 +49,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
     const { name, value, type, checked } = e.target;
     setForm((s) => ({ ...s, [name]: type === "checkbox" ? checked : value }));
   };
+  const setTurnstileToken = useCallback((token) => setForm((current) => ({ ...current, turnstile_token: token })), []);
 
   const validate = () => {
     if (!form.agree) return "Please agree to the Terms to continue.";
@@ -53,7 +57,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
     if (!/^\S+@\S+\.\S+$/.test(form.email)) return "Enter a valid email.";
     if (form.password.length < 8) return "Password must be at least 8 characters.";
     if (form.password !== form.passwordConfirm) return "Passwords do not match.";
-    if (form.phone && !/^[0-9]{10}$/.test(form.phone)) return "Phone must be 10 digits (numbers only).";
+    if (!/^[0-9]{10}$/.test(form.phone)) return "Mobile number is required and must be 10 digits (numbers only).";
     return null;
   };
 
@@ -100,6 +104,9 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
         last_name: form.last_name.trim(),
         phone_number: form.phone,
         referral_code: referralCode,
+        continuation: new URLSearchParams(location.search || '').get('next') || '',
+        company_website: form.company_website,
+        turnstile_token: form.turnstile_token,
       };
 
       const { data, __used_url } = await registerContractor(payload);
@@ -118,7 +125,12 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
 
       toast.success(data?.message || "Registration successful. Check your email to verify.");
       onComplete?.();
-      navigate("/");
+      if (data?.verification_session) {
+        sessionStorage.setItem('mhb-verification-session', data.verification_session);
+        navigate(`/verify-account?verification_session=${encodeURIComponent(data.verification_session)}`);
+      } else {
+        navigate("/");
+      }
     } catch (err2) {
       const status = err2?.response?.status;
       if (status === 404) {
@@ -161,6 +173,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
       ) : null}
 
       <form onSubmit={submit} className="space-y-4">
+        <div aria-hidden="true" className="absolute -left-[10000px] h-px w-px overflow-hidden"><label>Company website<input name="company_website" value={form.company_website} onChange={onChange} tabIndex={-1} autoComplete="off" /></label></div>
         <div className="grid grid-cols-1 gap-4">
           <input
             ref={firstRef}
@@ -256,6 +269,7 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
             <span>.</span>
           </span>
         </label>
+        <TurnstileWidget onToken={setTurnstileToken} />
 
         <button type="submit" disabled={loading} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
           {loading ? "Signing Up..." : "Sign Up"}

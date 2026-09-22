@@ -130,6 +130,12 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         navigate(redirectTo);
       }
     } catch (err) {
+      if (err?.response?.status === 403 && err?.response?.data?.verification_session) {
+        const token = err.response.data.verification_session;
+        sessionStorage.setItem('mhb-verification-session', token);
+        navigate(`/verify-account?verification_session=${encodeURIComponent(token)}`);
+        return;
+      }
       toast.error(getLoginErrorMessage(err));
       console.error("LoginForm error:", err);
     } finally {

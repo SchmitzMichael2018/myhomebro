@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from .serializers import (
     ChangeEmailSerializer,
     ChangePasswordSerializer,
+    ChangePhoneSerializer,
 )
 
 
@@ -64,3 +65,16 @@ class ChangePasswordView(APIView):
             {"detail": "Password updated successfully."},
             status=status.HTTP_200_OK,
         )
+
+
+class ChangePhoneView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ChangePhoneSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response({
+            "detail": "Mobile number updated. Verify the new number to continue.",
+            "verification_state": user.verification_state,
+        })

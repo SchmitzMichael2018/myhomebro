@@ -457,12 +457,14 @@ if ProposalActivity is not None:
 if ProjectIntake is not None:
     @admin.register(ProjectIntake)
     class ProjectIntakeAdmin(admin.ModelAdmin):
+        actions = ("mark_real", "mark_test", "mark_spam_fraud", "mark_archived")
         list_display = (
             "id",
             "customer_name",
             "customer_email",
             "initiated_by",
             "status",
+            "traffic_classification",
             "homeowner",
             "agreement",
             "same_as_customer_address",
@@ -472,6 +474,7 @@ if ProjectIntake is not None:
         list_filter = (
             "initiated_by",
             "status",
+            "traffic_classification",
             "same_as_customer_address",
             "created_at",
             "updated_at",
@@ -495,6 +498,25 @@ if ProjectIntake is not None:
             "updated_at",
         )
 
+        def _classify(self, request, queryset, value):
+            queryset.update(traffic_classification=value, classified_at=timezone.now(), classified_by=request.user)
+
+        @admin.action(description="Classify selected requests as Real")
+        def mark_real(self, request, queryset):
+            self._classify(request, queryset, "real")
+
+        @admin.action(description="Classify selected requests as Test")
+        def mark_test(self, request, queryset):
+            self._classify(request, queryset, "test")
+
+        @admin.action(description="Classify selected requests as Spam / fraud")
+        def mark_spam_fraud(self, request, queryset):
+            self._classify(request, queryset, "spam_fraud")
+
+        @admin.action(description="Archive selected requests")
+        def mark_archived(self, request, queryset):
+            self._classify(request, queryset, "archived")
+
         fieldsets = (
             (
                 "Workflow",
@@ -505,6 +527,9 @@ if ProjectIntake is not None:
                         "agreement",
                         "initiated_by",
                         "status",
+                        "traffic_classification",
+                        "classified_at",
+                        "classified_by",
                     )
                 },
             ),

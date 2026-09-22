@@ -3,6 +3,13 @@
 from django.urls import path, include
 from .views import ContractorRegistrationView, CustomerRegistrationView, PublicRegistrationQrView
 from .email_verification_views import EmailVerificationView
+from .verification_views import (
+    ConfirmPhoneVerificationView,
+    RequestPhoneVerificationView,
+    ResendVerificationEmailView,
+    VerificationStatusView,
+    VerifyAccountEmailView,
+)
 from .password_reset import (
     PasswordResetRequestView,
     PasswordResetConfirmView,
@@ -12,6 +19,7 @@ from .password_reset import (
 from .account_settings_views import (
     ChangeEmailView,
     ChangePasswordView,
+    ChangePhoneView,
 )
 
 app_name = "accounts_api"
@@ -54,6 +62,11 @@ urlpatterns = [
         PasswordResetConfirmView.as_view(),
         name="password_reset_confirm",
     ),
+    path("auth/verify-account-email/<str:token>/", VerifyAccountEmailView.as_view(), name="verify-account-email"),
+    path("auth/verification/status/", VerificationStatusView.as_view(), name="verification-status"),
+    path("auth/verification/resend-email/", ResendVerificationEmailView.as_view(), name="verification-resend-email"),
+    path("auth/verification/request-phone/", RequestPhoneVerificationView.as_view(), name="verification-request-phone"),
+    path("auth/verification/confirm-phone/", ConfirmPhoneVerificationView.as_view(), name="verification-confirm-phone"),
     path(
         "auth/team-account-setup/<uid>/<token>/",
         TeamAccountSetupValidateView.as_view(),
@@ -79,4 +92,5 @@ urlpatterns = [
         ChangePasswordView.as_view(),
         name="change-password",
     ),
+    path("change-phone/", ChangePhoneView.as_view(), name="change-phone"),
 ]

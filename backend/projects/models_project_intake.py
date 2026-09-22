@@ -15,6 +15,12 @@ def generate_project_intake_share_token() -> str:
 
 
 class ProjectIntake(models.Model):
+    TRAFFIC_CLASSIFICATION_CHOICES = [
+        ("real", "Real"),
+        ("test", "Test"),
+        ("spam_fraud", "Spam / fraud"),
+        ("archived", "Archived"),
+    ]
     PROJECT_CLASS_CHOICES = [
         ("residential", "Residential"),
         ("commercial", "Commercial"),
@@ -113,6 +119,9 @@ class ProjectIntake(models.Model):
         choices=STATUS_CHOICES,
         default="draft",
     )
+    traffic_classification = models.CharField(max_length=20, choices=TRAFFIC_CLASSIFICATION_CHOICES, default="real", db_index=True)
+    classified_at = models.DateTimeField(null=True, blank=True)
+    classified_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="classified_project_intakes")
 
     source_template = models.ForeignKey(
         "projects.ProjectTemplate",
