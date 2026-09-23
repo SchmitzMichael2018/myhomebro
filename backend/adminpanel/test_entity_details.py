@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from projects.models import Agreement, Contractor, ContractorActivityEvent, ContractorPublicProfile, Homeowner, Project
@@ -103,10 +104,81 @@ class AdminEntityDetailTests(APITestCase):
         self.assertEqual(event.summary, "Fictional pre-launch contractor account.")
         self.assertTrue(event.metadata["prior_state"]["user_is_active"])
 
-        listing = self.client.get("/api/projects/admin/contractors/")
+        listing = self.client.get("/api/projects/admin/contractors/", {"status": "inactive"})
         row = next(item for item in listing.data["results"] if item["id"] == self.contractor.id)
         self.assertEqual(row["account_status"], "inactive")
         self.assertFalse(row["is_active"])
+
+    def test_contractor_list_defaults_to_operational_accounts_and_exposes_status_counts(self):
+        self.contractor.payouts_enabled = True
+        self.contractor.save(update_fields=["payouts_enabled"])
+        onboarding = Contractor.objects.create(
+            user=get_user_model().objects.create_user("onboarding@example.com"),
+            business_name="Onboarding Builder",
+        )
+        inactive_user = get_user_model().objects.create_user("inactive@example.com", is_active=False)
+        inactive = Contractor.objects.create(user=inactive_user, business_name="Inactive Builder")
+        suspended = Contractor.objects.create(
+            user=get_user_model().objects.create_user("suspended@example.com"),
+            business_name="Suspended Builder",
+            marketplace_verification_status=Contractor.MARKETPLACE_SUSPENDED,
+        )
+        deauthorized = Contractor.objects.create(
+            user=get_user_model().objects.create_user("deauthorized@example.com"),
+            business_name="Deauthorized Builder",
+            stripe_deauthorized_at=timezone.now(),
+        )
+
+        response = self.client.get("/api/projects/admin/contractors/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertEqual(ids, {self.contractor.id, onboarding.id})
+        self.assertNotIn(inactive.id, ids)
+        self.assertNotIn(suspended.id, ids)
+        self.assertNotIn(deauthorized.id, ids)
+        self.assertEqual(response.data["status_counts"]["active"], 1)
+        self.assertEqual(response.data["status_counts"]["onboarding"], 1)
+        self.assertEqual(response.data["status_counts"]["inactive"], 2)
+        self.assertEqual(response.data["status_counts"]["suspended"], 1)
+
+        inactive_response = self.client.get("/api/projects/admin/contractors/", {"status": "inactive"})
+        self.assertEqual(
+            {row["id"] for row in inactive_response.data["results"]},
+            {inactive.id, deauthorized.id},
+        )
+        all_response = self.client.get("/api/projects/admin/contractors/", {"status": "all"})
+        self.assertEqual(all_response.data["count"], 5)
+
+    def test_contractor_list_filters_and_orders_before_paginating(self):
+        for index in range(30):
+            user = get_user_model().objects.create_user(f"paged-{index:02d}@example.com")
+            Contractor.objects.create(user=user, business_name=f"Paged Builder {index:02d}")
+
+        first_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"q": "Paged Builder", "status": "all", "sort": "name", "page_size": 25},
+        )
+        second_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"q": "Paged Builder", "status": "all", "sort": "name", "page_size": 25, "page": 2},
+        )
+
+        self.assertEqual(first_page.data["count"], 30)
+        self.assertEqual(first_page.data["total_pages"], 2)
+        self.assertEqual(len(first_page.data["results"]), 25)
+        self.assertEqual(len(second_page.data["results"]), 5)
+        first_ids = {row["id"] for row in first_page.data["results"]}
+        second_ids = {row["id"] for row in second_page.data["results"]}
+        self.assertFalse(first_ids & second_ids)
+        self.assertEqual(first_page.data["results"][0]["business_name"], "Paged Builder 00")
+        self.assertEqual(second_page.data["results"][-1]["business_name"], "Paged Builder 29")
+
+        invalid_size = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "all", "page_size": 999},
+        )
+        self.assertEqual(invalid_size.data["page_size"], 25)
 
     def test_contractor_inactivation_requires_reason(self):
         response = self.client.post(

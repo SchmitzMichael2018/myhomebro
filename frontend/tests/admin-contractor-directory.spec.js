@@ -294,7 +294,7 @@ async function mockAdminDirectory(page) {
 
     const archivedFilter = requestUrl.searchParams.get('archived') || 'active';
     const page = Number(requestUrl.searchParams.get('page') || 1);
-    const pageSize = Number(requestUrl.searchParams.get('page_size') || 50);
+    const pageSize = Number(requestUrl.searchParams.get('page_size') || 25);
     let filteredRows = directoryRows.filter((row) => (
       archivedFilter === 'all'
         ? true
@@ -306,6 +306,18 @@ async function mockAdminDirectory(page) {
     if (requestUrl.searchParams.get('has_email') === 'true') filteredRows = filteredRows.filter((row) => Boolean(row.public_email));
     if (requestUrl.searchParams.get('has_website') === 'true') filteredRows = filteredRows.filter((row) => Boolean(row.website));
     if (requestUrl.searchParams.get('outreach_status')) filteredRows = filteredRows.filter((row) => row.outreach_status === requestUrl.searchParams.get('outreach_status'));
+    if (requestUrl.searchParams.get('primary_service')) filteredRows = filteredRows.filter((row) => row.primary_service === requestUrl.searchParams.get('primary_service'));
+    if (requestUrl.searchParams.get('city')) filteredRows = filteredRows.filter((row) => row.city === requestUrl.searchParams.get('city'));
+    if (requestUrl.searchParams.get('state')) filteredRows = filteredRows.filter((row) => row.state === requestUrl.searchParams.get('state'));
+    if (requestUrl.searchParams.get('zip')) filteredRows = filteredRows.filter((row) => row.zip_code === requestUrl.searchParams.get('zip'));
+    if (requestUrl.searchParams.get('export_missing_email') === 'true') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: filteredRows.filter((row) => !row.public_email && row.website) }),
+      });
+      return;
+    }
     const totalCount = filteredRows.length;
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
     const currentPage = Math.min(Math.max(1, page), totalPages);
@@ -322,6 +334,18 @@ async function mockAdminDirectory(page) {
         has_next: currentPage < totalPages,
         has_previous: currentPage > 1,
         results: pagedRows,
+        facets: {
+          primary_service: [{ value: 'Concrete', label: 'Concrete', count: 56 }],
+          city: [
+            { value: 'Austin', label: 'Austin', count: 27 },
+            { value: 'San Antonio', label: 'San Antonio', count: 29 },
+          ],
+          state: [{ value: 'TX', label: 'Texas', count: 56 }],
+          zip: [
+            { value: '78249', label: '78249', count: 29 },
+            { value: '78701', label: '78701', count: 27 },
+          ],
+        },
       }),
     });
   });
@@ -462,21 +486,19 @@ test('admin contractor directory supports search, filters, table, and export aff
 
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Concrete');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('12703 Spectrum Dr #103');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('San Antonio, TX 78249');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Phone Ready');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('No Outreach');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('0 outreach attempts');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Sms');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('0 attempts');
   await expect(page.getByTestId('admin-contractor-directory-pagination')).toBeVisible();
-  await expect(page.getByTestId('admin-contractor-directory-showing')).toContainText('Showing 1-50 of 56');
-  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 1 of 2');
+  await expect(page.getByTestId('admin-contractor-directory-showing')).toContainText('Showing 1-25 of 56');
+  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 1 of 3');
   await page.getByTestId('admin-contractor-directory-next').click();
-  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 2 of 2');
-  await expect(page.getByTestId('admin-contractor-directory-showing')).toContainText('Showing 51-56 of 56');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Paged Contractor 50');
+  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 2 of 3');
+  await expect(page.getByTestId('admin-contractor-directory-showing')).toContainText('Showing 26-50 of 56');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Paged Contractor 25');
   await page.getByTestId('admin-contractor-directory-prev').click();
-  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 1 of 2');
+  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 1 of 3');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Email not listed');
   await expect(page.getByRole('link', { name: 'austinconcrete.example' })).toHaveAttribute(
     'href',
@@ -506,8 +528,8 @@ test('admin contractor directory supports search, filters, table, and export aff
   ).toBe(true);
 
   await page.getByTestId('admin-contractor-filter-has-website').check();
-  await page.getByTestId('admin-contractor-filter-city').fill('Austin');
-  await page.getByTestId('admin-contractor-filter-state').fill('TX');
+  await page.getByTestId('admin-contractor-filter-city').selectOption('Austin');
+  await page.getByTestId('admin-contractor-filter-state').selectOption('TX');
   await expect.poll(() =>
     mocks.directoryRequests.some((url) => (
       url.searchParams.get('has_website') === 'true'
@@ -515,6 +537,8 @@ test('admin contractor directory supports search, filters, table, and export aff
       && url.searchParams.get('state') === 'TX'
     ))
   ).toBe(true);
+  await page.getByTestId('admin-contractor-clear-all-filters').click();
+  await expect(page.getByTestId('admin-contractor-filter-missing-email')).not.toBeChecked();
 
   await page.getByTestId('admin-contractor-search-term').fill('concrete contractor');
   await page.getByTestId('admin-contractor-search-city').fill('Austin');
@@ -534,8 +558,9 @@ test('admin contractor directory supports search, filters, table, and export aff
   expect(mocks.capturePayload().selected_results).toHaveLength(1);
   expect(mocks.capturePayload().selected_results[0].business_name).toBe('Admin Concrete Search Result');
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('1 contractor captured to the directory.');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Admin Concrete Search Result');
+  await expect(page.getByTestId('admin-contractor-directory-showing')).toContainText('Showing 1-25 of 57');
   await expect(page.getByText('Mark Claimed')).toHaveCount(0);
+  await page.getByTestId('admin-contractor-actions-42').click();
   await expect(page.getByTestId('admin-contractor-claim-link-42')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-join-invite-42')).toBeVisible();
   await page.getByTestId('admin-contractor-join-invite-42').click();
@@ -549,7 +574,7 @@ test('admin contractor directory supports search, filters, table, and export aff
   await page.getByTestId('admin-contractor-log-phone-42').click();
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('Phone outreach logged');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Phone Outreach Logged');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('2 outreach attempts');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('2 attempts');
   await page.getByTestId('admin-contractor-log-form-42').click();
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('Website form outreach logged');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Website Outreach Logged');
@@ -591,12 +616,14 @@ test('admin contractor directory archives and restores entries with archived fil
 
   await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  await page.getByTestId('admin-contractor-actions-42').click();
   await page.getByTestId('admin-contractor-archive-42').click();
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('Directory entry archived.');
   await expect(page.getByTestId('admin-contractor-directory-table')).not.toContainText('Austin Concrete Co');
 
   await page.getByTestId('admin-contractor-filter-archived').selectOption('archived');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  await page.getByTestId('admin-contractor-actions-42').click();
   await expect(page.getByTestId('admin-contractor-restore-42')).toBeVisible();
   await page.getByTestId('admin-contractor-restore-42').click();
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('Directory entry restored.');
@@ -655,9 +682,8 @@ test('admin contractor directory supports manual edit, import preview/apply, and
 
   await expect.poll(() => mocks.wasPatchRequested()).toBe(true);
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('hello@austinconcrete.example');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('900 Builder Way');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin, TX 78701');
-  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('reviewed');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Reviewed');
 
   await page.getByTestId('admin-contractor-import-csv').fill(
     'id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,primary_service,normalized_services,raw_services,email_source_url,services_source_url,enrichment_notes\n' +

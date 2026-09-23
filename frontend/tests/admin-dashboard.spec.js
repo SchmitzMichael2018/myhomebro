@@ -465,6 +465,10 @@ async function mockAdminDashboard(page) {
       contentType: 'application/json',
       body: JSON.stringify({
         count: 2,
+        page: 1,
+        page_size: 25,
+        total_pages: 1,
+        status_counts: { operational: 2, active: 1, onboarding: 1, inactive: 0, suspended: 0, all: 2 },
         results: [
           {
             id: 101,
@@ -493,7 +497,7 @@ async function mockAdminDashboard(page) {
             city: 'Chicago',
             state: 'IL',
             stripe_account_id: '',
-            account_status: 'pending_stripe',
+            account_status: 'onboarding',
             public_profile_status: 'private',
             gallery_count: 0,
             review_count: 1,
@@ -923,12 +927,13 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-navigation-tab-overview')).toHaveAttribute('aria-selected', 'false');
   await expect(page.getByTestId('admin-navigation-tab-contractors')).toHaveClass(/is-active/);
   await expect(page.getByTestId('admin-navigation-tab-overview')).not.toHaveClass(/is-active/);
-  await expect(page.getByTestId('admin-contractor-filter')).toHaveClass(/mhb-admin-control/);
+  await expect(page.getByTestId('admin-contractor-status-filter')).toHaveClass(/mhb-admin-control/);
   await expect(page.getByTestId('admin-contractor-search')).toHaveClass(/mhb-admin-control/);
   await expect(page.getByTestId('admin-contractors-table-panel')).toHaveClass(/mhb-admin-contractors-table/);
-  await expect(page.getByTestId('admin-contractor-filter').locator('option')).toHaveCount(4);
+  await expect(page.getByTestId('admin-contractor-status-filter').locator('option')).toHaveCount(6);
+  await expect(page.getByTestId('admin-contractors-pagination')).toContainText('Showing 1-2 of 2 contractors');
   await page.screenshot({ path: 'test-results/admin-contractors-light.png', fullPage: true });
-  const optionColors = await page.getByTestId('admin-contractor-filter').locator('option').evaluateAll((options) =>
+  const optionColors = await page.getByTestId('admin-contractor-status-filter').locator('option').evaluateAll((options) =>
     options.map((option) => ({
       background: getComputedStyle(option).backgroundColor,
       color: getComputedStyle(option).color,

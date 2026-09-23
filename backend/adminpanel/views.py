@@ -329,17 +329,38 @@ def _homeowner_display(homeowner) -> str:
 def _account_status(contractor) -> str:
     if contractor is None:
         return "unknown"
-    if getattr(getattr(contractor, "user", None), "is_active", True) is False:
+    if (
+        getattr(contractor, "is_active", True) is False
+        or getattr(getattr(contractor, "user", None), "is_active", True) is False
+        or getattr(contractor, "stripe_deauthorized_at", None) is not None
+    ):
         return "inactive"
-    if getattr(contractor, "stripe_deauthorized_at", None):
-        return "deauthorized"
+    if getattr(contractor, "marketplace_verification_status", "") == getattr(
+        Contractor, "MARKETPLACE_SUSPENDED", "suspended"
+    ):
+        return "suspended"
     if bool(getattr(contractor, "charges_enabled", False)) and bool(
         getattr(contractor, "payouts_enabled", False)
     ):
         return "active"
-    if bool(getattr(contractor, "details_submitted", False)):
-        return "pending_stripe"
-    return "not_onboarded"
+    return "onboarding"
+
+
+def _contractor_status_q(status_value: str) -> Q:
+    role_active = Q(is_active=True, user__is_active=True)
+    authorized = Q(stripe_deauthorized_at__isnull=True)
+    suspended = Q(
+        marketplace_verification_status=getattr(Contractor, "MARKETPLACE_SUSPENDED", "suspended")
+    )
+    if status_value == "active":
+        return role_active & authorized & ~suspended & Q(charges_enabled=True, payouts_enabled=True)
+    if status_value == "onboarding":
+        return role_active & authorized & ~suspended & ~(Q(charges_enabled=True) & Q(payouts_enabled=True))
+    if status_value == "inactive":
+        return Q(is_active=False) | Q(user__is_active=False) | Q(stripe_deauthorized_at__isnull=False)
+    if status_value == "suspended":
+        return role_active & authorized & suspended
+    return Q()
 
 
 def _public_profile_status(profile) -> str:
@@ -1294,21 +1315,91 @@ class AdminOverview(APIView):
 
 class AdminContractors(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserRole]
+    PAGE_SIZES = (25, 50, 100)
 
     def get(self, request):
         if Contractor is None:
             return Response(
-                {"count": 0, "results": [], "warning": "Contractor model not found in this deployment."},
+                {
+                    "count": 0,
+                    "results": [],
+                    "page": 1,
+                    "page_size": 25,
+                    "total_pages": 1,
+                    "status_counts": {},
+                    "warning": "Contractor model not found in this deployment.",
+                },
                 status=status.HTTP_200_OK,
             )
 
-        qs = Contractor.objects.select_related("user").all()
-        if hasattr(Contractor, "created_at"):
-            qs = qs.order_by("-created_at")
-        else:
-            qs = qs.order_by("-id")
+        base_qs = Contractor.objects.select_related("user").all()
+        status_counts = {
+            key: base_qs.filter(_contractor_status_q(key)).count()
+            for key in ("active", "onboarding", "inactive", "suspended")
+        }
+        requested_status = str(request.query_params.get("status") or "operational").strip().lower()
+        if requested_status not in {"operational", "active", "onboarding", "inactive", "suspended", "all"}:
+            requested_status = "operational"
+        qs = base_qs
+        if requested_status == "operational":
+            qs = qs.filter(_contractor_status_q("active") | _contractor_status_q("onboarding"))
+        elif requested_status != "all":
+            qs = qs.filter(_contractor_status_q(requested_status))
 
-        contractors = list(qs[:500])
+        query = str(request.query_params.get("q") or "").strip()[:120]
+        if query:
+            qs = qs.filter(
+                Q(id__icontains=query)
+                | Q(business_name__icontains=query)
+                | Q(user__email__icontains=query)
+                | Q(phone__icontains=query)
+                | Q(city__icontains=query)
+                | Q(state__icontains=query)
+                | Q(zip__icontains=query)
+                | Q(stripe_account_id__icontains=query)
+            )
+
+        profile_filter = str(request.query_params.get("profile") or "").strip().lower()
+        if profile_filter == "missing":
+            qs = qs.filter(Q(public_profile__isnull=True) | Q(public_profile__is_public=False))
+
+        sort_value = str(request.query_params.get("sort") or "newest").strip().lower()
+        if sort_value == "name":
+            qs = qs.order_by("business_name", "user__email", "id")
+        else:
+            qs = qs.order_by("-created_at", "-id") if hasattr(Contractor, "created_at") else qs.order_by("-id")
+
+        total_count = qs.count()
+        try:
+            page_size = int(request.query_params.get("page_size") or 25)
+        except (TypeError, ValueError):
+            page_size = 25
+        if page_size not in self.PAGE_SIZES:
+            page_size = 25
+        try:
+            page = max(1, int(request.query_params.get("page") or 1))
+        except (TypeError, ValueError):
+            page = 1
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+        page = min(page, total_pages)
+        start = (page - 1) * page_size
+        if sort_value == "top_fee" and Receipt is not None:
+            filtered_ids = list(qs.values_list("id", flat=True))
+            fee_totals = {
+                row["agreement__contractor_id"]: int(row["total"] or 0)
+                for row in Receipt.objects.filter(agreement__contractor_id__in=filtered_ids)
+                .values("agreement__contractor_id")
+                .annotate(total=Sum("platform_fee_cents"))
+            }
+            ordered_ids = sorted(filtered_ids, key=lambda contractor_id: (-fee_totals.get(contractor_id, 0), contractor_id))
+            page_ids = ordered_ids[start:start + page_size]
+            contractor_by_id = {
+                contractor.id: contractor
+                for contractor in base_qs.filter(id__in=page_ids)
+            }
+            contractors = [contractor_by_id[contractor_id] for contractor_id in page_ids]
+        else:
+            contractors = list(qs[start:start + page_size])
         contractor_ids = [contractor.id for contractor in contractors]
         profile_by_contractor_id = {}
         lead_counts = defaultdict(int)
@@ -1399,7 +1490,25 @@ class AdminContractors(APIView):
                 "recent_activity_at": _to_iso(recent_activity),
             })
 
-        return Response({"count": len(items), "results": items}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "count": total_count,
+                "results": items,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+                "available_page_sizes": list(self.PAGE_SIZES),
+                "active_status": requested_status,
+                "status_counts": {
+                    **status_counts,
+                    "operational": status_counts["active"] + status_counts["onboarding"],
+                    "all": sum(status_counts.values()),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminHomeowners(APIView):

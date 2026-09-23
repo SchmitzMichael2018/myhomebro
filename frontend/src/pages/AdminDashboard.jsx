@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import { isDisputeTerminal } from "../lib/disputeStatus.js";
+import { PaginationControls } from "../components/ui/PaginationControls.jsx";
 import {
   ProjectAssistantApprovalNotice,
   ProjectAssistantConfidenceBadge,
@@ -433,6 +434,13 @@ export default function AdminDashboard() {
   const [goals, setGoals] = useState(null);
 
   const [contractors, setContractors] = useState([]);
+  const [contractorPagination, setContractorPagination] = useState({
+    page: 1,
+    page_size: 25,
+    count: 0,
+    total_pages: 1,
+    status_counts: {},
+  });
   const [subcontractors, setSubcontractors] = useState([]);
   const [homeowners, setHomeowners] = useState([]);
   const [agreements, setAgreements] = useState([]);
@@ -450,9 +458,15 @@ export default function AdminDashboard() {
   const qFromUrl = getQ(location.search);
   const [agreementQuery, setAgreementQuery] = useState(qFromUrl || "");
 
-  // Contractor query (optional persistence later)
+  // Contractor list state is URL-backed so browser navigation restores the view.
   const [contractorQuery, setContractorQuery] = useState(view === "contractors" ? qFromUrl : "");
-  const [contractorFilter, setContractorFilter] = useState("newest");
+  const contractorStatus = getParam(location.search, "status") || "operational";
+  const contractorSort = getParam(location.search, "sort") || "newest";
+  const contractorProfile = getParam(location.search, "profile");
+  const contractorPage = Math.max(1, Number(getParam(location.search, "page")) || 1);
+  const contractorPageSize = [25, 50, 100].includes(Number(getParam(location.search, "page_size")))
+    ? Number(getParam(location.search, "page_size"))
+    : 25;
   const [contractorToInactivate, setContractorToInactivate] = useState(null);
   const [contractorInactivationReason, setContractorInactivationReason] = useState("");
   const [contractorActionBusy, setContractorActionBusy] = useState(false);
@@ -483,11 +497,15 @@ export default function AdminDashboard() {
     if (view !== "contractors") return undefined;
     const timeout = window.setTimeout(() => {
       if (getQ(location.search) !== contractorQuery) {
-        setParam(navigate, location, "q", contractorQuery);
+        setParams(navigate, location, { q: contractorQuery, page: 1 }, true);
       }
     }, 350);
     return () => window.clearTimeout(timeout);
   }, [contractorQuery, location, navigate, view]);
+
+  function setContractorParams(patch, replace = false) {
+    setParams(navigate, location, { ...patch, q: contractorQuery }, replace);
+  }
 
   function goTo(viewName) {
     setParams(navigate, location, { view: viewName }, false);
@@ -528,6 +546,28 @@ export default function AdminDashboard() {
     if (failed) setLoadError(`${failed} overview section${failed === 1 ? "" : "s"} could not be refreshed. Available data is still shown.`);
   }
 
+  async function loadContractors() {
+    const params = {
+      q: getQ(location.search) || undefined,
+      status: getParam(location.search, "status") || "operational",
+      sort: getParam(location.search, "sort") || "newest",
+      profile: getParam(location.search, "profile") || undefined,
+      page: Math.max(1, Number(getParam(location.search, "page")) || 1),
+      page_size: [25, 50, 100].includes(Number(getParam(location.search, "page_size")))
+        ? Number(getParam(location.search, "page_size"))
+        : 25,
+    };
+    const response = await api.get(`${ADMIN_BASE}/contractors/`, { params });
+    setContractors(response.data?.results || []);
+    setContractorPagination({
+      page: Number(response.data?.page || 1),
+      page_size: Number(response.data?.page_size || 25),
+      count: Number(response.data?.count || 0),
+      total_pages: Number(response.data?.total_pages || 1),
+      status_counts: response.data?.status_counts || {},
+    });
+  }
+
   async function loadGeo() {
     const res = await api.get(`${ADMIN_BASE}/geo/`);
     setGeo(res.data);
@@ -555,11 +595,10 @@ export default function AdminDashboard() {
         const res = await api.get(`${ADMIN_BASE}/goals/`);
         setGoals(res.data);
       } else if (view === "contractors") {
-        const [contractorRes, subcontractorRes] = await Promise.all([
-          api.get(`${ADMIN_BASE}/contractors/`),
+        const [, subcontractorRes] = await Promise.all([
+          loadContractors(),
           api.get(`${ADMIN_BASE}/subcontractors/`),
         ]);
-        setContractors(contractorRes.data?.results || []);
         setSubcontractors(subcontractorRes.data?.results || []);
       } else if (view === "homeowners") {
         const res = await api.get(`${ADMIN_BASE}/homeowners/`);
@@ -583,7 +622,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!whoamiLoading && isAdmin) loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whoamiLoading, isAdmin, showArchivedDisputes, view]);
+  }, [whoamiLoading, isAdmin, showArchivedDisputes, view, location.search]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -674,11 +713,7 @@ export default function AdminDashboard() {
         `${ADMIN_BASE}/contractors/${contractorToInactivate.id}/inactivate/`,
         { reason }
       );
-      setContractors((current) => current.map((row) => (
-        row.id === contractorToInactivate.id
-          ? { ...row, account_status: "inactive", is_active: false, public_profile_status: "private" }
-          : row
-      )));
+      await loadContractors();
       setContractorActionMessage(response.data?.detail || "Contractor account inactivated.");
       setContractorToInactivate(null);
       setContractorInactivationReason("");
@@ -805,37 +840,7 @@ export default function AdminDashboard() {
   });
 
   // Filters
-  const contractorFiltered = (() => {
-    const q = contractorQuery.trim().toLowerCase();
-    let next = contractors.filter((c) => {
-      const blob = [
-        c.id,
-        c.name,
-        c.business_name,
-        c.email,
-        c.phone,
-        c.city,
-        c.state,
-        c.zip,
-        c.stripe_account_id,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return blob.includes(q);
-    });
-    if (contractorFilter === "inactive") {
-      next = next.filter((c) => ["not_onboarded", "pending_stripe", "deauthorized"].includes(c.account_status));
-    }
-    if (contractorFilter === "top_fee") {
-      next = [...next].sort((a, b) => toFloat(b.fee_revenue) - toFloat(a.fee_revenue));
-    } else if (contractorFilter === "missing_profile") {
-      next = next.filter((c) => c.public_profile_status !== "public");
-    } else {
-      next = [...next].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    }
-    return next;
-  })();
+  const contractorFiltered = contractors;
 
   const homeownerRows = homeowners;
   const subcontractorRows = subcontractors;
@@ -1732,18 +1737,45 @@ export default function AdminDashboard() {
                   <p className="mt-1 text-sm text-slate-600">Review contractor accounts, onboarding progress, profiles, and platform activity.</p>
                 </div>
                 <label className="min-w-48">
-                  <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Sort and filter</span>
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Account status</span>
                 <select
-                  data-testid="admin-contractor-filter"
-                  value={contractorFilter}
-                  onChange={(e) => setContractorFilter(e.target.value)}
+                  data-testid="admin-contractor-status-filter"
+                  value={contractorStatus}
+                  onChange={(event) => setContractorParams({ status: event.target.value, page: 1 })}
                   className="mhb-admin-control w-full"
                 >
-                  <option value="newest">Newest signups</option>
-                  <option value="inactive">Inactive onboarding</option>
-                  <option value="top_fee">Top fee generators</option>
-                  <option value="missing_profile">Missing public profile</option>
+                  <option value="operational">Active + Onboarding ({contractorPagination.status_counts.operational || 0})</option>
+                  <option value="active">Active ({contractorPagination.status_counts.active || 0})</option>
+                  <option value="onboarding">Onboarding ({contractorPagination.status_counts.onboarding || 0})</option>
+                  <option value="inactive">Inactive ({contractorPagination.status_counts.inactive || 0})</option>
+                  <option value="suspended">Suspended ({contractorPagination.status_counts.suspended || 0})</option>
+                  <option value="all">All ({contractorPagination.status_counts.all || 0})</option>
                 </select>
+                </label>
+                <label className="min-w-40">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Sort</span>
+                  <select
+                    data-testid="admin-contractor-sort"
+                    value={contractorSort}
+                    onChange={(event) => setContractorParams({ sort: event.target.value, page: 1 })}
+                    className="mhb-admin-control w-full"
+                  >
+                    <option value="newest">Newest signups</option>
+                    <option value="name">Business name</option>
+                    <option value="top_fee">Top fee generators</option>
+                  </select>
+                </label>
+                <label className="min-w-44">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Profile</span>
+                  <select
+                    data-testid="admin-contractor-profile-filter"
+                    value={contractorProfile}
+                    onChange={(event) => setContractorParams({ profile: event.target.value, page: 1 })}
+                    className="mhb-admin-control w-full"
+                  >
+                    <option value="">All profiles</option>
+                    <option value="missing">Missing public profile</option>
+                  </select>
                 </label>
                 <label className="w-full md:w-[420px]">
                   <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Search</span>
@@ -1826,6 +1858,16 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </TableShell>
+              <PaginationControls
+                page={contractorPage}
+                pageSize={contractorPageSize}
+                totalItems={contractorPagination.count}
+                pageSizeOptions={[25, 50, 100]}
+                label="contractors"
+                testId="admin-contractors-pagination"
+                onPageChange={(page) => setContractorParams({ page })}
+                onPageSizeChange={(pageSize) => setContractorParams({ page_size: pageSize, page: 1 })}
+              />
 
               {contractorToInactivate ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" role="presentation">
