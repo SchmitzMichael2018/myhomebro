@@ -231,6 +231,10 @@ def _request_trades(intake: ProjectIntake) -> set[str]:
     return {normalize_trade(trade) for trade in trades if normalize_trade(trade)}
 
 
+def marketplace_request_trade_signature(intake: ProjectIntake) -> tuple[str, ...]:
+    return tuple(sorted(_request_trades(intake)))
+
+
 def location_readiness(city: str, state: str) -> dict[str, Any]:
     city = normalize_location_value(city)
     state = normalize_location_value(state)

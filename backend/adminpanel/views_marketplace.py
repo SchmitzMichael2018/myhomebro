@@ -22,7 +22,7 @@ from .marketplace_analytics import build_marketplace_analytics
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, normalize_location_value
+from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_request_trade_signature, normalize_location_value
 from projects.services.workflow_notifications import notify_contractor_verification_status
 from projects.services.contractor_reviews import contractor_performance_summary
 from projects.services.contractor_discovery import build_contractor_recommendations
@@ -98,6 +98,34 @@ def _marketplace_request_counts(intake: ProjectIntake) -> dict[str, int]:
     }
 
 
+def _marketplace_request_counts_by_id(intake_ids: list[int], *, chunk_size: int = 500) -> dict[int, dict[str, int]]:
+    counts = {
+        intake_id: {"invites": 0, "opportunities": 0, "leads": 0}
+        for intake_id in intake_ids
+    }
+    for offset in range(0, len(intake_ids), chunk_size):
+        chunk = intake_ids[offset : offset + chunk_size]
+        for row in (
+            ContractorDiscoveryInvite.objects.filter(public_intake_id__in=chunk)
+            .values("public_intake_id")
+            .annotate(total=Count("id"))
+        ):
+            counts[row["public_intake_id"]]["invites"] = row["total"]
+        for row in (
+            ContractorOpportunity.objects.filter(intake_request_id__in=chunk)
+            .values("intake_request_id")
+            .annotate(total=Count("id"))
+        ):
+            counts[row["intake_request_id"]]["opportunities"] = row["total"]
+        for row in (
+            PublicContractorLead.objects.filter(ai_analysis__source_intake_id__in=chunk)
+            .values("ai_analysis__source_intake_id")
+            .annotate(total=Count("id"))
+        ):
+            counts[int(row["ai_analysis__source_intake_id"])]["leads"] = row["total"]
+    return counts
+
+
 def _marketplace_operational_status(
     *,
     readiness: dict[str, Any],
@@ -146,19 +174,67 @@ def _marketplace_operational_status(
     )
 
 
-def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
+def _marketplace_request_evaluation(
+    intake: ProjectIntake,
+    *,
+    readiness_cache: dict[tuple[str, str], dict[str, Any]],
+    eligible_count_cache: dict[tuple[Any, ...], int],
+) -> dict[str, Any]:
     city, state, zip_code = intake_marketplace_location(intake)
-    readiness = location_readiness(city, state)
-    counts = _marketplace_request_counts(intake)
-    cap = int(readiness.get("max_bids_per_request") or 5)
-    routed_count = max(counts.values() or [0])
-    at_cap = routed_count >= cap
-    enabled = bool(readiness.get("enabled"))
-    eligible_count = len(eligible_marketplace_listings(intake))
+    location_key = (city.casefold(), state.casefold())
+    if location_key not in readiness_cache:
+        readiness_cache[location_key] = location_readiness(city, state)
+    readiness = readiness_cache[location_key]
+    eligibility_key = (
+        *location_key,
+        *marketplace_request_trade_signature(intake),
+    )
+    if eligibility_key not in eligible_count_cache:
+        eligible_count_cache[eligibility_key] = len(eligible_marketplace_listings(intake))
+    eligible_count = eligible_count_cache[eligibility_key]
     operational_status, operational_label, operational_reason = _marketplace_operational_status(
         readiness=readiness,
         eligible_count=eligible_count,
     )
+    return {
+        "id": intake.id,
+        "city": city,
+        "state": state,
+        "zip": zip_code,
+        "location_complete": bool(city and state),
+        "readiness": readiness,
+        "eligible_count": eligible_count,
+        "operational_status": operational_status,
+        "operational_label": operational_label,
+        "operational_reason": operational_reason,
+    }
+
+
+def _saved_marketplace_request_row(
+    intake: ProjectIntake,
+    *,
+    evaluation: dict[str, Any] | None = None,
+    counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    if evaluation is None:
+        evaluation = _marketplace_request_evaluation(
+            intake,
+            readiness_cache={},
+            eligible_count_cache={},
+        )
+    city = evaluation["city"]
+    state = evaluation["state"]
+    zip_code = evaluation["zip"]
+    readiness = evaluation["readiness"]
+    counts = counts or _marketplace_request_counts(intake)
+    cap = int(readiness.get("max_bids_per_request") or 5)
+    routed_count = max(counts.values() or [0])
+    at_cap = routed_count >= cap
+    enabled = bool(readiness.get("enabled"))
+    eligible_count = evaluation["eligible_count"]
+    operational_status = evaluation["operational_status"]
+    operational_label = evaluation["operational_label"]
+    operational_reason = evaluation["operational_reason"]
     already_routed = routed_count > 0
     routable_now = enabled and not at_cap and eligible_count > routed_count
     if at_cap:
@@ -259,43 +335,80 @@ def _filter_marketplace_requests(qs, params):
     return qs
 
 
-def _saved_marketplace_requests_payload(params=None) -> dict[str, Any]:
-    params = params or {}
-    qs = _filter_marketplace_requests(_marketplace_request_queryset(), params)
-    ordering = {
+def _marketplace_request_ordering(params) -> tuple[str, ...]:
+    return {
         "submitted_asc": ("post_submit_flow_selected_at", "created_at", "id"),
         "location_asc": ("project_state", "project_city", "id"),
         "trade_asc": ("ai_project_type", "ai_project_subtype", "id"),
         "request_status_asc": ("status", "-created_at", "-id"),
     }.get(_safe_text(params.get("sort")), ("-post_submit_flow_selected_at", "-created_at", "-id"))
-    qs = qs.order_by(*ordering)
-    total_count = qs.count()
-    page_size = max(1, min(_safe_int(params.get("page_size"), 25), 100))
-    total_pages = max(1, math.ceil(total_count / page_size))
-    page = min(max(1, _safe_int(params.get("page"), 1)), total_pages)
-    intakes = list(qs[(page - 1) * page_size : page * page_size])
-    rows = [_saved_marketplace_request_row(intake) for intake in intakes]
-    status_filter = _safe_text(params.get("marketplace_status"))
-    if status_filter:
-        rows = [row for row in rows if row["marketplace_status"] == status_filter]
+
+
+def _marketplace_request_evaluations(qs, *, status_filter: str = "", chunk_size: int = 200) -> list[dict[str, Any]]:
+    readiness_cache: dict[tuple[str, str], dict[str, Any]] = {}
+    eligible_count_cache: dict[tuple[Any, ...], int] = {}
+    evaluations = []
+    candidate_fields = (
+        "id",
+        "project_city", "project_state", "project_postal_code",
+        "customer_city", "customer_state", "customer_postal_code", "same_as_customer_address",
+        "ai_project_type", "ai_project_subtype", "ai_project_title",
+        "accomplishment_text", "ai_description",
+    )
+    # Operational status depends on the authoritative Python readiness and
+    # eligibility services, so evaluate compact candidates in database chunks.
+    for intake in qs.select_related(None).only(*candidate_fields).iterator(chunk_size=chunk_size):
+        evaluation = _marketplace_request_evaluation(
+            intake,
+            readiness_cache=readiness_cache,
+            eligible_count_cache=eligible_count_cache,
+        )
+        if not status_filter or evaluation["operational_status"] == status_filter:
+            evaluations.append(evaluation)
+    return evaluations
+
+
+def _marketplace_request_aggregates(
+    evaluations: list[dict[str, Any]],
+    counts_by_id: dict[int, dict[str, int]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     summary = {
-        "saved_not_routed": sum(1 for row in rows if row["routed_status"] == "not_routed"),
-        "routable_now": sum(1 for row in rows if row["routable_now"]),
-        "already_routed": sum(1 for row in rows if row["already_routed"]),
-        "blocked_location_missing": sum(1 for row in rows if not row["location_complete"]),
-        "blocked_disabled": sum(1 for row in rows if row["location_complete"] and not row["marketplace_enabled"]),
-        "blocked_no_eligible_contractors": sum(
-            1
-            for row in rows
-            if row["marketplace_enabled"] and not row["at_cap"] and row["eligible_contractors"] <= max(row["counts"].values() or [0])
-        ),
-        "at_cap": sum(1 for row in rows if row["at_cap"]),
+        "total": len(evaluations),
+        "saved_not_routed": 0,
+        "routable_now": 0,
+        "already_routed": 0,
+        "blocked_location_missing": 0,
+        "blocked_disabled": 0,
+        "blocked_no_eligible_contractors": 0,
+        "at_cap": 0,
+        "operational_statuses": {},
     }
     by_location: dict[tuple[str, str], dict[str, int]] = {}
-    for row in rows:
-        if not row["location_complete"]:
+    for evaluation in evaluations:
+        operational_status = evaluation["operational_status"]
+        summary["operational_statuses"][operational_status] = (
+            summary["operational_statuses"].get(operational_status, 0) + 1
+        )
+        counts = counts_by_id[evaluation["id"]]
+        cap = int(evaluation["readiness"].get("max_bids_per_request") or 5)
+        routed_count = max(counts.values() or [0])
+        at_cap = routed_count >= cap
+        enabled = bool(evaluation["readiness"].get("enabled"))
+        already_routed = routed_count > 0
+        routable_now = enabled and not at_cap and evaluation["eligible_count"] > routed_count
+        no_eligible = enabled and not at_cap and evaluation["eligible_count"] <= routed_count
+
+        summary["saved_not_routed"] += int(not already_routed)
+        summary["routable_now"] += int(routable_now)
+        summary["already_routed"] += int(already_routed)
+        summary["blocked_location_missing"] += int(not evaluation["location_complete"])
+        summary["blocked_disabled"] += int(evaluation["location_complete"] and not enabled)
+        summary["blocked_no_eligible_contractors"] += int(no_eligible)
+        summary["at_cap"] += int(at_cap)
+
+        if not evaluation["location_complete"]:
             continue
-        key = (row["city"], row["state"])
+        key = (evaluation["city"], evaluation["state"])
         bucket = by_location.setdefault(
             key,
             {
@@ -307,18 +420,54 @@ def _saved_marketplace_requests_payload(params=None) -> dict[str, Any]:
                 "at_cap": 0,
             },
         )
-        if row["routed_status"] == "not_routed":
-            bucket["saved_not_routed"] += 1
-        if row["routable_now"]:
-            bucket["routable_now"] += 1
-        if row["already_routed"]:
-            bucket["already_routed"] += 1
-        if not row["marketplace_enabled"]:
-            bucket["blocked_disabled"] += 1
-        if row["marketplace_enabled"] and not row["at_cap"] and row["eligible_contractors"] <= max(row["counts"].values() or [0]):
-            bucket["blocked_no_eligible_contractors"] += 1
-        if row["at_cap"]:
-            bucket["at_cap"] += 1
+        bucket["saved_not_routed"] += int(not already_routed)
+        bucket["routable_now"] += int(routable_now)
+        bucket["already_routed"] += int(already_routed)
+        bucket["blocked_disabled"] += int(not enabled)
+        bucket["blocked_no_eligible_contractors"] += int(no_eligible)
+        bucket["at_cap"] += int(at_cap)
+    return summary, {
+        f"{city}, {state}": {"city": city, "state": state, **counts}
+        for (city, state), counts in by_location.items()
+    }
+
+
+def _marketplace_request_rows(
+    evaluations: list[dict[str, Any]],
+    counts_by_id: dict[int, dict[str, int]],
+) -> list[dict[str, Any]]:
+    if not evaluations:
+        return []
+    evaluation_by_id = {evaluation["id"]: evaluation for evaluation in evaluations}
+    intakes_by_id = {
+        intake.id: intake
+        for intake in _marketplace_request_queryset().filter(id__in=evaluation_by_id)
+    }
+    return [
+        _saved_marketplace_request_row(
+            intakes_by_id[evaluation["id"]],
+            evaluation=evaluation,
+            counts=counts_by_id[evaluation["id"]],
+        )
+        for evaluation in evaluations
+    ]
+
+
+def _saved_marketplace_requests_payload(params=None) -> dict[str, Any]:
+    params = params or {}
+    qs = _filter_marketplace_requests(_marketplace_request_queryset(), params).order_by(
+        *_marketplace_request_ordering(params)
+    )
+    status_filter = _safe_text(params.get("marketplace_status"))
+    evaluations = _marketplace_request_evaluations(qs, status_filter=status_filter)
+    total_count = len(evaluations)
+    counts_by_id = _marketplace_request_counts_by_id([evaluation["id"] for evaluation in evaluations])
+    summary, by_location = _marketplace_request_aggregates(evaluations, counts_by_id)
+    page_size = max(1, min(_safe_int(params.get("page_size"), 25), 100))
+    total_pages = max(1, math.ceil(total_count / page_size))
+    page = min(max(1, _safe_int(params.get("page"), 1)), total_pages)
+    page_evaluations = evaluations[(page - 1) * page_size : page * page_size]
+    rows = _marketplace_request_rows(page_evaluations, counts_by_id)
     return {
         "summary": summary,
         "results": rows,
@@ -330,9 +479,26 @@ def _saved_marketplace_requests_payload(params=None) -> dict[str, Any]:
             "has_previous": page > 1,
             "has_next": page < total_pages,
         },
-        "by_location": {
-            f"{city}, {state}": {"city": city, "state": state, **counts}
-            for (city, state), counts in by_location.items()
+        "by_location": by_location,
+    }
+
+
+def _marketplace_overview_requests_payload(*, result_limit: int = 25) -> dict[str, Any]:
+    qs = _marketplace_request_queryset().order_by(*_marketplace_request_ordering({}))
+    evaluations = _marketplace_request_evaluations(qs)
+    counts_by_id = _marketplace_request_counts_by_id([evaluation["id"] for evaluation in evaluations])
+    summary, by_location = _marketplace_request_aggregates(evaluations, counts_by_id)
+    return {
+        "summary": summary,
+        "results": _marketplace_request_rows(evaluations[:result_limit], counts_by_id),
+        "by_location": by_location,
+        "pagination": {
+            "page": 1,
+            "page_size": result_limit,
+            "total": len(evaluations),
+            "total_pages": max(1, math.ceil(len(evaluations) / result_limit)),
+            "has_previous": False,
+            "has_next": len(evaluations) > result_limit,
         },
     }
 
@@ -806,7 +972,7 @@ class AdminMarketplaceOverview(APIView):
                 for city, state in MarketplaceLocation.objects.values_list("city", "state")
             }
         )
-        saved_marketplace_requests = _saved_marketplace_requests_payload({"page_size": 25})
+        saved_marketplace_requests = _marketplace_overview_requests_payload()
         location_rows = [
             location_readiness(city, state)
             for city, state in location_keys
