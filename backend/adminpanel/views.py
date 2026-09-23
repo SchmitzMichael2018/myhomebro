@@ -329,12 +329,17 @@ def _homeowner_display(homeowner) -> str:
 def _account_status(contractor) -> str:
     if contractor is None:
         return "unknown"
+    # Precedence is inactive/deauthorized, rejected, suspended, active, onboarding.
     if (
         getattr(contractor, "is_active", True) is False
         or getattr(getattr(contractor, "user", None), "is_active", True) is False
         or getattr(contractor, "stripe_deauthorized_at", None) is not None
     ):
         return "inactive"
+    if getattr(contractor, "marketplace_verification_status", "") == getattr(
+        Contractor, "MARKETPLACE_REJECTED", "rejected"
+    ):
+        return "rejected"
     if getattr(contractor, "marketplace_verification_status", "") == getattr(
         Contractor, "MARKETPLACE_SUSPENDED", "suspended"
     ):
@@ -349,15 +354,20 @@ def _account_status(contractor) -> str:
 def _contractor_status_q(status_value: str) -> Q:
     role_active = Q(is_active=True, user__is_active=True)
     authorized = Q(stripe_deauthorized_at__isnull=True)
+    rejected = Q(
+        marketplace_verification_status=getattr(Contractor, "MARKETPLACE_REJECTED", "rejected")
+    )
     suspended = Q(
         marketplace_verification_status=getattr(Contractor, "MARKETPLACE_SUSPENDED", "suspended")
     )
     if status_value == "active":
-        return role_active & authorized & ~suspended & Q(charges_enabled=True, payouts_enabled=True)
+        return role_active & authorized & ~rejected & ~suspended & Q(charges_enabled=True, payouts_enabled=True)
     if status_value == "onboarding":
-        return role_active & authorized & ~suspended & ~(Q(charges_enabled=True) & Q(payouts_enabled=True))
+        return role_active & authorized & ~rejected & ~suspended & ~(Q(charges_enabled=True) & Q(payouts_enabled=True))
     if status_value == "inactive":
         return Q(is_active=False) | Q(user__is_active=False) | Q(stripe_deauthorized_at__isnull=False)
+    if status_value == "rejected":
+        return role_active & authorized & rejected
     if status_value == "suspended":
         return role_active & authorized & suspended
     return Q()
@@ -1335,10 +1345,10 @@ class AdminContractors(APIView):
         base_qs = Contractor.objects.select_related("user").all()
         status_counts = {
             key: base_qs.filter(_contractor_status_q(key)).count()
-            for key in ("active", "onboarding", "inactive", "suspended")
+            for key in ("active", "onboarding", "inactive", "rejected", "suspended")
         }
         requested_status = str(request.query_params.get("status") or "operational").strip().lower()
-        if requested_status not in {"operational", "active", "onboarding", "inactive", "suspended", "all"}:
+        if requested_status not in {"operational", "active", "onboarding", "inactive", "rejected", "suspended", "all"}:
             requested_status = "operational"
         qs = base_qs
         if requested_status == "operational":

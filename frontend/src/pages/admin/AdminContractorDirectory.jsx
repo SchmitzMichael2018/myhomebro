@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../../api";
+import Modal from "../../components/Modal.jsx";
 
 const RADIUS_OPTIONS = [
   { value: "5", label: "5 miles" },
@@ -326,7 +327,12 @@ export default function AdminContractorDirectory() {
   const [importError, setImportError] = useState("");
   const [claimLinks, setClaimLinks] = useState({});
   const [joinInviteIds, setJoinInviteIds] = useState({});
+  const [directoryAction, setDirectoryAction] = useState(null);
+  const [directoryActionBusy, setDirectoryActionBusy] = useState(false);
+  const [directoryActionError, setDirectoryActionError] = useState("");
+  const directoryActionLockRef = useRef(false);
   const directoryRequestIdRef = useRef(0);
+  const directoryTableRef = useRef(null);
 
   const activeFacetFilters = useMemo(
     () => ["primary_service", "city", "state", "zip"].filter((name) => safeText(filters[name])),
@@ -609,27 +615,43 @@ export default function AdminContractorDirectory() {
     }
   }
 
-  async function archiveEntry(row) {
-    setDirectoryError("");
-    setSuccessMessage("");
-    try {
-      await api.post(`/projects/admin/contractor-directory/${row.id}/archive/`, {});
-      setSuccessMessage("Directory entry archived.");
-      await loadDirectory(filters, directoryPagination.page);
-    } catch (error) {
-      setDirectoryError(error?.response?.data?.detail || "Could not archive this directory entry.");
+  function openDirectoryAction(action, row) {
+    setDirectoryActionError("");
+    setDirectoryAction({ action, row });
+  }
+
+  function closeDirectoryAction() {
+    if (!directoryActionLockRef.current) {
+      setDirectoryActionError("");
+      setDirectoryAction(null);
     }
   }
 
-  async function restoreEntry(row) {
+  async function confirmDirectoryAction() {
+    if (!directoryAction || directoryActionLockRef.current) return;
+    const { action, row } = directoryAction;
+    directoryActionLockRef.current = true;
+    setDirectoryActionBusy(true);
+    setDirectoryActionError("");
     setDirectoryError("");
     setSuccessMessage("");
     try {
-      await api.post(`/projects/admin/contractor-directory/${row.id}/restore/`, {});
-      setSuccessMessage("Directory entry restored.");
+      await api.post(`/projects/admin/contractor-directory/${row.id}/${action}/`, {});
+      setSuccessMessage(action === "archive" ? "Directory entry archived." : "Directory entry restored.");
       await loadDirectory(filters, directoryPagination.page);
+      setDirectoryAction(null);
+      window.requestAnimationFrame(() => directoryTableRef.current?.focus());
     } catch (error) {
-      setDirectoryError(error?.response?.data?.detail || "Could not restore this directory entry.");
+      const message =
+        error?.response?.data?.detail
+        || (action === "archive"
+          ? "Could not archive this directory entry."
+          : "Could not restore this directory entry.");
+      setDirectoryActionError(message);
+      setDirectoryError(message);
+    } finally {
+      directoryActionLockRef.current = false;
+      setDirectoryActionBusy(false);
     }
   }
 
@@ -990,7 +1012,7 @@ export default function AdminContractorDirectory() {
 
         {directoryError ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{directoryError}</div> : null}
 
-        <div className="mt-4 space-y-2" data-testid="admin-contractor-directory-table">
+        <div ref={directoryTableRef} tabIndex={-1} aria-label="Contractor directory results" className="mt-4 space-y-2 outline-none" data-testid="admin-contractor-directory-table">
           {directoryRows.map((row) => (
             <article key={row.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm md:grid-cols-[minmax(12rem,1.4fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_auto] md:items-center" data-testid={`admin-contractor-directory-row-${row.id}`}>
               <div className="min-w-0">
@@ -1036,9 +1058,9 @@ export default function AdminContractorDirectory() {
                     ) : null}
                     {claimLinks[row.id] ? <button type="button" data-testid={`admin-contractor-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-emerald-50 hover:bg-white/10">Copy Claim Link</button> : null}
                     {row.is_archived ? (
-                      <button type="button" data-testid={`admin-contractor-restore-${row.id}`} onClick={() => restoreEntry(row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-emerald-50 hover:bg-white/10">Restore Archived Entry</button>
+                      <button type="button" data-testid={`admin-contractor-restore-${row.id}`} onClick={() => openDirectoryAction("restore", row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-emerald-50 hover:bg-white/10">Restore Archived Entry</button>
                     ) : (
-                      <button type="button" data-testid={`admin-contractor-archive-${row.id}`} onClick={() => archiveEntry(row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-amber-50 hover:bg-white/10">Archive/Remove Entry</button>
+                      <button type="button" data-testid={`admin-contractor-archive-${row.id}`} onClick={() => openDirectoryAction("archive", row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-amber-50 hover:bg-white/10">Archive/Remove Entry</button>
                     )}
                     <button type="button" data-testid={`admin-contractor-log-phone-${row.id}`} onClick={() => logOutreach(row, "phone", "Phone call logged manually.")} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-white hover:bg-white/10">Log Phone Call</button>
                     <button type="button" data-testid={`admin-contractor-log-form-${row.id}`} onClick={() => logOutreach(row, "website_form", "Website form submitted manually.")} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-sky-50 hover:bg-white/10">Log Website Form</button>
@@ -1092,6 +1114,54 @@ export default function AdminContractorDirectory() {
           </div>
         </div>
       </section>
+
+      <Modal
+        visible={Boolean(directoryAction)}
+        title={directoryAction?.action === "archive"
+          ? `Archive ${directoryAction?.row?.business_name || "directory entry"}?`
+          : `Restore ${directoryAction?.row?.business_name || "directory entry"}?`}
+        onClose={closeDirectoryAction}
+        testId="admin-contractor-directory-action-dialog"
+        containerClassName="mx-4 max-w-lg rounded-2xl"
+      >
+        <p className="text-sm leading-6 text-slate-700">
+          {directoryAction?.action === "archive"
+            ? "This removes the directory entry from active acquisition and outreach views. It does not delete a claimed contractor account or historical records."
+            : "This returns the directory entry to active Directory views."}
+        </p>
+        {directoryActionError ? (
+          <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
+            {directoryActionError}
+          </div>
+        ) : null}
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            data-autofocus
+            data-testid="admin-contractor-directory-action-cancel"
+            disabled={directoryActionBusy}
+            onClick={closeDirectoryAction}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="admin-contractor-directory-action-confirm"
+            disabled={directoryActionBusy}
+            onClick={confirmDirectoryAction}
+            className={`rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-60 ${
+              directoryAction?.action === "archive" ? "bg-rose-700" : "bg-emerald-700"
+            }`}
+          >
+            {directoryActionBusy
+              ? "Working..."
+              : directoryAction?.action === "archive"
+                ? "Archive entry"
+                : "Restore entry"}
+          </button>
+        </div>
+      </Modal>
 
       {editingRow ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" data-testid="admin-contractor-edit-modal">

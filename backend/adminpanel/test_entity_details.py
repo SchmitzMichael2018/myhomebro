@@ -3,7 +3,15 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from projects.models import Agreement, Contractor, ContractorActivityEvent, ContractorPublicProfile, Homeowner, Project
+from projects.models import (
+    Agreement,
+    Contractor,
+    ContractorActivityEvent,
+    ContractorPublicProfile,
+    Homeowner,
+    Project,
+    PublicContractorLead,
+)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -123,6 +131,13 @@ class AdminEntityDetailTests(APITestCase):
             business_name="Suspended Builder",
             marketplace_verification_status=Contractor.MARKETPLACE_SUSPENDED,
         )
+        rejected = Contractor.objects.create(
+            user=get_user_model().objects.create_user("rejected@example.com"),
+            business_name="Rejected Builder",
+            marketplace_verification_status=Contractor.MARKETPLACE_REJECTED,
+            charges_enabled=True,
+            payouts_enabled=True,
+        )
         deauthorized = Contractor.objects.create(
             user=get_user_model().objects.create_user("deauthorized@example.com"),
             business_name="Deauthorized Builder",
@@ -135,20 +150,100 @@ class AdminEntityDetailTests(APITestCase):
         ids = {row["id"] for row in response.data["results"]}
         self.assertEqual(ids, {self.contractor.id, onboarding.id})
         self.assertNotIn(inactive.id, ids)
+        self.assertNotIn(rejected.id, ids)
         self.assertNotIn(suspended.id, ids)
         self.assertNotIn(deauthorized.id, ids)
         self.assertEqual(response.data["status_counts"]["active"], 1)
         self.assertEqual(response.data["status_counts"]["onboarding"], 1)
         self.assertEqual(response.data["status_counts"]["inactive"], 2)
+        self.assertEqual(response.data["status_counts"]["rejected"], 1)
         self.assertEqual(response.data["status_counts"]["suspended"], 1)
+        self.assertEqual(response.data["status_counts"]["operational"], 2)
 
         inactive_response = self.client.get("/api/projects/admin/contractors/", {"status": "inactive"})
         self.assertEqual(
             {row["id"] for row in inactive_response.data["results"]},
             {inactive.id, deauthorized.id},
         )
+        rejected_response = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "rejected", "q": "Rejected Builder"},
+        )
+        self.assertEqual(rejected_response.data["count"], 1)
+        self.assertEqual(rejected_response.data["results"][0]["id"], rejected.id)
+        self.assertEqual(rejected_response.data["results"][0]["account_status"], "rejected")
+        all_search_response = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "all", "q": "Rejected Builder"},
+        )
+        self.assertEqual(all_search_response.data["results"][0]["id"], rejected.id)
         all_response = self.client.get("/api/projects/admin/contractors/", {"status": "all"})
-        self.assertEqual(all_response.data["count"], 5)
+        self.assertEqual(all_response.data["count"], 6)
+
+    def test_rejected_filter_paginates_over_rejected_population_without_mutating_history(self):
+        rejected_user = get_user_model().objects.create_user("rejected-history@example.com")
+        rejected = Contractor.objects.create(
+            user=rejected_user,
+            business_name="Rejected History Builder",
+            marketplace_verification_status=Contractor.MARKETPLACE_REJECTED,
+            charges_enabled=True,
+            payouts_enabled=True,
+            stripe_account_id="acct_rejected_history",
+        )
+        project = Project.objects.create(
+            contractor=rejected,
+            homeowner=self.customer,
+            title="Rejected Historical Project",
+        )
+        agreement = Agreement.objects.create(
+            contractor=rejected,
+            homeowner=self.customer,
+            project=project,
+            total_cost="1250.00",
+        )
+        profile = ContractorPublicProfile.objects.create(
+            contractor=rejected,
+            business_name_public="Rejected History Builder",
+        )
+        lead = PublicContractorLead.objects.create(
+            contractor=rejected,
+            public_profile=profile,
+            full_name="Historical Lead",
+            email="historical-lead@example.com",
+        )
+        activity = ContractorActivityEvent.objects.create(
+            contractor=rejected,
+            agreement=agreement,
+            event_type="historical_event",
+            title="Historical activity",
+        )
+        for index in range(30):
+            Contractor.objects.create(
+                user=get_user_model().objects.create_user(f"newer-{index:02d}@example.com"),
+                business_name=f"Newer Operational Builder {index:02d}",
+            )
+
+        all_first_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "all", "page_size": 25},
+        )
+        self.assertNotIn(rejected.id, {row["id"] for row in all_first_page.data["results"]})
+
+        rejected_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "rejected", "page_size": 25},
+        )
+        self.assertEqual(rejected_page.data["count"], 1)
+        self.assertEqual(rejected_page.data["total_pages"], 1)
+        self.assertEqual(rejected_page.data["results"][0]["id"], rejected.id)
+
+        rejected.refresh_from_db()
+        self.assertTrue(rejected.user.is_active)
+        self.assertEqual(rejected.marketplace_verification_status, Contractor.MARKETPLACE_REJECTED)
+        self.assertEqual(rejected.stripe_account_id, "acct_rejected_history")
+        self.assertTrue(Agreement.objects.filter(id=agreement.id, contractor=rejected).exists())
+        self.assertTrue(PublicContractorLead.objects.filter(id=lead.id, contractor=rejected).exists())
+        self.assertTrue(ContractorActivityEvent.objects.filter(id=activity.id, contractor=rejected).exists())
 
     def test_contractor_list_filters_and_orders_before_paginating(self):
         for index in range(30):

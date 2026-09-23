@@ -26,6 +26,10 @@ async function mockAdminDirectory(page) {
   let patchRequested = false;
   let importApplyRequested = false;
   let importApplyPayload = null;
+  let archiveRequests = 0;
+  let restoreRequests = 0;
+  let failArchive = false;
+  let failRestore = false;
   let directoryRows = [
     {
       id: 42,
@@ -206,6 +210,16 @@ async function mockAdminDirectory(page) {
     }
 
     if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/archive/')) {
+      archiveRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (failArchive) {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Archive failed safely.' }),
+        });
+        return;
+      }
       directoryRows = directoryRows.map((row) => (
         row.id === 42 ? { ...row, is_archived: true, archived_at: '2026-05-20T12:00:00Z' } : row
       ));
@@ -218,6 +232,16 @@ async function mockAdminDirectory(page) {
     }
 
     if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/restore/')) {
+      restoreRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (failRestore) {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Restore failed safely.' }),
+        });
+        return;
+      }
       directoryRows = directoryRows.map((row) => (
         row.id === 42 ? { ...row, is_archived: false, archived_at: null } : row
       ));
@@ -463,6 +487,10 @@ async function mockAdminDirectory(page) {
     wasPatchRequested: () => patchRequested,
     wasImportApplyRequested: () => importApplyRequested,
     importApplyPayload: () => importApplyPayload,
+    archiveRequestCount: () => archiveRequests,
+    restoreRequestCount: () => restoreRequests,
+    setFailArchive: (value) => { failArchive = value; },
+    setFailRestore: (value) => { failRestore = value; },
   };
 }
 
@@ -612,25 +640,102 @@ test('admin contractor directory initializes filters from marketplace URL query 
 });
 
 test('admin contractor directory archives and restores entries with archived filter', async ({ page }) => {
-  await mockAdminDirectory(page);
+  const mocks = await mockAdminDirectory(page);
 
   await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
   await page.getByTestId('admin-contractor-actions-42').click();
+  expect(mocks.archiveRequestCount()).toBe(0);
   await page.getByTestId('admin-contractor-archive-42').click();
+  const archiveDialog = page.getByTestId('admin-contractor-directory-action-dialog');
+  await expect(archiveDialog).toBeVisible();
+  await expect(archiveDialog).toContainText('Archive Austin Concrete Co?');
+  await expect(archiveDialog.getByText('It does not delete a claimed contractor account or historical records.')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-directory-action-cancel')).toBeFocused();
+  expect(mocks.archiveRequestCount()).toBe(0);
+  await page.getByTestId('admin-contractor-directory-action-cancel').click();
+  await expect(archiveDialog).not.toBeVisible();
+  expect(mocks.archiveRequestCount()).toBe(0);
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  await expect(page.getByTestId('admin-contractor-archive-42')).toBeFocused();
+
+  await page.getByTestId('admin-contractor-archive-42').click();
+  await page.keyboard.press('Escape');
+  await expect(archiveDialog).not.toBeVisible();
+  expect(mocks.archiveRequestCount()).toBe(0);
+
+  await page.getByTestId('admin-contractor-archive-42').click();
+  await page.screenshot({ path: 'test-results/admin-directory-archive-confirmation.png', fullPage: true });
+  await page.getByTestId('admin-contractor-directory-action-confirm').dblclick();
+  await expect.poll(() => mocks.archiveRequestCount()).toBe(1);
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('Directory entry archived.');
   await expect(page.getByTestId('admin-contractor-directory-table')).not.toContainText('Austin Concrete Co');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toBeFocused();
 
   await page.getByTestId('admin-contractor-filter-archived').selectOption('archived');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
   await page.getByTestId('admin-contractor-actions-42').click();
   await expect(page.getByTestId('admin-contractor-restore-42')).toBeVisible();
   await page.getByTestId('admin-contractor-restore-42').click();
+  const restoreDialog = page.getByTestId('admin-contractor-directory-action-dialog');
+  await expect(restoreDialog).toContainText('Restore Austin Concrete Co?');
+  expect(mocks.restoreRequestCount()).toBe(0);
+  await page.getByTestId('admin-contractor-directory-action-cancel').click();
+  await expect(restoreDialog).not.toBeVisible();
+  expect(mocks.restoreRequestCount()).toBe(0);
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+
+  await page.getByTestId('admin-contractor-restore-42').click();
+  await page.screenshot({ path: 'test-results/admin-directory-restore-confirmation.png', fullPage: true });
+  await page.getByTestId('admin-contractor-directory-action-confirm').dblclick();
+  await expect.poll(() => mocks.restoreRequestCount()).toBe(1);
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('Directory entry restored.');
   await expect(page.getByTestId('admin-contractor-directory-table')).not.toContainText('Austin Concrete Co');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toBeFocused();
 
   await page.getByTestId('admin-contractor-filter-archived').selectOption('active');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+});
+
+test('admin contractor directory preserves rows when archive and restore fail', async ({ page }) => {
+  const mocks = await mockAdminDirectory(page);
+  mocks.setFailArchive(true);
+
+  await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-contractor-actions-42').click();
+  await page.getByTestId('admin-contractor-archive-42').click();
+  await page.getByTestId('admin-contractor-directory-action-confirm').click();
+  await expect(page.getByTestId('admin-contractor-directory-action-dialog').getByRole('alert')).toContainText('Archive failed safely.');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  expect(mocks.archiveRequestCount()).toBe(1);
+
+  mocks.setFailArchive(false);
+  await page.getByTestId('admin-contractor-directory-action-confirm').click();
+  await expect(page.getByTestId('admin-contractor-directory-table')).not.toContainText('Austin Concrete Co');
+  await page.getByTestId('admin-contractor-filter-archived').selectOption('archived');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+
+  mocks.setFailRestore(true);
+  await page.getByTestId('admin-contractor-actions-42').click();
+  await page.getByTestId('admin-contractor-restore-42').click();
+  await page.getByTestId('admin-contractor-directory-action-confirm').click();
+  await expect(page.getByTestId('admin-contractor-directory-action-dialog').getByRole('alert')).toContainText('Restore failed safely.');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  expect(mocks.restoreRequestCount()).toBe(1);
+});
+
+test('admin contractor directory confirmation remains usable on mobile', async ({ page }) => {
+  await mockAdminDirectory(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-contractor-actions-42').click();
+  await page.getByTestId('admin-contractor-archive-42').click();
+  const dialog = page.getByTestId('admin-contractor-directory-action-dialog');
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: 'test-results/admin-directory-mobile-archive-confirmation.png', fullPage: true });
 });
 
 test('admin contractor directory shows no results only for true empty preview responses', async ({ page }) => {

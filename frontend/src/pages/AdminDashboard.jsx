@@ -1748,6 +1748,7 @@ export default function AdminDashboard() {
                   <option value="active">Active ({contractorPagination.status_counts.active || 0})</option>
                   <option value="onboarding">Onboarding ({contractorPagination.status_counts.onboarding || 0})</option>
                   <option value="inactive">Inactive ({contractorPagination.status_counts.inactive || 0})</option>
+                  <option value="rejected">Rejected ({contractorPagination.status_counts.rejected || 0})</option>
                   <option value="suspended">Suspended ({contractorPagination.status_counts.suspended || 0})</option>
                   <option value="all">All ({contractorPagination.status_counts.all || 0})</option>
                 </select>
