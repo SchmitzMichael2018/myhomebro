@@ -24,7 +24,7 @@ DEFAULT_MIN_VERIFIED_CONTRACTORS = 10
 DEFAULT_MIN_STRIPE_READY_CONTRACTORS = 5
 DEFAULT_MIN_TRADE_CATEGORIES = 6
 DEFAULT_MAX_BIDS_PER_REQUEST = 5
-LOCATION_MISSING_STATUS = "location_missing"
+LOCATION_MISSING_STATUS = "location_needed"
 
 CORE_TRADE_CATEGORIES = {
     "carpentry",
@@ -253,6 +253,7 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
             "trades_represented": [], "missing_trade_coverage": sorted(CORE_TRADE_CATEGORIES),
             "max_bids_per_request": thresholds.max_bids_per_request,
             "location_id": None, "admin_notes": "",
+            "activated_at": None, "routing_paused_at": None,
         }
     location = get_marketplace_location(city, state)
     thresholds = marketplace_thresholds(location)
@@ -326,6 +327,8 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
         "max_bids_per_request": thresholds.max_bids_per_request,
         "location_id": location.id if location else None,
         "admin_notes": location.admin_notes if location else "",
+        "activated_at": location.enabled_at.isoformat() if location and location.enabled_at else None,
+        "routing_paused_at": location.disabled_at.isoformat() if location and location.disabled_at else None,
     }
 
 

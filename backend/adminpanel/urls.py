@@ -23,11 +23,13 @@ from .views_goals import AdminGoals
 from .views_marketplace import (
     AdminMarketplaceAnalytics,
     AdminMarketplaceContractors,
+    AdminMarketplaceCoverage,
     AdminMarketplaceImport,
     AdminMarketplaceListingDetail,
     AdminMarketplaceListingInvite,
     AdminMarketplaceLocationStatus,
     AdminMarketplaceOverview,
+    AdminMarketplaceRequests,
     AdminMarketplaceRouteIntake,
     AdminMarketplaceVerification,
 )
@@ -83,6 +85,8 @@ urlpatterns = [
     path("recommendations/", AdminRecommendationsView.as_view(), name="admin-recommendations"),
     path("marketplace/", AdminMarketplaceOverview.as_view(), name="admin-marketplace-overview"),
     path("marketplace/analytics/", AdminMarketplaceAnalytics.as_view(), name="admin-marketplace-analytics"),
+    path("marketplace/coverage/", AdminMarketplaceCoverage.as_view(), name="admin-marketplace-coverage"),
+    path("marketplace/requests/", AdminMarketplaceRequests.as_view(), name="admin-marketplace-requests"),
     path("marketplace/locations/", AdminMarketplaceLocationStatus.as_view(), name="admin-marketplace-location-status"),
     path("marketplace/route-intake/", AdminMarketplaceRouteIntake.as_view(), name="admin-marketplace-route-intake"),
     path("marketplace/verification/", AdminMarketplaceVerification.as_view(), name="admin-marketplace-verification"),

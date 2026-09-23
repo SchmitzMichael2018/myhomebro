@@ -110,6 +110,15 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(unclaimed.status_code, 200)
         self.assertEqual([row["business_name"] for row in unclaimed.data["results"]], ["Unclaimed Missing Email Co"])
 
+        self.entry.zip_code = "78701"
+        self.entry.save(update_fields=["zip_code"])
+        searched = self.client.get(
+            "/api/projects/admin/contractor-directory/",
+            {"q": "Austin Concrete", "zip": "78701"},
+        )
+        self.assertEqual(searched.status_code, 200)
+        self.assertEqual([row["id"] for row in searched.data["results"]], [self.entry.id])
+
     def test_directory_list_returns_paginated_results(self):
         for index in range(60):
             ContractorDirectoryEntry.objects.create(

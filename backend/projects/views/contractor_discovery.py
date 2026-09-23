@@ -6,7 +6,7 @@ import json
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db.models import OuterRef, Subquery
+from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -926,9 +926,17 @@ class AdminContractorDirectoryView(APIView):
             qs = qs.exclude(website__isnull=True).exclude(website="")
         if _safe_text(request.query_params.get("has_contact_form")).lower() == "true":
             qs = qs.filter(has_contact_form=True)
+        query = _safe_text(request.query_params.get("q"))[:120]
+        if query:
+            qs = qs.filter(
+                Q(business_name__icontains=query)
+                | Q(normalized_name__icontains=query)
+                | Q(website_domain__icontains=query)
+            )
         for param, field in [
             ("city", "city__iexact"),
             ("state", "state__iexact"),
+            ("zip", "zip_code__iexact"),
             ("source", "source"),
             ("primary_service", "primary_service__iexact"),
             ("profile_status", "profile_status"),

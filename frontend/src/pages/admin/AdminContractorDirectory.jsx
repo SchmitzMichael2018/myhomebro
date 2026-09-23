@@ -166,7 +166,8 @@ function extractSearchPreviewResults(data) {
 }
 
 function csvEscape(value) {
-  const text = Array.isArray(value) ? value.join("; ") : safeText(value);
+  let text = Array.isArray(value) ? value.join("; ") : safeText(value);
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 }
 
@@ -221,11 +222,13 @@ function editFormFromRow(row) {
 function filtersFromSearch(search) {
   const params = new URLSearchParams(search || "");
   return {
+    q: params.get("q") || "",
     missing_email: params.get("missing_email") === "true",
     has_email: params.get("has_email") === "true",
     has_website: params.get("has_website") === "true",
     city: params.get("city") || "",
     state: params.get("state") || "",
+    zip: params.get("zip") || "",
     claimed: params.get("claimed") || "",
     archived: params.get("archived") || "active",
     source: params.get("source") || "",
@@ -295,11 +298,13 @@ export default function AdminContractorDirectory() {
       const params = {
         page: nextPage,
         page_size: DIRECTORY_PAGE_SIZE,
+        ...(safeText(nextFilters.q) ? { q: nextFilters.q } : {}),
         ...(nextFilters.missing_email ? { missing_email: "true" } : {}),
         ...(nextFilters.has_email ? { has_email: "true" } : {}),
         ...(nextFilters.has_website ? { has_website: "true" } : {}),
         ...(safeText(nextFilters.city) ? { city: nextFilters.city } : {}),
         ...(safeText(nextFilters.state) ? { state: nextFilters.state } : {}),
+        ...(safeText(nextFilters.zip) ? { zip: nextFilters.zip } : {}),
         ...(safeText(nextFilters.claimed) ? { claimed: nextFilters.claimed } : {}),
         ...(safeText(nextFilters.archived) ? { archived: nextFilters.archived } : {}),
         ...(safeText(nextFilters.source) ? { source: nextFilters.source } : {}),
@@ -823,6 +828,7 @@ export default function AdminContractorDirectory() {
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-4 lg:grid-cols-8">
+          <input data-testid="admin-contractor-filter-q" placeholder="Business name" value={filters.q} onChange={(event) => setFilterField("q", event.target.value)} className={inputClass} />
           <label className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm font-semibold text-sky-100">
             <input type="checkbox" data-testid="admin-contractor-filter-missing-email" checked={filters.missing_email} onChange={(event) => setFilterField("missing_email", event.target.checked)} />
             Missing Email
@@ -837,6 +843,7 @@ export default function AdminContractorDirectory() {
           </label>
           <input data-testid="admin-contractor-filter-city" placeholder="City" value={filters.city} onChange={(event) => setFilterField("city", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-state" placeholder="State" value={filters.state} onChange={(event) => setFilterField("state", event.target.value)} className={inputClass} />
+          <input data-testid="admin-contractor-filter-zip" placeholder="ZIP" value={filters.zip} onChange={(event) => setFilterField("zip", event.target.value)} className={inputClass} />
           <select value={filters.claimed} onChange={(event) => setFilterField("claimed", event.target.value)} className={inputClass}>
             <option value="">Claimed</option>
             <option value="true">Claimed</option>
