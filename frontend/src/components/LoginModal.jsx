@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import logo from "../assets/myhomebro_logo.png";
 import { resolveAuthenticatedEntry } from "../lib/contractorOnboardingRoute.js";
 import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
+import PendingEmailVerificationNotice from "./PendingEmailVerificationNotice.jsx";
 
 /**
  * LoginModal (Sign In only)
@@ -32,6 +33,7 @@ export default function LoginModal() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState(null);
 
   const [rememberMe, setRememberMe] = useState(true);
   const [inviteToken, setInviteToken] = useState("");
@@ -45,6 +47,7 @@ export default function LoginModal() {
   }, []);
   const close = useCallback(() => {
     if (!loading) {
+      setPendingVerification(null);
       setVisible(false);
       window.setTimeout(() => {
         const opener = openerRef.current;
@@ -326,8 +329,18 @@ export default function LoginModal() {
       setVisible(false);
       navigate(nextRoute);
     } catch (err) {
+      const responseData = err?.response?.data;
+      if (
+        err?.response?.status === 403 &&
+        responseData?.code === "email_verification_required" &&
+        responseData?.verification_session
+      ) {
+        setPendingVerification({
+          verificationSession: responseData.verification_session,
+        });
+        return;
+      }
       toast.error(getLoginErrorMessage(err));
-      console.error("Login error:", err);
     } finally {
       setLoading(false);
     }
@@ -404,7 +417,10 @@ export default function LoginModal() {
               </div>
               <input
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setPendingVerification(null);
+                  setEmail(e.target.value);
+                }}
                 type="email"
                 required
                 data-testid="login-email-input"
@@ -430,7 +446,10 @@ export default function LoginModal() {
                 <div className="mhb-login-password-row">
                   <input
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPendingVerification(null);
+                      setPassword(e.target.value);
+                    }}
                     type={showPw ? "text" : "password"}
                     required
                     data-testid="login-password-input"
@@ -503,6 +522,13 @@ export default function LoginModal() {
                 </div>
               </div>
             </label>
+
+            {pendingVerification ? (
+              <PendingEmailVerificationNotice
+                email={email}
+                verificationSession={pendingVerification.verificationSession}
+              />
+            ) : null}
 
             <button
               type="submit"

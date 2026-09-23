@@ -1,19 +1,40 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+import re
+import threading
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.tokens import default_token_generator
+from django.core.cache import cache
 from django.core import mail, signing
-from django.test import RequestFactory, TestCase, override_settings
+from django.db import close_old_connections, connection
+from django.test import (
+    RequestFactory,
+    TestCase,
+    TransactionTestCase,
+    override_settings,
+)
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework.test import APIClient
+from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.admin import CustomUserAdmin
 from accounts.models import AccountSecurityEvent, PhoneVerificationChallenge, User
-from accounts.services.verification import request_phone_code, verification_token, verify_phone_code
+from accounts.services.verification import (
+    request_phone_code,
+    reserve_email_verification_version,
+    rollback_email_verification_version,
+    send_verification_email,
+    user_from_email_token,
+    verification_token,
+    verify_phone_code,
+)
+from accounts.verification_views import VerificationEmailAddressThrottle
 from projects.models_attribution import AccountAcquisition, AttributionEvent
 from projects.services.attribution import acquisition_report
 
@@ -118,11 +139,255 @@ class AccountVerificationTests(TestCase):
 
     def test_pending_login_routes_to_setup_without_tokens(self):
         user = self._pending_user()
-        response = self.client.post("/api/accounts/auth/login/", {"email": user.email, "password": "Strong-Test-Password-982!"}, format="json")
+        response = self.client.post("/api/accounts/auth/login/", {"email": f"  {user.email.upper()}  ", "password": "Strong-Test-Password-982!"}, format="json")
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["detail"], "Finish setting up your account.")
+        self.assertEqual(response.data["code"], "email_verification_required")
         self.assertIn("verification_session", response.data)
         self.assertNotIn("access", response.data)
+
+    def test_incorrect_credentials_do_not_reveal_pending_or_unknown_status(self):
+        user = self._pending_user()
+        pending_response = self.client.post(
+            "/api/accounts/auth/login/",
+            {"email": user.email, "password": "wrong-password"},
+            format="json",
+        )
+        unknown_response = self.client.post(
+            "/api/accounts/auth/login/",
+            {"email": "unknown@example.com", "password": "wrong-password"},
+            format="json",
+        )
+        self.assertEqual(pending_response.status_code, 401)
+        self.assertEqual(unknown_response.status_code, 401)
+        self.assertEqual(pending_response.data, unknown_response.data)
+        self.assertNotIn("code", pending_response.data)
+        self.assertNotIn("verification_session", pending_response.data)
+
+    def test_customer_and_contractor_pending_logins_share_verification_recovery(self):
+        for role in ("homeowner", "contractor"):
+            with self.subTest(role=role):
+                user = self._pending_user(
+                    email=f"{role}@example.com",
+                    verification_role=role,
+                )
+                response = self.client.post(
+                    "/api/accounts/auth/login/",
+                    {
+                        "email": user.email,
+                        "password": "Strong-Test-Password-982!",
+                    },
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(
+                    response.data["code"], "email_verification_required"
+                )
+
+    @override_settings(ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS=0)
+    def test_resend_issues_one_replacement_and_invalidates_previous_token(self):
+        user = self._pending_user()
+        previous_token = send_verification_email(user, request=self._request())
+        mail.outbox.clear()
+
+        response = self.client.post(
+            reverse("accounts_api:verification-resend-email"),
+            {
+                "email": f" {user.email.upper()} ",
+                "verification_session": verification_token(user),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["detail"],
+            "If this account is eligible, a new verification email has been sent.",
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        replacement_token = re.search(
+            r"/verify-account-email/([^/]+)/", mail.outbox[0].body
+        ).group(1)
+        self.assertNotEqual(previous_token, replacement_token)
+
+        previous = self.client.get(
+            reverse(
+                "accounts_api:verify-account-email",
+                kwargs={"token": previous_token},
+            )
+        )
+        self.assertIn("status=expired", previous.url)
+        replacement = self.client.get(
+            reverse(
+                "accounts_api:verify-account-email",
+                kwargs={"token": replacement_token},
+            )
+        )
+        self.assertIn("status=email_verified", replacement.url)
+
+    @override_settings(ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS=60)
+    def test_resend_cooldown_prevents_immediate_repeat(self):
+        user = self._pending_user()
+        send_verification_email(user, request=self._request())
+        mail.outbox.clear()
+
+        response = self.client.post(
+            reverse("accounts_api:verification-resend-email"),
+            {
+                "email": user.email,
+                "verification_session": verification_token(user),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreater(response.data["cooldown_seconds"], 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_public_resend_does_not_leak_ineligible_or_unknown_status(self):
+        eligible = self._pending_user(email="eligible@example.com")
+        cooldown_eligible = self._pending_user(email="cooldown@example.com")
+        send_verification_email(cooldown_eligible, request=self._request())
+        AccountSecurityEvent.objects.filter(
+            user=cooldown_eligible,
+            event_type="verification_email_sent",
+        ).update(created_at=timezone.now() - timedelta(seconds=17))
+        mail.outbox.clear()
+        verified = User.objects.create_user(
+            "verified-resend@example.com",
+            "Strong-Test-Password-982!",
+            is_active=True,
+            email_verified_at=timezone.now(),
+            verification_state=User.VerificationState.VERIFIED,
+        )
+        disabled = self._pending_user(
+            email="disabled@example.com",
+            verification_state=User.VerificationState.DISABLED,
+        )
+        suspended = self._pending_user(
+            email="suspended@example.com",
+            verification_state=User.VerificationState.SUSPICIOUS,
+            trust_classification=User.TrustClassification.SUSPICIOUS,
+        )
+        spam = self._pending_user(
+            email="spam@example.com",
+            trust_classification=User.TrustClassification.SPAM_FRAUD,
+        )
+        expected = None
+        for email in (
+            eligible.email,
+            cooldown_eligible.email,
+            verified.email,
+            disabled.email,
+            suspended.email,
+            spam.email,
+            "unknown@example.com",
+        ):
+            with self.subTest(email=email):
+                response = self.client.post(
+                    reverse("accounts_api:verification-resend-email"),
+                    {"email": email},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                expected = expected or response.data
+                self.assertEqual(response.data, expected)
+                self.assertEqual(
+                    response.data["cooldown_seconds"],
+                    settings.ACCOUNT_EMAIL_RESEND_COOLDOWN_SECONDS,
+                )
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_failed_replacement_delivery_preserves_previous_token(self):
+        user = self._pending_user()
+        previous_token = send_verification_email(user, request=self._request())
+        previous_version = user.email_verification_token_version
+
+        with patch(
+            "accounts.services.verification.send_mail",
+            side_effect=RuntimeError("delivery unavailable"),
+        ):
+            with self.assertRaises(RuntimeError):
+                send_verification_email(user, request=self._request())
+
+        user.refresh_from_db()
+        self.assertEqual(user.email_verification_token_version, previous_version)
+        self.assertEqual(user_from_email_token(previous_token), user)
+
+    def test_repeated_successful_issuance_only_accepts_latest_token(self):
+        user = self._pending_user()
+        first_token = send_verification_email(user, request=self._request())
+        second_token = send_verification_email(user, request=self._request())
+        third_token = send_verification_email(user, request=self._request())
+
+        for superseded_token in (first_token, second_token):
+            with self.assertRaises(signing.BadSignature):
+                user_from_email_token(superseded_token)
+        self.assertEqual(user_from_email_token(third_token), user)
+        user.refresh_from_db()
+        self.assertEqual(user.email_verification_token_version, 3)
+
+    def test_failed_rollback_cannot_overwrite_newer_version(self):
+        user = self._pending_user(email_verification_token_version=3)
+        updated = rollback_email_verification_version(
+            user.pk,
+            reserved_version=2,
+            previous_version=1,
+        )
+        user.refresh_from_db()
+        self.assertEqual(updated, 0)
+        self.assertEqual(user.email_verification_token_version, 3)
+
+    def test_resend_is_throttled_by_normalized_email_and_client_ip(self):
+        endpoint = reverse("accounts_api:verification-resend-email")
+        cache.clear()
+        with patch.dict(
+            VerificationEmailAddressThrottle.THROTTLE_RATES,
+            {"verification_email_address": "1/hour"},
+            clear=False,
+        ):
+            first = self.client.post(
+                endpoint,
+                {"email": " Unknown@Example.com "},
+                format="json",
+                REMOTE_ADDR="203.0.113.1",
+            )
+            second = self.client.post(
+                endpoint,
+                {"email": "unknown@example.com"},
+                format="json",
+                REMOTE_ADDR="203.0.113.2",
+            )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
+        cache.clear()
+        with (
+            patch.dict(
+                ScopedRateThrottle.THROTTLE_RATES,
+                {"verification_email": "1/hour"},
+                clear=False,
+            ),
+            patch.dict(
+                VerificationEmailAddressThrottle.THROTTLE_RATES,
+                {"verification_email_address": "10/hour"},
+                clear=False,
+            ),
+        ):
+            first = self.client.post(
+                endpoint,
+                {"email": "first-unknown@example.com"},
+                format="json",
+                REMOTE_ADDR="203.0.113.3",
+            )
+            second = self.client.post(
+                endpoint,
+                {"email": "second-unknown@example.com"},
+                format="json",
+                REMOTE_ADDR="203.0.113.3",
+            )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
 
     def test_legacy_user_retains_access_without_false_verification(self):
         user = User.objects.create_user(email="legacy@example.com", password="Strong-Test-Password-982!")
@@ -147,10 +412,12 @@ class AccountVerificationTests(TestCase):
     def test_tampered_and_expired_email_links_are_rejected(self):
         user = self._pending_user()
         token = verification_token(user)
-        tampered = token[:-1] + ("x" if token[-1] != "x" else "y")
+        payload, timestamp, signature = token.rsplit(":", 2)
+        tampered_signature = ("x" if signature[0] != "x" else "y") + signature[1:]
+        tampered = ":".join((payload, timestamp, tampered_signature))
         response = self.client.get(reverse("accounts_api:verify-account-email", kwargs={"token": tampered}))
         self.assertIn("status=expired", response.url)
-        with patch("accounts.verification_views.user_from_token", side_effect=signing.SignatureExpired):
+        with patch("accounts.verification_views.user_from_email_token", side_effect=signing.SignatureExpired):
             response = self.client.get(reverse("accounts_api:verify-account-email", kwargs={"token": token}))
         self.assertIn("status=expired", response.url)
 
@@ -245,3 +512,113 @@ class AccountVerificationTests(TestCase):
         report = acquisition_report()
         self.assertEqual(report["source_funnel"]["campaign"]["signups"], 1)
         self.assertEqual(report["funnel_events"]["account_created"], 1)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class ConcurrentEmailVerificationIssuanceTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "concurrent@example.com",
+            "Strong-Test-Password-982!",
+            verification_state=User.VerificationState.PENDING_EMAIL,
+            is_active=False,
+        )
+
+    def _issue(self):
+        close_old_connections()
+        try:
+            user = User.objects.get(pk=self.user.pk)
+            return send_verification_email(user)
+        finally:
+            close_old_connections()
+
+    @staticmethod
+    def _delivery_version(args):
+        token = re.search(r"/verify-account-email/([^/]+)/", args[1]).group(1)
+        return signing.loads(
+            token,
+            salt="accounts.email_verification.v2",
+        )["version"]
+
+    def test_overlapping_failure_does_not_block_newer_success(self):
+        first_reserved = threading.Event()
+        release_first_reservation = threading.Event()
+
+        def delivery(*args, **kwargs):
+            self.assertFalse(connection.in_atomic_block)
+            if self._delivery_version(args) == 1:
+                raise RuntimeError("first delivery failed")
+            return 1
+
+        def reserve(user_id):
+            reservation = reserve_email_verification_version(user_id)
+            if reservation[1] == 1:
+                first_reserved.set()
+                self.assertTrue(release_first_reservation.wait(timeout=5))
+            return reservation
+
+        with (
+            patch("accounts.services.verification.send_mail", side_effect=delivery),
+            patch("accounts.services.verification.log_event"),
+            patch(
+                "accounts.services.verification.reserve_email_verification_version",
+                side_effect=reserve,
+            ),
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                failed = executor.submit(self._issue)
+                self.assertTrue(first_reserved.wait(timeout=5))
+                succeeded = executor.submit(self._issue)
+                replacement_token = succeeded.result(timeout=5)
+                release_first_reservation.set()
+                with self.assertRaises(RuntimeError):
+                    failed.result(timeout=5)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email_verification_token_version, 2)
+        self.assertEqual(user_from_email_token(replacement_token), self.user)
+
+    def test_overlapping_successes_only_accept_highest_reserved_version(self):
+        first_reserved = threading.Event()
+        release_first_reservation = threading.Event()
+        second_delivery_started = threading.Event()
+        delivery_barrier = threading.Barrier(2)
+
+        def delivery(*args, **kwargs):
+            self.assertFalse(connection.in_atomic_block)
+            if self._delivery_version(args) == 2:
+                second_delivery_started.set()
+            delivery_barrier.wait(timeout=5)
+            return 1
+
+        def reserve(user_id):
+            reservation = reserve_email_verification_version(user_id)
+            if reservation[1] == 1:
+                first_reserved.set()
+                self.assertTrue(release_first_reservation.wait(timeout=5))
+            return reservation
+
+        with (
+            patch("accounts.services.verification.send_mail", side_effect=delivery),
+            patch("accounts.services.verification.log_event"),
+            patch(
+                "accounts.services.verification.reserve_email_verification_version",
+                side_effect=reserve,
+            ),
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(self._issue)
+                self.assertTrue(first_reserved.wait(timeout=5))
+                second = executor.submit(self._issue)
+                self.assertTrue(second_delivery_started.wait(timeout=5))
+                release_first_reservation.set()
+                first_token = first.result(timeout=5)
+                second_token = second.result(timeout=5)
+
+        with self.assertRaises(signing.BadSignature):
+            user_from_email_token(first_token)
+        self.assertEqual(user_from_email_token(second_token), self.user)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email_verification_token_version, 2)

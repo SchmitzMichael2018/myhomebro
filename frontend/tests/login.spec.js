@@ -165,6 +165,158 @@ test('wrong password uses customer-friendly login copy', async ({ page }) => {
   await expect(
     page.getByText('No active account found with the given credentials')
   ).toHaveCount(0);
+  await expect(page.getByTestId('pending-email-verification')).toHaveCount(0);
+});
+
+test('pending account can resend verification email without leaving login', async ({
+  page,
+}) => {
+  let releaseResend;
+  const resendResponse = new Promise((resolve) => {
+    releaseResend = resolve;
+  });
+  await page.route('**/api/auth/login/', async (route) => {
+    await route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Finish setting up your account.',
+        code: 'email_verification_required',
+        verification_state: 'pending_email',
+        verification_session: 'safe-verification-session',
+      }),
+    });
+  });
+  await page.route(
+    '**/api/accounts/auth/verification/resend-email/',
+    async (route) => {
+      await resendResponse;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail:
+            'If this account is eligible, a new verification email has been sent.',
+          cooldown_seconds: 60,
+        }),
+      });
+    }
+  );
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('landing-sign-in-button').click();
+  await page
+    .getByRole('menu', { name: 'Log in options' })
+    .getByRole('button', { name: 'Contractor Log In', exact: true })
+    .click();
+  const email = page.getByTestId('login-email-input');
+  await email.fill('Pending.Contractor@Example.com');
+  await page.getByTestId('login-password-input').fill('correct-password');
+  await page.getByTestId('login-submit-button').click();
+
+  const pending = page.getByTestId('pending-email-verification');
+  await expect(pending).toContainText('Finish setting up your account.');
+  await expect(email).toHaveValue('Pending.Contractor@Example.com');
+  await expect(page.getByRole('link', { name: 'Forgot password?' })).toBeVisible();
+
+  const resend = page.getByTestId('resend-verification-email-button');
+  const resendRequest = page.waitForRequest(
+    '**/api/accounts/auth/verification/resend-email/'
+  );
+  await resend.click();
+  await expect(resend).toBeDisabled();
+  await expect(resend).toHaveText('Sending...');
+  expect((await resendRequest).postDataJSON()).toEqual({
+    email: 'pending.contractor@example.com',
+    verification_session: 'safe-verification-session',
+  });
+
+  releaseResend();
+  await expect(
+    page.getByText(
+      'If this account is eligible, a new verification email has been sent.'
+    )
+  ).toBeVisible();
+  await expect(resend).toBeDisabled();
+  await expect(resend).toContainText('Resend available in');
+});
+
+test('pending account resend displays a failure and allows retry', async ({
+  page,
+}) => {
+  await page.route('**/api/auth/login/', (route) =>
+    route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Finish setting up your account.',
+        code: 'email_verification_required',
+        verification_session: 'safe-verification-session',
+      }),
+    })
+  );
+  await page.route(
+    '**/api/accounts/auth/verification/resend-email/',
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail:
+            'We could not send the email right now. Please try again later.',
+        }),
+      })
+  );
+
+  await page.goto('/?login=1', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('login-email-input').fill('pending@example.com');
+  await page.getByTestId('login-password-input').fill('correct-password');
+  await page.getByTestId('login-submit-button').click();
+  const resend = page.getByTestId('resend-verification-email-button');
+  await resend.click();
+
+  await expect(page.getByTestId('verification-resend-failure')).toContainText(
+    'We could not send the email right now. Please try again later.'
+  );
+  await expect(resend).toBeEnabled();
+});
+
+test('customer pending login offers verification resend without changing secure-link access', async ({
+  page,
+}) => {
+  await page.route('**/api/auth/login/', (route) =>
+    route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Finish setting up your account.',
+        code: 'email_verification_required',
+        verification_session: 'customer-verification-session',
+      }),
+    })
+  );
+
+  await page.goto('/portal', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('customer-portal-login-email-input').fill(
+    'pending.customer@example.com'
+  );
+  await page.getByTestId('customer-portal-login-password-input').fill(
+    'correct-password'
+  );
+  await page.getByTestId('customer-portal-login-button').click();
+
+  await expect(page.getByTestId('pending-email-verification')).toContainText(
+    'Finish setting up your account.'
+  );
+  await expect(
+    page.getByTestId('customer-portal-login-email-input')
+  ).toHaveValue('pending.customer@example.com');
+  await expect(
+    page.getByRole('link', { name: 'Forgot Password?' })
+  ).toBeVisible();
+  await expect(
+    page.getByTestId('customer-portal-send-link-button')
+  ).toHaveText('Email Me a Secure Link');
 });
 
 test('landing login modal closes with close button and backdrop click', async ({

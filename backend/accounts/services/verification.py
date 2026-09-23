@@ -19,6 +19,7 @@ from projects.services.sms_service import normalize_phone_to_e164
 
 logger = logging.getLogger(__name__)
 TOKEN_SALT = "accounts.verification.v1"
+EMAIL_TOKEN_SALT = "accounts.email_verification.v2"
 TURNSTILE_SAFE_ERROR_CODES = frozenset({
     "missing-input-secret", "invalid-input-secret", "missing-input-response",
     "invalid-input-response", "bad-request", "timeout-or-duplicate",
@@ -34,6 +35,10 @@ def client_ip(request):
 def safe_continuation(value):
     value = str(value or "").strip()
     return value if value.startswith("/") and not value.startswith("//") else ""
+
+
+def normalize_account_email(value):
+    return str(value or "").strip().lower()
 
 
 def apply_registration_risk_flags(user, *, request=None):
@@ -59,6 +64,69 @@ def user_from_token(token):
     return User.objects.get(pk=payload["user"])
 
 
+def email_verification_token(user, version):
+    return signing.dumps(
+        {
+            "user": user.pk,
+            "purpose": "email_verification",
+            "version": version,
+        },
+        salt=EMAIL_TOKEN_SALT,
+        compress=True,
+    )
+
+
+def reserve_email_verification_version(user_id):
+    while True:
+        current_version = User.objects.values_list(
+            "email_verification_token_version", flat=True
+        ).get(pk=user_id)
+        next_version = current_version + 1
+        updated = User.objects.filter(
+            pk=user_id,
+            email_verification_token_version=current_version,
+        ).update(email_verification_token_version=next_version)
+        if updated:
+            return current_version, next_version
+
+
+def rollback_email_verification_version(user_id, reserved_version, previous_version):
+    return User.objects.filter(
+        pk=user_id,
+        email_verification_token_version=reserved_version,
+    ).update(email_verification_token_version=previous_version)
+
+
+def user_from_email_token(token):
+    max_age = getattr(settings, "ACCOUNT_VERIFICATION_TOKEN_MAX_AGE", 86400)
+    try:
+        payload = signing.loads(token, salt=EMAIL_TOKEN_SALT, max_age=max_age)
+        if payload.get("purpose") != "email_verification":
+            raise signing.BadSignature("Wrong token purpose")
+        user = User.objects.get(pk=payload["user"])
+        if payload.get("version") != user.email_verification_token_version:
+            raise signing.BadSignature("Superseded email verification token")
+        return user
+    except (signing.BadSignature, User.DoesNotExist):
+        user = user_from_token(token)
+        if user.email_verification_token_version != 0:
+            raise signing.BadSignature("Superseded legacy email verification token")
+        return user
+
+
+def is_email_verification_eligible(user):
+    return bool(
+        not user.is_active
+        and not user.email_verified_at
+        and user.verification_state == User.VerificationState.PENDING_EMAIL
+        and user.trust_classification
+        not in {
+            User.TrustClassification.SUSPICIOUS,
+            User.TrustClassification.SPAM_FRAUD,
+        }
+    )
+
+
 def log_event(event_type, *, user=None, request=None, metadata=None):
     return AccountSecurityEvent.objects.create(
         user=user,
@@ -69,16 +137,25 @@ def log_event(event_type, *, user=None, request=None, metadata=None):
 
 
 def send_verification_email(user, *, request=None):
-    token = verification_token(user)
+    previous_version, next_version = reserve_email_verification_version(user.pk)
+    current_user = User.objects.get(pk=user.pk)
+    token = email_verification_token(current_user, next_version)
     url = f"{str(settings.SITE_URL).rstrip('/')}/api/accounts/auth/verify-account-email/{token}/"
-    send_mail(
-        "Verify your MyHomeBro email",
-        "Thanks for creating your MyHomeBro account.\n\nVerify your email address to continue setting up your account:\n"
-        f"{url}\n\nIf you didn't create this account, you can ignore this message.",
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            "Verify your MyHomeBro email",
+            "Thanks for creating your MyHomeBro account.\n\nVerify your email address to continue setting up your account:\n"
+            f"{url}\n\nIf you didn't create this account, you can ignore this message.",
+            settings.DEFAULT_FROM_EMAIL,
+            [current_user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        rollback_email_verification_version(
+            user.pk, next_version, previous_version
+        )
+        raise
+    user.email_verification_token_version = next_version
     log_event("verification_email_sent", user=user, request=request)
     return token
 

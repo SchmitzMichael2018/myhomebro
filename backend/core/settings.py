@@ -678,6 +678,7 @@ DISPUTE_ESCROW_ALLOCATION_EXECUTION_ENABLED = get_bool("DISPUTE_ESCROW_ALLOCATIO
 REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
     "account_registration": get_env_var("ACCOUNT_REGISTRATION_RATE", "20/hour"),
     "verification_email": get_env_var("ACCOUNT_VERIFICATION_EMAIL_RATE", "10/hour"),
+    "verification_email_address": get_env_var("ACCOUNT_VERIFICATION_EMAIL_ADDRESS_RATE", "5/hour"),
     "verification_sms": get_env_var("ACCOUNT_VERIFICATION_SMS_RATE", "10/hour"),
     "capture_qr_public": get_env_var("CAPTURE_QR_PUBLIC_RATE", "30/hour"),
     "capture_qr_token": get_env_var("CAPTURE_QR_TOKEN_RATE", "15/hour"),
