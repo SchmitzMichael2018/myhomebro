@@ -620,7 +620,7 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Marketplace Operations' })).toBeVisible();
-  await expect(page.getByText('Monitor contractor coverage, claim readiness, service gaps, and routing health')).toBeVisible();
+  await expect(page.getByText('Monitor demand, routing, coverage, and contractor eligibility')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-summary')).toBeVisible();
   await expect(page.getByText('Total Directory Listings')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-summary').getByText('Claimed Contractors')).toBeVisible();
@@ -641,8 +641,9 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByText('Export Missing Emails CSV')).toHaveCount(0);
   await expect(page.getByText('Edit Contractor Entry')).toHaveCount(0);
 
-  await page.getByTestId('admin-marketplace-tabs').getByRole('button', { name: 'Contractor Directory' }).click();
+  await page.getByTestId('admin-marketplace-tabs').getByRole('button', { name: 'Contractor Coverage' }).click();
   await expect(page.getByTestId('admin-marketplace-contractors-view')).toBeVisible();
+  await expect(page.getByText('Read-only marketplace eligibility and service-area view')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toContainText('Claimed');
   await expect(page.getByTestId('admin-marketplace-open-directory-1')).toBeVisible();
@@ -812,21 +813,38 @@ test('legacy saved request shows missing location, stays unroutable, and opens r
   await expect(page.getByRole('dialog', { name: 'Request REQ-502' })).toBeVisible();
 });
 
-test('admin marketplace exposes map clusters and a paged request queue without bulk routing', async ({ page }) => {
+test('admin marketplace has one compact navigation and geographic coverage cards', async ({ page }) => {
   await installMarketplaceMocks(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('admin-marketplace-coverage-map')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-map-cluster-Austin|TX|78701')).toContainText('3');
-  await page.getByTestId('admin-marketplace-map-cluster-Austin|TX|78701').click();
-  await expect(page.getByTestId('admin-marketplace-map-detail')).toContainText('Austin, TX');
+  const navigation = page.getByTestId('admin-marketplace-tabs');
+  await expect(navigation).toHaveCount(1);
+  await expect(navigation.getByRole('button')).toHaveCount(6);
+  await expect(navigation.getByRole('button', { name: 'Coverage Overview' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText('Map & Coverage')).toHaveCount(0);
+  await expect(page.getByText('Directory Console')).toHaveCount(0);
+  await expect(page.getByTestId('admin-marketplace-coverage-overview')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Aggregated geographic coverage visualization' })).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701')).toContainText('Austin, TX');
+  await expect(page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701')).toContainText('3');
+  await page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701').click();
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX');
   await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toHaveCount(0);
+  const coverageTop = await page.getByTestId('admin-marketplace-coverage-overview-section').evaluate((element) => element.getBoundingClientRect().top);
+  expect(coverageTop).toBeLessThan(230);
   await page.screenshot({ path: 'test-results/marketplace-operations-desktop.png', fullPage: true });
 
-  await page.getByRole('button', { name: 'Requests', exact: true }).first().click();
+  await navigation.getByRole('button', { name: 'Requests', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/admin\/marketplace\/requests/);
   await expect(page.getByTestId('admin-marketplace-request-queue')).toContainText('Luxury Vinyl Plank Flooring');
   await expect(page.getByLabel('Select request 501')).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileNavigation = page.getByTestId('admin-marketplace-tabs');
+  await expect(mobileNavigation).toHaveCount(1);
+  expect(await mobileNavigation.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  await expect(mobileNavigation.getByRole('button', { name: 'Requests', exact: true })).toHaveAttribute('aria-current', 'page');
+  const filtersTop = await page.getByTestId('admin-marketplace-request-filters').evaluate((element) => element.getBoundingClientRect().top);
+  expect(filtersTop).toBeLessThan(250);
   await page.screenshot({ path: 'test-results/marketplace-operations-mobile.png', fullPage: true });
 });
 
@@ -852,7 +870,7 @@ test('admin marketplace import route points admins back to Contractor Directory'
   await page.goto('/app/admin/marketplace/import', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-marketplace-directory-redirect')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-directory-redirect').getByRole('heading', { name: 'Contractor Directory' })).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-directory-redirect').getByRole('heading', { name: 'Contractor Directory', exact: true })).toBeVisible();
   await expect(page.getByText('Manage contractor records, enrichment, claim links, and profile data.')).toBeVisible();
   await expect(page.getByText('Search and import new businesses')).toHaveCount(0);
 });

@@ -242,53 +242,63 @@ function routeButtonCopy(row) {
   return "Not routable";
 }
 
-function MarketplaceCoverageMap({ data, onSelect, selectedId, entityType }) {
-  const clusters = (data?.clusters || []).filter((row) => {
-    if (!row.latitude || !row.longitude) return false;
-    if (!entityType) return true;
-    return Number(row.counts?.[entityType] || 0) > 0;
-  });
-  const latitudes = clusters.map((row) => Number(row.latitude));
-  const longitudes = clusters.map((row) => Number(row.longitude));
-  const minLat = Math.min(...latitudes, 0);
-  const maxLat = Math.max(...latitudes, 1);
-  const minLng = Math.min(...longitudes, 0);
-  const maxLng = Math.max(...longitudes, 1);
-  const position = (row) => ({
-    left: `${8 + ((Number(row.longitude) - minLng) / Math.max(0.0001, maxLng - minLng)) * 84}%`,
-    top: `${8 + ((maxLat - Number(row.latitude)) / Math.max(0.0001, maxLat - minLat)) * 84}%`,
-  });
+function CoverageOverview({ data, onSelect, selectedId, entityType }) {
+  const clusters = (data?.clusters || []).filter((row) => (
+    !entityType || Number(row.counts?.[entityType] || 0) > 0
+  ));
 
   return (
     <div
-      className="relative min-h-[360px] overflow-hidden rounded-2xl border border-sky-200/20 bg-[radial-gradient(circle_at_20%_25%,rgba(56,189,248,0.20),transparent_28%),radial-gradient(circle_at_75%_65%,rgba(16,185,129,0.16),transparent_30%),linear-gradient(145deg,#061a39,#0b3154)]"
+      className="rounded-2xl border border-sky-200/20 bg-[linear-gradient(145deg,#061a39,#0b3154)] p-3 sm:p-4"
       role="region"
-      aria-label="Marketplace coverage map"
-      data-testid="admin-marketplace-coverage-map"
+      aria-label="Aggregated geographic coverage visualization"
+      data-testid="admin-marketplace-coverage-overview"
     >
-      <div className="absolute inset-0 opacity-20" aria-hidden="true" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.18) 1px, transparent 1px)", backgroundSize: "52px 52px" }} />
-      {clusters.map((row) => (
-        <button
-          key={row.id}
-          type="button"
-          onClick={() => onSelect(row)}
-          aria-label={`${row.city}, ${row.state}: ${row.total} marketplace records`}
-          aria-pressed={selectedId === row.id}
-          data-testid={`admin-marketplace-map-cluster-${row.id}`}
-          className={`absolute z-10 flex h-12 min-w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 px-2 text-sm font-black shadow-xl transition focus:outline-none focus:ring-2 focus:ring-white ${selectedId === row.id ? "border-white bg-emerald-400 text-slate-950" : "border-sky-100/70 bg-sky-500/90 text-white hover:scale-110"}`}
-          style={position(row)}
-        >
-          {row.total}
-        </button>
-      ))}
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-black text-white">Geographic coverage areas</h3>
+          <p className="mt-1 text-xs text-sky-100/65">Select an aggregated city and ZIP area to compare demand and supply.</p>
+        </div>
+        <Badge>{clusters.length} area{clusters.length === 1 ? "" : "s"}</Badge>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {clusters.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            onClick={() => onSelect(row)}
+            aria-label={`${row.city}, ${row.state}: ${row.total} marketplace records`}
+            aria-pressed={selectedId === row.id}
+            data-testid={`admin-marketplace-coverage-area-${row.id}`}
+            className={`rounded-xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-white ${
+              selectedId === row.id
+                ? "border-emerald-200/70 bg-emerald-300/20"
+                : "border-white/15 bg-white/[0.07] hover:border-sky-200/50 hover:bg-white/[0.11]"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-black text-white">{row.city}, {row.state}</div>
+                <div className="mt-0.5 text-xs text-sky-100/60">{row.zip || "City-level aggregate"}</div>
+              </div>
+              <span className="rounded-full bg-sky-300/15 px-2.5 py-1 text-xs font-black text-sky-100">{row.total}</span>
+            </div>
+            <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Requests</dt><dd className="mt-1 font-black text-white">{row.counts?.requests || 0}</dd></div>
+              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Prospects</dt><dd className="mt-1 font-black text-white">{row.counts?.directory_prospects || 0}</dd></div>
+              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Claimed</dt><dd className="mt-1 font-black text-white">{row.counts?.claimed_contractors || 0}</dd></div>
+            </dl>
+          </button>
+        ))}
+      </div>
       {!clusters.length ? (
-        <div className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-sky-100/75">
-          No stored contractor coordinates match these filters. Records remain available in the Location needed queue.
+        <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.04] p-8 text-center text-sm text-sky-100/75">
+          No aggregated coverage areas match these filters. Records without a usable location remain in the Location needed queue.
         </div>
       ) : null}
-      <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-sky-100/75 backdrop-blur">
-        Clusters use stored contractor business coordinates. Residential request coordinates are never exposed.
-      </div>
+      <p className="mt-3 text-xs text-sky-100/65">
+        Areas use city, state, and ZIP aggregates. Residential request coordinates are never exposed.
+      </p>
     </div>
   );
 }
@@ -331,7 +341,7 @@ export default function AdminMarketplacePage() {
   const [requestFilters, setRequestFilters] = useState({ q: "", city: "", state: "", trade: "", marketplace_status: "", sort: "submitted_desc" });
   const [coverageMap, setCoverageMap] = useState({ clusters: [], unlocated: {}, privacy: "" });
   const [selectedCluster, setSelectedCluster] = useState(null);
-  const [mapEntityType, setMapEntityType] = useState("");
+  const [coverageEntityType, setCoverageEntityType] = useState("");
   const [routingIds, setRoutingIds] = useState({});
   const [verificationRows, setVerificationRows] = useState([]);
   const [verificationSummary, setVerificationSummary] = useState({});
@@ -677,46 +687,43 @@ export default function AdminMarketplacePage() {
   }
 
   return (
-    <div className="mhb-admin-page min-h-full px-4 py-6 md:px-6" data-testid="admin-marketplace-page">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className={sectionClass}>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-100/65">Admin Marketplace</div>
-              <h1 className="mt-1 text-3xl font-black text-white">Marketplace Operations</h1>
-              <p className="mt-2 max-w-3xl text-sm text-sky-100/80">
-                Monitor contractor coverage, claim readiness, service gaps, and routing health. Contractor Directory remains the record management console for enrichment, imports, edits, and profile data.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/15" onClick={() => go("")}>
-                Map & Coverage
-              </button>
-              <button type="button" className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/15" onClick={() => go("requests")}>
-                Requests
-              </button>
-              <button type="button" className="rounded-xl border border-sky-200/30 bg-sky-300/10 px-4 py-2 text-sm font-extrabold text-sky-50 hover:bg-sky-300/20" onClick={() => go("contractors")}>
-                Contractor Coverage
-              </button>
-              <button type="button" className="rounded-xl border border-amber-200/30 bg-amber-300/10 px-4 py-2 text-sm font-extrabold text-amber-100 hover:bg-amber-300/20" onClick={() => go("analytics")}>
-                Analytics
-              </button>
-              <button type="button" className="rounded-xl border border-emerald-200/30 bg-emerald-300/10 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-300/20" onClick={() => go("verification")}>
-                Verification Queue
-              </button>
-              <button type="button" className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-sky-50" onClick={() => navigate("/app/admin/contractor-directory")}>
-                Open Contractor Directory
-              </button>
-            </div>
+    <div className="mhb-admin-page min-h-full px-4 py-4 md:px-6" data-testid="admin-marketplace-page">
+      <div className="mx-auto max-w-[1500px] space-y-4">
+        <header className="mhb-admin-panel rounded-2xl px-4 pb-4 pt-14 sm:p-4">
+          <div>
+            <h1 className="text-2xl font-black text-white">Marketplace Operations</h1>
+            <p className="mt-1 hidden max-w-4xl text-sm text-sky-100/75 sm:block">
+              Monitor demand, routing, coverage, and contractor eligibility. Contractor Directory remains the acquisition, enrichment, outreach, and record-management system.
+            </p>
           </div>
-          <div className="mt-5 flex flex-wrap gap-2" data-testid="admin-marketplace-tabs">
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "overview" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("")}>Map & Coverage</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "requests" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("requests")}>Requests</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "analytics" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("analytics")}>Analytics</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "coverage" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("contractors")}>Contractor Directory</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "verification" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("verification")}>Verification</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "directory" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("import")}>Directory Console</button>
-          </div>
+          <nav
+            className="no-scrollbar mt-3 flex max-w-full gap-2 overflow-x-auto pb-1"
+            aria-label="Marketplace operations"
+            data-testid="admin-marketplace-tabs"
+          >
+            {[
+              ["overview", "Coverage Overview", () => go("")],
+              ["requests", "Requests", () => go("requests")],
+              ["coverage", "Contractor Coverage", () => go("contractors")],
+              ["analytics", "Analytics", () => go("analytics")],
+              ["verification", "Verification Queue", () => go("verification")],
+              ["directory", "Contractor Directory", () => navigate("/app/admin/contractor-directory")],
+            ].map(([key, label, action]) => (
+              <button
+                key={key}
+                type="button"
+                className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-extrabold transition ${
+                  currentView === key
+                    ? "border-white bg-white text-slate-900"
+                    : "border-white/15 bg-white/[0.07] text-sky-50 hover:bg-white/[0.13]"
+                }`}
+                aria-current={currentView === key ? "page" : undefined}
+                onClick={action}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
           {status ? <div data-testid="admin-marketplace-status" className="mt-4 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-sky-50">{status}</div> : null}
         </header>
 
@@ -1026,13 +1033,13 @@ export default function AdminMarketplacePage() {
         {currentView === "overview" ? (
           <main className="space-y-6" data-testid="admin-marketplace-page">
             <Section
-              title="Map & Coverage"
-              sub="Demand is aggregated for privacy. Exact homeowner coordinates are never exposed, and records without reliable stored coordinates remain in a separate queue."
-              testId="admin-marketplace-map-coverage"
+              title="Coverage Overview"
+              sub="Aggregated geographic coverage visualization for comparing marketplace demand and contractor supply. Exact homeowner coordinates are never exposed."
+              testId="admin-marketplace-coverage-overview-section"
             >
               <div className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                <select className={inputClass} aria-label="Filter map entity type" value={mapEntityType} onChange={(event) => setMapEntityType(event.target.value)}>
-                  <option value="">All map layers</option>
+                <select className={inputClass} aria-label="Filter coverage entity type" value={coverageEntityType} onChange={(event) => setCoverageEntityType(event.target.value)}>
+                  <option value="">All coverage records</option>
                   <option value="requests">Marketplace requests</option>
                   <option value="directory_prospects">Directory prospects</option>
                   <option value="claimed_contractors">Claimed contractors</option>
@@ -1043,8 +1050,8 @@ export default function AdminMarketplacePage() {
                 <button type="button" onClick={() => go("requests")} className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900">Open request queue</button>
               </div>
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <MarketplaceCoverageMap data={coverageMap} entityType={mapEntityType} selectedId={selectedCluster?.id} onSelect={setSelectedCluster} />
-                <aside className={panelClass} aria-live="polite" data-testid="admin-marketplace-map-detail">
+                <CoverageOverview data={coverageMap} entityType={coverageEntityType} selectedId={selectedCluster?.id} onSelect={setSelectedCluster} />
+                <aside className={panelClass} aria-live="polite" data-testid="admin-marketplace-coverage-detail">
                   {selectedCluster ? (
                     <>
                       <h3 className="text-lg font-black text-white">{selectedCluster.city}, {selectedCluster.state}</h3>
@@ -1267,8 +1274,8 @@ export default function AdminMarketplacePage() {
         {currentView === "verification" ? (
           <main className="space-y-4" data-testid="admin-marketplace-verification-view">
             <Section
-              title="Contractor Verification"
-              sub="Admin approval controls marketplace eligibility. Preferred status improves customer trust and ranking, but never bypasses eligibility or bid caps."
+              title="Verification Queue"
+              sub="Review claimed contractors for marketplace eligibility and preferred status. Contractor Directory remains the source for acquisition, enrichment, outreach, and record corrections."
               testId="admin-marketplace-verification"
             >
               <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -1487,8 +1494,8 @@ export default function AdminMarketplacePage() {
         {currentView === "coverage" ? (
           <main className="space-y-4" data-testid="admin-marketplace-contractors-view">
             <Section
-              title="Marketplace Coverage"
-              sub="Read-only contractor network coverage. Use Contractor Directory for editing, enrichment import/export, duplicate review, and full profile management."
+              title="Contractor Coverage"
+              sub="Read-only marketplace eligibility and service-area view. Contractor Directory owns acquisition, enrichment, outreach, imports, duplicate review, and contractor record changes."
             >
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <input data-testid="admin-marketplace-contractor-q" className={inputClass} placeholder="Search coverage..." value={filters.q} onChange={(e) => setFilters((prev) => ({ ...prev, q: e.target.value }))} />
@@ -1597,8 +1604,8 @@ export default function AdminMarketplacePage() {
 
         {currentView === "directory" ? (
           <Section
-            title="Directory Console Owns Record Management"
-            sub="Contractor discovery search, CSV import/export, enrichment edits, duplicate prevention, and claim-link administration live in Contractor Directory."
+            title="Contractor Directory Owns Record Management"
+            sub="Contractor acquisition, enrichment, outreach, CSV import/export, duplicate prevention, and claim-link administration live in Contractor Directory."
             testId="admin-marketplace-directory-redirect"
           >
             <div className="grid gap-4 lg:grid-cols-2">
