@@ -153,6 +153,7 @@ export function protectedRoutes() {
           <Route path="admin" element={<AdminDashboard />} />
           <Route path="admin/requests" element={<AdminRequestsPage />} />
           <Route path="admin/marketplace" element={<AdminMarketplacePage />} />
+          <Route path="admin/marketplace/requests" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/analytics" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/verification" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/contractors" element={<AdminMarketplacePage />} />

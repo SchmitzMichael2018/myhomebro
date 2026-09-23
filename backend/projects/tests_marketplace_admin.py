@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -104,12 +105,12 @@ class AdminMarketplaceTests(TestCase):
             ai_project_title="Legacy project", ai_project_type="Flooring",
         )
 
-        self.assertEqual(location_readiness("", "")["status"], "location_missing")
+        self.assertEqual(location_readiness("", "")["status"], "location_needed")
         response = self.client.get("/api/projects/admin/marketplace/")
         self.assertEqual(response.status_code, 200, response.data)
         saved = response.json()["saved_marketplace_requests"]
         row = next(item for item in saved["results"] if item["id"] == intake.id)
-        self.assertEqual(row["marketplace_status"], "location_missing")
+        self.assertEqual(row["marketplace_status"], "location_needed")
         self.assertFalse(row["location_complete"])
         self.assertFalse(row["routable_now"])
         self.assertEqual(row["city"], "")
@@ -122,7 +123,7 @@ class AdminMarketplaceTests(TestCase):
         intake.save(update_fields=["project_postal_code"])
         partial = self.client.get("/api/projects/admin/marketplace/").json()["saved_marketplace_requests"]["results"][0]
         self.assertEqual(partial["zip"], "78701")
-        self.assertEqual(partial["marketplace_status"], "location_missing")
+        self.assertEqual(partial["marketplace_status"], "location_needed")
         route = self.client.post("/api/projects/admin/marketplace/route-intake/", {"intake_id": intake.id}, format="json")
         self.assertEqual(route.status_code, 202)
         self.assertEqual(route.json()["created_count"], 0)
@@ -147,7 +148,7 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(row["customer_name"], homeowner.full_name)
         self.assertEqual(row["customer_email"], homeowner.email)
         self.assertEqual(row["customer_phone"], homeowner.phone_number)
-        self.assertNotEqual(row["marketplace_status"], "location_missing")
+        self.assertNotEqual(row["marketplace_status"], "location_needed")
         self.assertFalse(row["marketplace_enabled"])
         detail = self.client.get(f"/api/projects/admin/requests/{intake.id}/")
         self.assertEqual(detail.status_code, 200)
@@ -157,13 +158,224 @@ class AdminMarketplaceTests(TestCase):
         intake.same_as_customer_address = False
         intake.save(update_fields=["project_city", "same_as_customer_address"])
         separate_address = self.client.get("/api/projects/admin/marketplace/").json()["saved_marketplace_requests"]["results"][0]
-        self.assertEqual(separate_address["marketplace_status"], "location_missing")
+        self.assertEqual(separate_address["marketplace_status"], "location_needed")
 
         intake.customer_city = ""
         intake.save(update_fields=["customer_city"])
         route = self.client.post("/api/projects/admin/marketplace/route-intake/", {"intake_id": intake.id}, format="json")
         self.assertEqual(route.status_code, 202)
-        self.assertEqual(route.json()["marketplace"]["status"], "location_missing")
+        self.assertEqual(route.json()["marketplace"]["status"], "location_needed")
+
+    @override_settings(
+        MYHOMEBRO_MARKETPLACE_MIN_CLAIMED_CONTRACTORS=1,
+        MYHOMEBRO_MARKETPLACE_MIN_VERIFIED_CONTRACTORS=1,
+        MYHOMEBRO_MARKETPLACE_MIN_STRIPE_READY_CONTRACTORS=1,
+        MYHOMEBRO_MARKETPLACE_MIN_TRADE_CATEGORIES=1,
+    )
+    def test_marketplace_request_statuses_are_backend_authoritative(self):
+        intake = ProjectIntake.objects.create(
+            post_submit_flow="multi_contractor",
+            status="submitted",
+            project_city="Austin",
+            project_state="TX",
+            ai_project_type="Roofing",
+        )
+
+        row = self.client.get("/api/projects/admin/marketplace/requests/").json()["results"][0]
+        self.assertEqual(row["id"], intake.id)
+        self.assertEqual(row["marketplace_status"], "coverage_not_activated")
+        self.assertEqual(row["marketplace_status_label"], "Coverage not activated")
+        self.assertFalse(row["routable_now"])
+
+        self.client.post(
+            "/api/projects/admin/marketplace/locations/",
+            {"city": "Austin", "state": "TX", "enabled": True},
+            format="json",
+        )
+        active = self.client.get("/api/projects/admin/marketplace/requests/").json()["results"][0]
+        self.assertEqual(active["marketplace_status"], "active")
+        self.assertTrue(active["routable_now"])
+
+        self.client.post(
+            "/api/projects/admin/marketplace/locations/",
+            {"city": "Austin", "state": "TX", "enabled": False},
+            format="json",
+        )
+        paused = self.client.get("/api/projects/admin/marketplace/requests/").json()["results"][0]
+        self.assertEqual(paused["marketplace_status"], "routing_paused")
+        self.assertFalse(paused["routable_now"])
+
+    def test_marketplace_request_queue_is_server_paginated_and_filterable(self):
+        for index in range(27):
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor",
+                status="submitted",
+                project_city="Austin" if index % 2 == 0 else "Dallas",
+                project_state="TX",
+                ai_project_type="Roofing" if index % 2 == 0 else "Plumbing",
+                customer_name=f"Customer {index}",
+            )
+
+        response = self.client.get(
+            "/api/projects/admin/marketplace/requests/",
+            {"page": 2, "page_size": 10, "city": "Austin", "trade": "Roofing"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        self.assertEqual(payload["pagination"]["page"], 2)
+        self.assertEqual(payload["pagination"]["page_size"], 10)
+        self.assertEqual(payload["pagination"]["total"], 14)
+        self.assertEqual(len(payload["results"]), 4)
+        self.assertTrue(all(row["city"] == "Austin" for row in payload["results"]))
+        self.assertEqual(payload["summary"]["total"], 14)
+        self.assertEqual(payload["summary"]["saved_not_routed"], 14)
+        self.assertEqual(sum(payload["summary"]["operational_statuses"].values()), 14)
+
+    def test_marketplace_status_filter_applies_before_stable_pagination(self):
+        matching = [
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor",
+                status="submitted",
+                ai_project_title=f"Location needed {index}",
+            )
+            for index in range(15)
+        ]
+        nonmatching = [
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor",
+                status="submitted",
+                project_city="Dallas",
+                project_state="TX",
+                ai_project_title=f"Newer located request {index}",
+            )
+            for index in range(25)
+        ]
+        newer_timestamp = timezone.now()
+        shared_timestamp = newer_timestamp - timedelta(days=1)
+        ProjectIntake.objects.filter(id__in=[row.id for row in matching]).update(
+            post_submit_flow_selected_at=shared_timestamp,
+            created_at=shared_timestamp,
+        )
+        ProjectIntake.objects.filter(id__in=[row.id for row in nonmatching]).update(
+            post_submit_flow_selected_at=newer_timestamp,
+            created_at=newer_timestamp,
+        )
+
+        first = self.client.get(
+            "/api/projects/admin/marketplace/requests/",
+            {"marketplace_status": "location_needed", "page": 1, "page_size": 10},
+        )
+        second = self.client.get(
+            "/api/projects/admin/marketplace/requests/",
+            {"marketplace_status": "location_needed", "page": 2, "page_size": 10},
+        )
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        first_payload = first.json()
+        second_payload = second.json()
+        self.assertEqual(first_payload["pagination"], {
+            "page": 1,
+            "page_size": 10,
+            "total": 15,
+            "total_pages": 2,
+            "has_previous": False,
+            "has_next": True,
+        })
+        self.assertEqual(second_payload["pagination"], {
+            "page": 2,
+            "page_size": 10,
+            "total": 15,
+            "total_pages": 2,
+            "has_previous": True,
+            "has_next": False,
+        })
+        first_ids = [row["id"] for row in first_payload["results"]]
+        second_ids = [row["id"] for row in second_payload["results"]]
+        expected_ids = sorted((row.id for row in matching), reverse=True)
+        self.assertEqual(first_ids + second_ids, expected_ids)
+        self.assertEqual(len(set(first_ids + second_ids)), 15)
+        self.assertEqual(first_payload["summary"]["total"], 15)
+        self.assertEqual(first_payload["summary"]["blocked_location_missing"], 15)
+        self.assertEqual(first_payload["summary"]["operational_statuses"], {"location_needed": 15})
+
+    def test_marketplace_overview_aggregates_all_requests_beyond_card_limit(self):
+        for index in range(15):
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor",
+                status="submitted",
+                project_city="Austin",
+                project_state="TX",
+                ai_project_title=f"Older Austin request {index}",
+            )
+        for index in range(15):
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor",
+                status="submitted",
+                project_city="Dallas",
+                project_state="TX",
+                ai_project_title=f"Newer Dallas request {index}",
+            )
+        for index in range(4):
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor",
+                status="submitted",
+                ai_project_title=f"Newest location-needed request {index}",
+            )
+
+        response = self.client.get("/api/projects/admin/marketplace/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        requests = payload["saved_marketplace_requests"]
+        self.assertEqual(len(requests["results"]), 25)
+        self.assertEqual(requests["summary"]["total"], 34)
+        self.assertEqual(requests["summary"]["saved_not_routed"], 34)
+        self.assertEqual(requests["summary"]["blocked_location_missing"], 4)
+        self.assertEqual(sum(requests["summary"]["operational_statuses"].values()), 34)
+        self.assertEqual(requests["summary"]["operational_statuses"]["location_needed"], 4)
+        self.assertEqual(requests["by_location"]["Austin, TX"]["saved_not_routed"], 15)
+        self.assertEqual(requests["by_location"]["Dallas, TX"]["saved_not_routed"], 15)
+        self.assertEqual(requests["pagination"]["total"], 34)
+        self.assertTrue(requests["pagination"]["has_next"])
+        readiness = {
+            f"{row['city']}, {row['state']}": row["marketplace_backlog"]
+            for row in payload["coverage"]["location_readiness"]
+        }
+        self.assertEqual(readiness["Austin, TX"]["saved_not_routed"], 15)
+        self.assertEqual(readiness["Dallas, TX"]["saved_not_routed"], 15)
+
+    def test_coverage_uses_business_centroid_and_never_exposes_residential_coordinates(self):
+        self.claimed_listing.latitude = 30.2672
+        self.claimed_listing.longitude = -97.7431
+        self.claimed_listing.zip_code = "78701"
+        self.claimed_listing.save(update_fields=["latitude", "longitude", "zip_code", "updated_at"])
+        ProjectIntake.objects.create(
+            post_submit_flow="multi_contractor",
+            status="submitted",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            project_address_line1="Private home address",
+            ai_project_type="Roofing",
+        )
+        ProjectIntake.objects.create(
+            post_submit_flow="multi_contractor",
+            status="submitted",
+            ai_project_type="Plumbing",
+        )
+
+        response = self.client.get("/api/projects/admin/marketplace/coverage/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        austin = next(row for row in payload["clusters"] if row["city"] == "Austin")
+        self.assertEqual(austin["coordinate_source"], "contractor_business_centroid")
+        self.assertEqual(austin["counts"]["requests"], 1)
+        self.assertEqual(austin["counts"]["claimed_contractors"], 1)
+        self.assertNotIn("address", str(payload).lower())
+        self.assertEqual(payload["unlocated"]["requests"], 1)
 
     def test_marketplace_analytics_reports_funnel_city_and_contractor_conversion(self):
         profile = ContractorPublicProfile.objects.create(contractor=self.claimed_contractor)

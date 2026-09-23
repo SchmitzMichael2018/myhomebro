@@ -15,6 +15,7 @@ function viewKey(pathname) {
   if (pathname.includes("/marketplace/listings/")) return "listing";
   if (pathname.includes("/marketplace/analytics")) return "analytics";
   if (pathname.includes("/marketplace/verification")) return "verification";
+  if (pathname.includes("/marketplace/requests")) return "requests";
   if (pathname.includes("/marketplace/contractors")) return "coverage";
   if (pathname.includes("/marketplace/import")) return "directory";
   return "overview";
@@ -233,10 +234,73 @@ function formatDate(value) {
 
 function routeButtonCopy(row) {
   if (row?.routable_now) return "Route Now";
-  if (row?.marketplace_status === "location_missing") return "Location required";
-  if (!row?.marketplace_enabled) return "Marketplace disabled";
+  if (row?.marketplace_status === "location_needed") return "Review location";
+  if (row?.marketplace_status === "routing_paused") return "Routing paused";
+  if (row?.marketplace_status === "coverage_not_activated") return "Review coverage";
+  if (row?.marketplace_status === "supply_needed") return "Build supply";
   if (row?.at_cap) return "At cap";
   return "Not routable";
+}
+
+function CoverageOverview({ data, onSelect, selectedId, entityType }) {
+  const clusters = (data?.clusters || []).filter((row) => (
+    !entityType || Number(row.counts?.[entityType] || 0) > 0
+  ));
+
+  return (
+    <div
+      className="rounded-2xl border border-sky-200/20 bg-[linear-gradient(145deg,#061a39,#0b3154)] p-3 sm:p-4"
+      role="region"
+      aria-label="Aggregated geographic coverage visualization"
+      data-testid="admin-marketplace-coverage-overview"
+    >
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-black text-white">Geographic coverage areas</h3>
+          <p className="mt-1 text-xs text-sky-100/65">Select an aggregated city and ZIP area to compare demand and supply.</p>
+        </div>
+        <Badge>{clusters.length} area{clusters.length === 1 ? "" : "s"}</Badge>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {clusters.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            onClick={() => onSelect(row)}
+            aria-label={`${row.city}, ${row.state}: ${row.total} marketplace records`}
+            aria-pressed={selectedId === row.id}
+            data-testid={`admin-marketplace-coverage-area-${row.id}`}
+            className={`rounded-xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-white ${
+              selectedId === row.id
+                ? "border-emerald-200/70 bg-emerald-300/20"
+                : "border-white/15 bg-white/[0.07] hover:border-sky-200/50 hover:bg-white/[0.11]"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-black text-white">{row.city}, {row.state}</div>
+                <div className="mt-0.5 text-xs text-sky-100/60">{row.zip || "City-level aggregate"}</div>
+              </div>
+              <span className="rounded-full bg-sky-300/15 px-2.5 py-1 text-xs font-black text-sky-100">{row.total}</span>
+            </div>
+            <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Requests</dt><dd className="mt-1 font-black text-white">{row.counts?.requests || 0}</dd></div>
+              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Prospects</dt><dd className="mt-1 font-black text-white">{row.counts?.directory_prospects || 0}</dd></div>
+              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Claimed</dt><dd className="mt-1 font-black text-white">{row.counts?.claimed_contractors || 0}</dd></div>
+            </dl>
+          </button>
+        ))}
+      </div>
+      {!clusters.length ? (
+        <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.04] p-8 text-center text-sm text-sky-100/75">
+          No aggregated coverage areas match these filters. Records without a usable location remain in the Location needed queue.
+        </div>
+      ) : null}
+      <p className="mt-3 text-xs text-sky-100/65">
+        Areas use city, state, and ZIP aggregates. Residential request coordinates are never exposed.
+      </p>
+    </div>
+  );
 }
 
 function joinInviteSummary(row) {
@@ -274,6 +338,10 @@ export default function AdminMarketplacePage() {
   const [claimLinks, setClaimLinks] = useState({});
   const [joinInviteIds, setJoinInviteIds] = useState({});
   const [savedRequests, setSavedRequests] = useState({ summary: {}, results: [] });
+  const [requestFilters, setRequestFilters] = useState({ q: "", city: "", state: "", trade: "", marketplace_status: "", sort: "submitted_desc" });
+  const [coverageMap, setCoverageMap] = useState({ clusters: [], unlocated: {}, privacy: "" });
+  const [selectedCluster, setSelectedCluster] = useState(null);
+  const [coverageEntityType, setCoverageEntityType] = useState("");
   const [routingIds, setRoutingIds] = useState({});
   const [verificationRows, setVerificationRows] = useState([]);
   const [verificationSummary, setVerificationSummary] = useState({});
@@ -298,6 +366,12 @@ export default function AdminMarketplacePage() {
           if (active) {
             setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
             setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
+          }
+          try {
+            const coverage = await api.get("/projects/admin/marketplace/coverage/");
+            if (active) setCoverageMap(coverage?.data || { clusters: [], unlocated: {}, privacy: "" });
+          } catch {
+            if (active) setCoverageMap({ clusters: [], unlocated: {}, privacy: "" });
           }
         } catch {
           if (active) {
@@ -335,6 +409,30 @@ export default function AdminMarketplacePage() {
     setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
     return readiness?.data;
   }
+
+  async function loadMarketplaceRequests(nextFilters = requestFilters, page = 1) {
+    setLoading(true);
+    setStatus("");
+    try {
+      const params = { page, page_size: 25 };
+      Object.entries(nextFilters).forEach(([key, value]) => {
+        if (String(value || "").trim()) params[key] = value;
+      });
+      const { data } = await api.get("/projects/admin/marketplace/requests/", { params });
+      setSavedRequests(data || { summary: {}, results: [], pagination: {} });
+    } catch (error) {
+      setStatus(error?.response?.data?.detail || "Could not load marketplace requests.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (whoLoading || !isAdmin || currentView !== "requests") return;
+    loadMarketplaceRequests(requestFilters, 1);
+    // Filters are applied explicitly to avoid issuing a request on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [whoLoading, isAdmin, currentView]);
 
   async function refreshVerification() {
     const params = {};
@@ -552,29 +650,6 @@ export default function AdminMarketplacePage() {
     }
   }
 
-  async function routeAllEligibleRequests() {
-    const rowsToRoute = (savedRequests.results || []).filter((row) => row.routable_now);
-    if (!rowsToRoute.length) return;
-    setStatus("");
-    let routed = 0;
-    let skipped = 0;
-    const errors = [];
-    for (const row of rowsToRoute) {
-      setRoutingIds((prev) => ({ ...prev, [row.id]: true }));
-      try {
-        const { data } = await api.post("/projects/admin/marketplace/route-intake/", { intake_id: row.id });
-        routed += Number(data?.created_count || 0);
-      } catch (error) {
-        skipped += 1;
-        errors.push(error?.response?.data?.detail || `Could not route request #${row.id}.`);
-      } finally {
-        setRoutingIds((prev) => ({ ...prev, [row.id]: false }));
-      }
-    }
-    await refreshMarketplaceOverview();
-    setStatus(errors.length ? `Routed ${routed}; ${skipped} request${skipped === 1 ? "" : "s"} skipped. ${errors[0]}` : `Routed ${routed} contractor opportunities across ${rowsToRoute.length} request${rowsToRoute.length === 1 ? "" : "s"}.`);
-  }
-
   async function applyVerificationAction(row, action) {
     if (!row?.id || verificationActionIds[row.id]) return;
     const note = verificationNotes[row.id] || "";
@@ -612,42 +687,43 @@ export default function AdminMarketplacePage() {
   }
 
   return (
-    <div className="mhb-admin-page min-h-full px-4 py-6 md:px-6" data-testid="admin-marketplace-page">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className={sectionClass}>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-100/65">Admin Marketplace</div>
-              <h1 className="mt-1 text-3xl font-black text-white">Marketplace Operations</h1>
-              <p className="mt-2 max-w-3xl text-sm text-sky-100/80">
-                Monitor contractor coverage, claim readiness, service gaps, and routing health. Contractor Directory remains the record management console for enrichment, imports, edits, and profile data.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/15" onClick={() => go("")}>
-                Overview
-              </button>
-              <button type="button" className="rounded-xl border border-sky-200/30 bg-sky-300/10 px-4 py-2 text-sm font-extrabold text-sky-50 hover:bg-sky-300/20" onClick={() => go("contractors")}>
-                Coverage View
-              </button>
-              <button type="button" className="rounded-xl border border-amber-200/30 bg-amber-300/10 px-4 py-2 text-sm font-extrabold text-amber-100 hover:bg-amber-300/20" onClick={() => go("analytics")}>
-                Analytics
-              </button>
-              <button type="button" className="rounded-xl border border-emerald-200/30 bg-emerald-300/10 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-300/20" onClick={() => go("verification")}>
-                Verification Queue
-              </button>
-              <button type="button" className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-sky-50" onClick={() => navigate("/app/admin/contractor-directory")}>
-                Open Contractor Directory
-              </button>
-            </div>
+    <div className="mhb-admin-page min-h-full px-4 py-4 md:px-6" data-testid="admin-marketplace-page">
+      <div className="mx-auto max-w-[1500px] space-y-4">
+        <header className="mhb-admin-panel rounded-2xl px-4 pb-4 pt-14 sm:p-4">
+          <div>
+            <h1 className="text-2xl font-black text-white">Marketplace Operations</h1>
+            <p className="mt-1 hidden max-w-4xl text-sm text-sky-100/75 sm:block">
+              Monitor demand, routing, coverage, and contractor eligibility. Contractor Directory remains the acquisition, enrichment, outreach, and record-management system.
+            </p>
           </div>
-          <div className="mt-5 flex flex-wrap gap-2" data-testid="admin-marketplace-tabs">
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "overview" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("")}>Overview</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "analytics" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("analytics")}>Analytics</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "coverage" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("contractors")}>Marketplace Coverage</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "verification" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("verification")}>Verification</button>
-            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "directory" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("import")}>Directory Console</button>
-          </div>
+          <nav
+            className="no-scrollbar mt-3 flex max-w-full gap-2 overflow-x-auto pb-1"
+            aria-label="Marketplace operations"
+            data-testid="admin-marketplace-tabs"
+          >
+            {[
+              ["overview", "Coverage Overview", () => go("")],
+              ["requests", "Requests", () => go("requests")],
+              ["coverage", "Contractor Coverage", () => go("contractors")],
+              ["analytics", "Analytics", () => go("analytics")],
+              ["verification", "Verification Queue", () => go("verification")],
+              ["directory", "Contractor Directory", () => navigate("/app/admin/contractor-directory")],
+            ].map(([key, label, action]) => (
+              <button
+                key={key}
+                type="button"
+                className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-extrabold transition ${
+                  currentView === key
+                    ? "border-white bg-white text-slate-900"
+                    : "border-white/15 bg-white/[0.07] text-sky-50 hover:bg-white/[0.13]"
+                }`}
+                aria-current={currentView === key ? "page" : undefined}
+                onClick={action}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
           {status ? <div data-testid="admin-marketplace-status" className="mt-4 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-sky-50">{status}</div> : null}
         </header>
 
@@ -852,8 +928,150 @@ export default function AdminMarketplacePage() {
           </main>
         ) : null}
 
+        {currentView === "requests" ? (
+          <main className="space-y-6" data-testid="admin-marketplace-requests-page">
+            <Section
+              title="Requests"
+              sub="Server-paged marketplace demand queue. Routing remains an explicit per-request action protected by eligibility, idempotency, and the five-contractor cap."
+              testId="admin-marketplace-request-filters"
+            >
+              <form
+                className="grid gap-3 md:grid-cols-2 xl:grid-cols-7"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  loadMarketplaceRequests(requestFilters, 1);
+                }}
+              >
+                <input className={inputClass} aria-label="Search requests" placeholder="Search requests" value={requestFilters.q} onChange={(event) => setRequestFilters((prev) => ({ ...prev, q: event.target.value }))} />
+                <input className={inputClass} aria-label="Filter request city" placeholder="City" value={requestFilters.city} onChange={(event) => setRequestFilters((prev) => ({ ...prev, city: event.target.value }))} />
+                <input className={inputClass} aria-label="Filter request state" placeholder="State" value={requestFilters.state} onChange={(event) => setRequestFilters((prev) => ({ ...prev, state: event.target.value }))} />
+                <input className={inputClass} aria-label="Filter request trade" placeholder="Trade" value={requestFilters.trade} onChange={(event) => setRequestFilters((prev) => ({ ...prev, trade: event.target.value }))} />
+                <select className={inputClass} aria-label="Filter marketplace status" value={requestFilters.marketplace_status} onChange={(event) => setRequestFilters((prev) => ({ ...prev, marketplace_status: event.target.value }))}>
+                  <option value="">All readiness states</option>
+                  <option value="location_needed">Location needed</option>
+                  <option value="coverage_not_activated">Coverage not activated</option>
+                  <option value="supply_needed">Supply needed</option>
+                  <option value="building_coverage">Building coverage</option>
+                  <option value="active">Active</option>
+                  <option value="routing_paused">Routing paused</option>
+                </select>
+                <select className={inputClass} aria-label="Sort requests" value={requestFilters.sort} onChange={(event) => setRequestFilters((prev) => ({ ...prev, sort: event.target.value }))}>
+                  <option value="submitted_desc">Newest submitted</option>
+                  <option value="submitted_asc">Oldest submitted</option>
+                  <option value="location_asc">Location</option>
+                  <option value="trade_asc">Trade</option>
+                  <option value="request_status_asc">Request status</option>
+                </select>
+                <button type="submit" className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900">Apply filters</button>
+              </form>
+            </Section>
+
+            <Section title="Marketplace request queue" sub={`${savedRequests.pagination?.total || 0} matching requests`} testId="admin-marketplace-request-queue">
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr>
+                      <th className={tableHeadClass}>Select</th>
+                      <th className={tableHeadClass}>Request</th>
+                      <th className={tableHeadClass}>Location / trade</th>
+                      <th className={tableHeadClass}>Readiness</th>
+                      <th className={tableHeadClass}>Supply</th>
+                      <th className={tableHeadClass}>Primary action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(savedRequests.results || []).length ? savedRequests.results.map((row) => (
+                      <tr key={row.id} data-testid={`admin-marketplace-request-row-${row.id}`} className="hover:bg-white/5">
+                        <td className={tableCellClass}>
+                          <input type="checkbox" aria-label={`Select request ${row.id}`} disabled title="Bulk routing is intentionally unavailable" />
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="font-extrabold text-white">{row.request_title}</div>
+                          <div className="mt-1 text-xs text-sky-100/60">#{row.id} · {formatDate(row.submitted_at)}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div>{row.location_complete ? [row.city, row.state, row.zip].filter(Boolean).join(", ") : "Location needed"}</div>
+                          <div className="mt-1 text-xs text-sky-100/60">{row.project_subtype || row.project_type || "Trade pending"}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <Badge tone={row.marketplace_status === "active" ? "emerald" : row.marketplace_status === "location_needed" ? "rose" : "amber"}>
+                            {row.marketplace_status_label || String(row.marketplace_status || "").replace(/_/g, " ")}
+                          </Badge>
+                          <div className="mt-2 max-w-sm text-xs text-sky-100/65">{row.marketplace_status_reason}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div>{row.eligible_contractors || 0} eligible</div>
+                          <div className="mt-1 text-xs text-sky-100/60">{row.counts?.invites || 0} invites · cap {row.cap || 5}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          {row.routable_now ? (
+                            <button type="button" onClick={() => routeSavedRequest(row)} disabled={routingIds[row.id]} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950 disabled:opacity-50">
+                              {routingIds[row.id] ? "Routing..." : "Route request"}
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => navigate(row.marketplace_action?.target || `/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">
+                              {row.marketplace_action?.label || "View request"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr><td className={tableCellClass} colSpan={6}>No marketplace requests match these filters.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <button type="button" disabled={!savedRequests.pagination?.has_previous || loading} onClick={() => loadMarketplaceRequests(requestFilters, Math.max(1, Number(savedRequests.pagination?.page || 1) - 1))} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Previous</button>
+                <span className="text-sm text-sky-100/70">Page {savedRequests.pagination?.page || 1} of {savedRequests.pagination?.total_pages || 1}</span>
+                <button type="button" disabled={!savedRequests.pagination?.has_next || loading} onClick={() => loadMarketplaceRequests(requestFilters, Number(savedRequests.pagination?.page || 1) + 1)} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Next</button>
+              </div>
+            </Section>
+          </main>
+        ) : null}
+
         {currentView === "overview" ? (
           <main className="space-y-6" data-testid="admin-marketplace-page">
+            <Section
+              title="Coverage Overview"
+              sub="Aggregated geographic coverage visualization for comparing marketplace demand and contractor supply. Exact homeowner coordinates are never exposed."
+              testId="admin-marketplace-coverage-overview-section"
+            >
+              <div className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <select className={inputClass} aria-label="Filter coverage entity type" value={coverageEntityType} onChange={(event) => setCoverageEntityType(event.target.value)}>
+                  <option value="">All coverage records</option>
+                  <option value="requests">Marketplace requests</option>
+                  <option value="directory_prospects">Directory prospects</option>
+                  <option value="claimed_contractors">Claimed contractors</option>
+                </select>
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-100/75">
+                  Location needed: <strong className="text-white">{coverageMap.unlocated?.total || 0}</strong>
+                </div>
+                <button type="button" onClick={() => go("requests")} className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900">Open request queue</button>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <CoverageOverview data={coverageMap} entityType={coverageEntityType} selectedId={selectedCluster?.id} onSelect={setSelectedCluster} />
+                <aside className={panelClass} aria-live="polite" data-testid="admin-marketplace-coverage-detail">
+                  {selectedCluster ? (
+                    <>
+                      <h3 className="text-lg font-black text-white">{selectedCluster.city}, {selectedCluster.state}</h3>
+                      <p className="mt-1 text-sm text-sky-100/65">{selectedCluster.zip || "City-level aggregate"}</p>
+                      <dl className="mt-4 grid gap-3 text-sm">
+                        <div><dt className="text-sky-100/55">Requests</dt><dd className="text-xl font-black text-white">{selectedCluster.counts?.requests || 0}</dd></div>
+                        <div><dt className="text-sky-100/55">Directory prospects</dt><dd className="text-xl font-black text-white">{selectedCluster.counts?.directory_prospects || 0}</dd></div>
+                        <div><dt className="text-sky-100/55">Claimed contractors</dt><dd className="text-xl font-black text-white">{selectedCluster.counts?.claimed_contractors || 0}</dd></div>
+                      </dl>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => { setRequestFilters((prev) => ({ ...prev, city: selectedCluster.city, state: selectedCluster.state })); go("requests"); }} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">View requests</button>
+                        <button type="button" onClick={() => openDirectoryFilters({ city: selectedCluster.city, state: selectedCluster.state })} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-extrabold text-white">View contractors</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-sky-100/70">Select a cluster to inspect demand and contractor supply.</div>
+                  )}
+                </aside>
+              </div>
+            </Section>
             <section data-testid="admin-marketplace-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
               <MetricCard testId="admin-marketplace-metric-total" label="Total Directory Listings" value={health.total} sub="Contractor records in Directory" onClick={() => openDirectoryFilters()} />
               <MetricCard testId="admin-marketplace-metric-claimed" label="Claimed Contractors" value={health.claimed} sub="Linked to contractor accounts" tone="emerald" onClick={() => openDirectoryFilters({ claimed: "true" })} />
@@ -959,15 +1177,7 @@ export default function AdminMarketplacePage() {
                 <div className="text-sm text-sky-100/70">
                   {(savedRequests.results || []).length} saved marketplace request{(savedRequests.results || []).length === 1 ? "" : "s"} tracked.
                 </div>
-                <button
-                  type="button"
-                  data-testid="admin-marketplace-route-all-eligible"
-                  onClick={routeAllEligibleRequests}
-                  disabled={!(savedRequests.results || []).some((row) => row.routable_now) || Object.values(routingIds).some(Boolean)}
-                  className="rounded-xl border border-emerald-200/35 bg-emerald-300/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-300/25 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Route All Eligible Requests
-                </button>
+                <button type="button" onClick={() => go("requests")} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-extrabold text-white">Open scalable queue</button>
               </div>
               <div className="grid gap-3 xl:grid-cols-2">
                 {(savedRequests.results || []).length ? savedRequests.results.map((row) => (
@@ -988,8 +1198,7 @@ export default function AdminMarketplacePage() {
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Badge tone={row.routable_now ? "emerald" : row.at_cap ? "sky" : "amber"}>{String(row.routed_status || "not_routed").replace(/_/g, " ")}</Badge>
-                      <Badge tone={row.marketplace_status === "location_missing" ? "rose" : "slate"}>{String(row.marketplace_status || "not_ready").replace(/_/g, " ")}</Badge>
-                      {row.location_complete ? <Badge tone={row.marketplace_enabled ? "emerald" : "amber"}>{row.marketplace_enabled ? "Marketplace enabled" : "Marketplace disabled"}</Badge> : null}
+                      <Badge tone={row.marketplace_status === "location_needed" ? "rose" : "slate"}>{row.marketplace_status_label || String(row.marketplace_status || "supply_needed").replace(/_/g, " ")}</Badge>
                     </div>
                     <p className="mt-2 text-xs text-sky-100/70">{row.reason || "No routing note available."}</p>
                     <div className="mt-3 text-xs text-sky-100/65">{row.counts?.invites || 0} invites · {row.counts?.opportunities || 0} opportunities · {row.counts?.leads || 0} leads · {row.eligible_contractors || 0} eligible · Cap {row.cap || 5}</div>
@@ -1065,8 +1274,8 @@ export default function AdminMarketplacePage() {
         {currentView === "verification" ? (
           <main className="space-y-4" data-testid="admin-marketplace-verification-view">
             <Section
-              title="Contractor Verification"
-              sub="Admin approval controls marketplace eligibility. Preferred status improves customer trust and ranking, but never bypasses eligibility or bid caps."
+              title="Verification Queue"
+              sub="Review claimed contractors for marketplace eligibility and preferred status. Contractor Directory remains the source for acquisition, enrichment, outreach, and record corrections."
               testId="admin-marketplace-verification"
             >
               <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -1285,8 +1494,8 @@ export default function AdminMarketplacePage() {
         {currentView === "coverage" ? (
           <main className="space-y-4" data-testid="admin-marketplace-contractors-view">
             <Section
-              title="Marketplace Coverage"
-              sub="Read-only contractor network coverage. Use Contractor Directory for editing, enrichment import/export, duplicate review, and full profile management."
+              title="Contractor Coverage"
+              sub="Read-only marketplace eligibility and service-area view. Contractor Directory owns acquisition, enrichment, outreach, imports, duplicate review, and contractor record changes."
             >
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <input data-testid="admin-marketplace-contractor-q" className={inputClass} placeholder="Search coverage..." value={filters.q} onChange={(e) => setFilters((prev) => ({ ...prev, q: e.target.value }))} />
@@ -1395,8 +1604,8 @@ export default function AdminMarketplacePage() {
 
         {currentView === "directory" ? (
           <Section
-            title="Directory Console Owns Record Management"
-            sub="Contractor discovery search, CSV import/export, enrichment edits, duplicate prevention, and claim-link administration live in Contractor Directory."
+            title="Contractor Directory Owns Record Management"
+            sub="Contractor acquisition, enrichment, outreach, CSV import/export, duplicate prevention, and claim-link administration live in Contractor Directory."
             testId="admin-marketplace-directory-redirect"
           >
             <div className="grid gap-4 lg:grid-cols-2">

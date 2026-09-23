@@ -204,7 +204,10 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
       request_title: 'Legacy saved request', project_type: '', project_subtype: '',
       city: '', state: '', zip: '', location_complete: false,
       customer_name: '', customer_email: '', submitted_at: '2026-05-18T14:00:00Z',
-      marketplace_status: 'location_missing', marketplace_enabled: false,
+      marketplace_status: 'location_needed',
+      marketplace_status_label: 'Location needed',
+      marketplace_status_reason: 'A complete project city and state are required before coverage or routing can be evaluated.',
+      marketplace_enabled: false,
       routed_status: 'not_routed', routable_now: false, already_routed: false,
       at_cap: false, eligible_contractors: 0,
       counts: { invites: 0, opportunities: 0, leads: 0 }, cap: 5,
@@ -456,6 +459,40 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
       });
       return;
     }
+    if (method === 'GET' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/coverage/')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          clusters: [{
+            id: 'Austin|TX|78701',
+            city: 'Austin',
+            state: 'TX',
+            zip: '78701',
+            latitude: 30.2672,
+            longitude: -97.7431,
+            coordinate_source: 'contractor_business_centroid',
+            counts: { requests: 1, directory_prospects: 1, claimed_contractors: 1 },
+            total: 3,
+          }],
+          unlocated: { requests: Number(includeLegacyMissingLocation), directory_prospects: 0, claimed_contractors: 0, total: Number(includeLegacyMissingLocation) },
+          privacy: 'Customer and request coordinates are never exposed.',
+        }),
+      });
+      return;
+    }
+    if (method === 'GET' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/requests/')) {
+      const payload = overviewPayload().saved_marketplace_requests;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...payload,
+          pagination: { page: 1, page_size: 25, total: payload.results.length, total_pages: 1, has_previous: false, has_next: false },
+        }),
+      });
+      return;
+    }
     if (method === 'POST' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/route-intake/')) {
       routeCalls += 1;
       const createdCount = requestRouted ? 0 : 5;
@@ -583,7 +620,7 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Marketplace Operations' })).toBeVisible();
-  await expect(page.getByText('Monitor contractor coverage, claim readiness, service gaps, and routing health')).toBeVisible();
+  await expect(page.getByText('Monitor demand, routing, coverage, and contractor eligibility')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-summary')).toBeVisible();
   await expect(page.getByText('Total Directory Listings')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-summary').getByText('Claimed Contractors')).toBeVisible();
@@ -604,8 +641,9 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByText('Export Missing Emails CSV')).toHaveCount(0);
   await expect(page.getByText('Edit Contractor Entry')).toHaveCount(0);
 
-  await page.getByTestId('admin-marketplace-tabs').getByRole('button', { name: 'Marketplace Coverage' }).click();
+  await page.getByTestId('admin-marketplace-tabs').getByRole('button', { name: 'Contractor Coverage' }).click();
   await expect(page.getByTestId('admin-marketplace-contractors-view')).toBeVisible();
+  await expect(page.getByText('Read-only marketplace eligibility and service-area view')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toContainText('Claimed');
   await expect(page.getByTestId('admin-marketplace-open-directory-1')).toBeVisible();
@@ -728,7 +766,6 @@ test('admin marketplace routes saved requests after location enablement without 
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Contractor Pending');
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Marketplace is not enabled for this location yet.');
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
-  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
   await expect(page.getByTestId('admin-marketplace-backlog-disabled')).toContainText('1');
 
   await page.getByTestId('admin-marketplace-location-enable-Austin-TX').click();
@@ -745,7 +782,6 @@ test('admin marketplace routes saved requests after location enablement without 
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Contractor Linked');
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toContainText('At cap');
-  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
   expect(routeRequests).toEqual([{ intake_id: 501 }]);
 });
 
@@ -763,7 +799,7 @@ test('legacy saved request shows missing location, stays unroutable, and opens r
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
   const legacy = page.getByTestId('admin-marketplace-saved-request-502');
   await expect(legacy).toContainText('Location unavailable', { timeout: 30000 });
-  await expect(legacy).toContainText('location missing');
+  await expect(legacy).toContainText(/location needed/i);
   await expect(legacy).not.toContainText('nearing ready');
   await expect(legacy).not.toContainText('Marketplace disabled');
   await expect(page.getByTestId('admin-marketplace-backlog-location-missing')).toContainText('1');
@@ -777,27 +813,39 @@ test('legacy saved request shows missing location, stays unroutable, and opens r
   await expect(page.getByRole('dialog', { name: 'Request REQ-502' })).toBeVisible();
 });
 
-test('admin marketplace bulk routes only eligible saved requests', async ({ page }) => {
+test('admin marketplace has one compact navigation and geographic coverage cards', async ({ page }) => {
   await installMarketplaceMocks(page);
-
-  const routeRequests = [];
-  page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url().includes('/api/projects/admin/marketplace/route-intake/')) {
-      routeRequests.push(request.postDataJSON());
-    }
-  });
-
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
+  const navigation = page.getByTestId('admin-marketplace-tabs');
+  await expect(navigation).toHaveCount(1);
+  await expect(navigation.getByRole('button')).toHaveCount(6);
+  await expect(navigation.getByRole('button', { name: 'Coverage Overview' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText('Map & Coverage')).toHaveCount(0);
+  await expect(page.getByText('Directory Console')).toHaveCount(0);
+  await expect(page.getByTestId('admin-marketplace-coverage-overview')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Aggregated geographic coverage visualization' })).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701')).toContainText('Austin, TX');
+  await expect(page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701')).toContainText('3');
+  await page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701').click();
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX');
+  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toHaveCount(0);
+  const coverageTop = await page.getByTestId('admin-marketplace-coverage-overview-section').evaluate((element) => element.getBoundingClientRect().top);
+  expect(coverageTop).toBeLessThan(230);
+  await page.screenshot({ path: 'test-results/marketplace-operations-desktop.png', fullPage: true });
 
-  await page.getByTestId('admin-marketplace-location-enable-Austin-TX').click();
-  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeEnabled();
-
-  await page.getByTestId('admin-marketplace-route-all-eligible').click();
-  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Routed 5 contractor opportunities across 1 request');
-  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 leads');
-  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
-  expect(routeRequests).toEqual([{ intake_id: 501 }]);
+  await navigation.getByRole('button', { name: 'Requests', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/requests/);
+  await expect(page.getByTestId('admin-marketplace-request-queue')).toContainText('Luxury Vinyl Plank Flooring');
+  await expect(page.getByLabel('Select request 501')).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileNavigation = page.getByTestId('admin-marketplace-tabs');
+  await expect(mobileNavigation).toHaveCount(1);
+  expect(await mobileNavigation.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  await expect(mobileNavigation.getByRole('button', { name: 'Requests', exact: true })).toHaveAttribute('aria-current', 'page');
+  const filtersTop = await page.getByTestId('admin-marketplace-request-filters').evaluate((element) => element.getBoundingClientRect().top);
+  expect(filtersTop).toBeLessThan(250);
+  await page.screenshot({ path: 'test-results/marketplace-operations-mobile.png', fullPage: true });
 });
 
 test('admin marketplace listing detail is a readiness view with Directory handoff', async ({ page }) => {
@@ -822,7 +870,7 @@ test('admin marketplace import route points admins back to Contractor Directory'
   await page.goto('/app/admin/marketplace/import', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-marketplace-directory-redirect')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-directory-redirect').getByRole('heading', { name: 'Contractor Directory' })).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-directory-redirect').getByRole('heading', { name: 'Contractor Directory', exact: true })).toBeVisible();
   await expect(page.getByText('Manage contractor records, enrichment, claim links, and profile data.')).toBeVisible();
   await expect(page.getByText('Search and import new businesses')).toHaveCount(0);
 });
