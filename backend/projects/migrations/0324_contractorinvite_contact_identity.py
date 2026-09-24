@@ -1,4 +1,5 @@
 import hashlib
+import re
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -6,17 +7,49 @@ from django.db import migrations, models
 from django.db.models import Q
 
 
+_PHONE_RAW_PATTERN = re.compile(r"\+?[0-9 ()\-.]+\Z", re.ASCII)
+_PHONE_E164_PATTERN = re.compile(r"\+[1-9][0-9]{7,14}\Z", re.ASCII)
+
+
+def _has_valid_phone_parentheses(raw):
+    in_group = False
+    group_has_digit = False
+    for character in raw:
+        if character == "(":
+            if in_group:
+                return False
+            in_group = True
+            group_has_digit = False
+        elif character == ")":
+            if not in_group or not group_has_digit:
+                return False
+            in_group = False
+        elif in_group and "0" <= character <= "9":
+            group_has_digit = True
+    return not in_group
+
+
 def _normalize_phone(value):
-    raw = "".join(ch for ch in str(value or "").strip() if ch.isdigit() or ch == "+")
+    raw = str(value or "").strip()
+    if (
+        not raw
+        or not raw.isascii()
+        or not _PHONE_RAW_PATTERN.fullmatch(raw)
+        or not _has_valid_phone_parentheses(raw)
+    ):
+        return ""
+    digits = "".join(character for character in raw if "0" <= character <= "9")
+    if not digits or set(digits) == {"0"}:
+        return ""
     if raw.startswith("+"):
-        digits = raw[1:]
-        return raw if digits.isdigit() and 8 <= len(digits) <= 15 else ""
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if len(digits) == 10:
-        return f"+1{digits}"
-    if len(digits) == 11 and digits.startswith("1"):
-        return f"+{digits}"
-    return ""
+        phone = f"+{digits}"
+    elif len(digits) == 10:
+        phone = f"+1{digits}"
+    elif len(digits) == 11 and digits.startswith("1"):
+        phone = f"+{digits}"
+    else:
+        return ""
+    return phone if _PHONE_E164_PATTERN.fullmatch(phone) else ""
 
 
 def _identity(invite):

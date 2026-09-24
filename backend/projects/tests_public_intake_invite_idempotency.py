@@ -113,6 +113,31 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
         )
         self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 2)
 
+    def test_valid_domestic_and_international_phone_formats_are_canonical(self):
+        domestic_first = self._patch([{"phone": "512.555.0198"}])
+        domestic_retry = self._patch([{"phone": "+1 (512) 555-0198"}])
+        international_first = self._patch([{"phone": "+44 20 7946 0958"}])
+        international_retry = self._patch([{"phone": "+44-20-7946-0958"}])
+
+        self.assertEqual(domestic_first.status_code, 200)
+        self.assertEqual(international_first.status_code, 200)
+        self.assertEqual(
+            domestic_first.json()["branch_invites"][0]["token"],
+            domestic_retry.json()["branch_invites"][0]["token"],
+        )
+        self.assertEqual(
+            international_first.json()["branch_invites"][0]["token"],
+            international_retry.json()["branch_invites"][0]["token"],
+        )
+        self.assertEqual(
+            set(
+                ContractorInvite.objects.filter(source_intake=self.intake).values_list(
+                    "contractor_phone", flat=True
+                )
+            ),
+            {"+15125550198", "+442079460958"},
+        )
+
     def test_stable_contact_identifiers_take_precedence_over_mutable_channels(self):
         identifier_cases = [
             (
@@ -237,6 +262,19 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
             {"phone": "abc"},
             {"email": "not-an-email", "phone": "512-555-0188"},
             {"email": "valid@example.com", "phone": "abc"},
+            {"email": "valid@example.com", "phone": "abc5125550188"},
+            {"email": "valid@example.com", "phone": "5125550188abc"},
+            {"email": "valid@example.com", "phone": "+00000000"},
+            {"email": "valid@example.com", "phone": "00000000"},
+            {"email": "valid@example.com", "phone": "0000000000"},
+            {"email": "valid@example.com", "phone": "++15125550188"},
+            {"email": "valid@example.com", "phone": "+1abc5125550188"},
+            {"email": "valid@example.com", "phone": "1-800-FLOWERS"},
+            {"email": "valid@example.com", "phone": "5551212"},
+            {"email": "valid@example.com", "phone": "+1234567890123456"},
+            {"email": "valid@example.com", "phone": "+1 512 555 0188 ext 2"},
+            {"email": "valid@example.com", "phone": "１２３４５６７８９０"},
+            {"email": "valid@example.com", "phone": "(512 555-0188"},
             {"email": "valid@example.com", "website_url": "https://[malformed"},
             {"email": "valid@example.com", "contractor_id": "not-an-id"},
             {"email": "valid@example.com", "contact_id": "untrusted-free-text"},
@@ -300,6 +338,9 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
         self.assertNotIn("branch_invites", response.json())
         self.assertNotIn("token", response.json())
         delivery.assert_not_called()
+        self.assertEqual(ContractorDiscoveryInvite.objects.count(), 0)
+        self.assertEqual(ContractorOpportunity.objects.count(), 0)
+        self.assertEqual(PublicContractorLead.objects.count(), 0)
 
     def test_invalid_contact_after_five_row_cap_still_rejects_whole_batch(self):
         rows = [{"email": f"valid-{index}@example.com"} for index in range(5)]
@@ -432,14 +473,14 @@ class ConcurrentPublicIntakeInviteIdempotencyTests(TransactionTestCase):
             customer_email="concurrent@example.com",
         )
 
-    def _create(self, barrier):
+    def _create(self, barrier, row=None):
         close_old_connections()
         try:
             intake = ProjectIntake.objects.get(pk=self.intake.pk)
             barrier.wait(timeout=5)
             invite, created = get_or_create_public_intake_invite(
                 intake=intake,
-                row={"email": "same@example.com"},
+                row=row or {"email": "same@example.com"},
                 homeowner_name=intake.customer_name,
                 homeowner_email=intake.customer_email,
                 homeowner_phone="",
@@ -458,3 +499,20 @@ class ConcurrentPublicIntakeInviteIdempotencyTests(TransactionTestCase):
         self.assertEqual(len({row[1] for row in results}), 1)
         self.assertEqual(sorted(row[2] for row in results), [False, True])
         self.assertEqual(ContractorInvite.objects.count(), 1)
+
+    def test_concurrent_equivalent_phone_attempts_share_one_row_and_token(self):
+        barrier = threading.Barrier(2)
+        rows = [{"phone": "(512) 555-0188"}, {"phone": "+1 512 555 0188"}]
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(
+                executor.map(
+                    lambda row: self._create(barrier, row),
+                    rows,
+                )
+            )
+
+        invite = ContractorInvite.objects.get()
+        self.assertEqual({row[0] for row in results}, {invite.pk})
+        self.assertEqual(len({row[1] for row in results}), 1)
+        self.assertEqual(sorted(row[2] for row in results), [False, True])
+        self.assertEqual(invite.contractor_phone, "+15125550188")

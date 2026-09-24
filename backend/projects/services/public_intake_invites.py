@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 import hashlib
+import re
 import threading
 from urllib.parse import urlsplit
 
@@ -20,6 +21,8 @@ from projects.services.sms_service import normalize_phone_to_e164
 
 
 _SQLITE_IDENTITY_LOCKS = tuple(threading.Lock() for _ in range(64))
+_INVITE_PHONE_RAW_PATTERN = re.compile(r"\+?[0-9 ()\-.]+\Z", re.ASCII)
+_INVITE_PHONE_E164_PATTERN = re.compile(r"\+[1-9][0-9]{7,14}\Z", re.ASCII)
 
 
 def normalize_invite_email(value) -> str:
@@ -36,11 +39,37 @@ def normalize_invite_phone(value) -> str:
     raw = str(value or "").strip()
     if not raw:
         return ""
+    if (
+        not raw.isascii()
+        or not _INVITE_PHONE_RAW_PATTERN.fullmatch(raw)
+        or not _has_valid_phone_parentheses(raw)
+    ):
+        raise ValueError("Enter a valid contractor phone number.")
+    raw_digits = "".join(character for character in raw if "0" <= character <= "9")
+    if not raw_digits or set(raw_digits) == {"0"}:
+        raise ValueError("Enter a valid contractor phone number.")
     phone = normalize_phone_to_e164(raw)
-    digits = phone[1:] if phone.startswith("+") else ""
-    if not digits.isdigit() or not 8 <= len(digits) <= 15:
+    if not _INVITE_PHONE_E164_PATTERN.fullmatch(phone):
         raise ValueError("Enter a valid contractor phone number.")
     return phone
+
+
+def _has_valid_phone_parentheses(raw: str) -> bool:
+    in_group = False
+    group_has_digit = False
+    for character in raw:
+        if character == "(":
+            if in_group:
+                return False
+            in_group = True
+            group_has_digit = False
+        elif character == ")":
+            if not in_group or not group_has_digit:
+                return False
+            in_group = False
+        elif in_group and "0" <= character <= "9":
+            group_has_digit = True
+    return not in_group
 
 
 def normalize_invite_website(value) -> str:
