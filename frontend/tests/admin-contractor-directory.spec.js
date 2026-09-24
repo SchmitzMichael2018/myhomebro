@@ -19,9 +19,18 @@ async function mockAdminDirectory(page) {
     });
   });
 
+  await page.route('**/api/projects/notifications/**', async (route) => {
+    const isUnreadCount = route.request().url().includes('/unread-count/');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(isUnreadCount ? { count: 0 } : { results: [] }),
+    });
+  });
+
   const directoryRequests = [];
   let searchRequested = false;
-  let captureRequested = false;
+  let captureRequests = 0;
   let capturePayload = null;
   let patchRequested = false;
   let importApplyRequested = false;
@@ -377,7 +386,7 @@ async function mockAdminDirectory(page) {
   await page.route('**/api/projects/admin/contractor-search/**', async (route) => {
     const requestUrl = new URL(route.request().url());
     if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-search/capture/')) {
-      captureRequested = true;
+      captureRequests += 1;
       capturePayload = JSON.parse(route.request().postData() || '{}');
       directoryRows = [
         ...directoryRows,
@@ -482,7 +491,7 @@ async function mockAdminDirectory(page) {
   return {
     directoryRequests,
     wasSearchRequested: () => searchRequested,
-    wasCaptureRequested: () => captureRequested,
+    captureRequestCount: () => captureRequests,
     capturePayload: () => capturePayload,
     wasPatchRequested: () => patchRequested,
     wasImportApplyRequested: () => importApplyRequested,
@@ -567,13 +576,32 @@ test('admin contractor directory supports search, filters, table, and export aff
   ).toBe(true);
   await page.getByTestId('admin-contractor-clear-all-filters').click();
   await expect(page.getByTestId('admin-contractor-filter-missing-email')).not.toBeChecked();
+});
+
+test('admin contractor directory captures selected search results once and preserves outreach actions', async ({ page }) => {
+  const mocks = await mockAdminDirectory(page);
+  const initialDirectoryResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/projects/admin/contractor-directory/')
+    && response.request().method() === 'GET'
+    && response.ok()
+  ));
+
+  await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
+  await initialDirectoryResponse;
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
 
   await page.getByTestId('admin-contractor-search-term').fill('concrete contractor');
   await page.getByTestId('admin-contractor-search-city').fill('Austin');
   await page.getByTestId('admin-contractor-search-state').fill('TX');
   await page.getByTestId('admin-contractor-search-zip').fill('78701');
+  const searchResponse = page.waitForResponse((response) => (
+    response.url().endsWith('/api/projects/admin/contractor-search/')
+    && response.request().method() === 'POST'
+    && response.ok()
+  ));
   await page.getByTestId('admin-contractor-search-submit').click();
 
+  await searchResponse;
   await expect.poll(() => mocks.wasSearchRequested()).toBe(true);
   await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Admin Concrete Search Result');
   await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Strong Match');
@@ -581,8 +609,18 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Weak Match');
   await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Preview only');
   await page.getByTestId('admin-contractor-search-select-1').uncheck();
-  await page.getByTestId('admin-contractor-capture-selected').click();
-  await expect.poll(() => mocks.wasCaptureRequested()).toBe(true);
+  await expect(page.getByTestId('admin-contractor-search-select-1')).not.toBeChecked();
+  const captureButton = page.getByTestId('admin-contractor-capture-selected');
+  await expect(captureButton).toBeVisible();
+  await expect(captureButton).toBeEnabled();
+  const captureResponse = page.waitForResponse((response) => (
+    response.url().endsWith('/api/projects/admin/contractor-search/capture/')
+    && response.request().method() === 'POST'
+    && response.ok()
+  ));
+  await captureButton.click();
+  await captureResponse;
+  expect(mocks.captureRequestCount()).toBe(1);
   expect(mocks.capturePayload().selected_results).toHaveLength(1);
   expect(mocks.capturePayload().selected_results[0].business_name).toBe('Admin Concrete Search Result');
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('1 contractor captured to the directory.');

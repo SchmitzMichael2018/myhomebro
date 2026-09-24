@@ -600,6 +600,9 @@ export default function AdminDashboard() {
           api.get(`${ADMIN_BASE}/subcontractors/`),
         ]);
         setSubcontractors(subcontractorRes.data?.results || []);
+      } else if (view === "subcontractors") {
+        const res = await api.get(`${ADMIN_BASE}/subcontractors/`);
+        setSubcontractors(res.data?.results || []);
       } else if (view === "homeowners") {
         const res = await api.get(`${ADMIN_BASE}/homeowners/`);
         setHomeowners(res.data?.results || []);

@@ -18,6 +18,15 @@ async function mockAdminDashboard(page) {
     });
   });
 
+  await page.route('**/api/projects/notifications/**', async (route) => {
+    const isUnreadCount = route.request().url().includes('/unread-count/');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(isUnreadCount ? { count: 0 } : { results: [] }),
+    });
+  });
+
   await page.route('**/api/projects/admin/overview**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -814,17 +823,23 @@ async function mockAdminDashboard(page) {
 test('owner admin dashboard smoke renders overview and core admin views', async ({ page }) => {
   test.setTimeout(60000);
   await mockAdminDashboard(page);
+  const overviewResponse = page.waitForResponse((response) => (
+    response.url().endsWith('/api/projects/admin/overview/')
+    && response.request().method() === 'GET'
+    && response.ok()
+  ));
 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
+  await overviewResponse;
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-overview-light.png', fullPage: true });
   await expect(page.getByText('Admin Home')).toHaveCount(0);
   await expect(page.getByText('Support Tools')).toHaveCount(0);
-  await expect(page.getByText('Marketplace Operations Center')).toBeVisible();
-  await expect(page.getByTestId('admin-navigation-tab-support')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-operations-center')).toContainText('Platform Operations Center');
+  await expect(page.getByTestId('admin-navigation-tab-marketplace')).toBeVisible();
   await expect(page.getByTestId('admin-navigation-tab-fee_audit')).toBeVisible();
-  await expect(page.getByTestId('admin-navigation-tab-platform_health')).toBeVisible();
+  await expect(page.getByTestId('admin-navigation-tab-settings')).toBeVisible();
   const attentionClass = await page.getByTestId('admin-needs-attention').getAttribute('class');
   expect(attentionClass).toContain('bg-[#061d42]/95');
   await expect(page.getByTestId('admin-quick-actions')).toBeVisible();
@@ -889,7 +904,7 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await page.goto('/app/admin?view=support', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('admin-navigation-tab-support')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('admin-navigation-tabs').getByRole('tab', { selected: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Support' })).toBeVisible();
   await expect(page.getByText('Password Reset', { exact: true })).toBeVisible();
   await expect(page.getByText("Send a password reset email using Django's standard reset flow.")).toBeVisible();
@@ -1191,8 +1206,14 @@ test('admin templates page renders system template management controls', async (
     return route.continue();
   });
 
+  const templatesResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/projects/templates/')
+    && response.request().method() === 'GET'
+    && response.ok()
+  ));
   await page.goto('/app/admin/templates', { waitUntil: 'domcontentloaded' });
 
+  await templatesResponse;
   await expect(page.getByRole('heading', { name: 'Admin Templates' })).toBeVisible();
   if (await page.getByTestId('templates-new-draft-button').count()) {
     await expect(page.getByTestId('templates-new-draft-button')).toContainText('Create System Template');
