@@ -32,6 +32,7 @@ from projects.services.contractor_directory import upsert_directory_entry_from_p
 from projects.services.project_titles import is_home_addition_description, normalize_project_classification
 from projects.services.notification_center import create_notification
 from projects.services.customer_lifecycle import upsert_customer_for_public_lead
+from projects.services.marketplace_permissions import contractor_direct_invite_block_reason
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
 from projects.services.recipient_validation import normalize_valid_email
@@ -1381,6 +1382,10 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
                 continue
             contractor = getattr(listing, "claimed_contractor", None)
             profile = getattr(contractor, "public_profile", None) if contractor is not None else None
+
+        block_reason = contractor_direct_invite_block_reason(contractor)
+        if block_reason:
+            raise ValueError(block_reason)
 
         duplicate = ContractorDiscoveryInvite.objects.filter(
             public_intake=intake,

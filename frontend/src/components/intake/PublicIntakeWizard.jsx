@@ -2586,6 +2586,20 @@ export default function PublicIntakeWizard() {
             </div>
           ) : null}
 
+          {branchResult?.marketplace?.request_saved ? (
+            <div
+              className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+              role="status"
+              aria-live="polite"
+              data-testid="public-intake-marketplace-capability-status"
+            >
+              <div className="font-semibold">{branchResult.marketplace.coverage_message || "Request saved"}</div>
+              <div className="mt-1">{branchResult.marketplace.message}</div>
+              {branchResult.marketplace.can_search ? <div className="mt-1">Contractor search remains available.</div> : null}
+              {branchResult.marketplace.can_direct_invite ? <div className="mt-1">{branchResult.marketplace.direct_invitation_message || "Direct contractor invitations are available."}</div> : null}
+            </div>
+          ) : null}
+
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <button
               type="button"
@@ -2703,11 +2717,25 @@ export default function PublicIntakeWizard() {
             </p>
           </div>
 
+          {branchResult?.marketplace?.request_saved ? (
+            <section
+              className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950 shadow-sm"
+              role="status"
+              aria-live="polite"
+              data-testid="public-intake-marketplace-capability-status"
+            >
+              <div className="font-semibold">{branchResult.marketplace.coverage_message || "Request saved"}</div>
+              <div className="mt-1">{branchResult.marketplace.message}</div>
+              {branchResult.marketplace.can_search ? <div className="mt-1">Contractor search remains available.</div> : null}
+              {branchResult.marketplace.can_direct_invite ? <div className="mt-1">{branchResult.marketplace.direct_invitation_message || "Direct contractor invitations are available."}</div> : null}
+            </section>
+          ) : null}
+
           {discoveryTargets.length ? (
             <section className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm" data-testid="public-intake-review-selected-contractors">
               <div className="text-sm font-semibold text-indigo-950">Selected Contractors</div>
               <p className="mt-1 text-sm text-indigo-900/80">
-                These selected marketplace contractors will receive the project context after you submit.
+                These selected contractors will receive the project context after you submit.
               </p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 {discoveryTargets.map((contractor) => {

@@ -363,6 +363,23 @@ test("landing page drives into intake and public intake shows branching choices 
                 { token: "invite-2", invite_url: "/login?invite=invite-2" },
               ]
             : [{ token: "invite-1", invite_url: "/login?invite=invite-1" }],
+        marketplace: body.branch_flow
+          ? {
+              status: "not_ready",
+              enabled: false,
+              request_saved: true,
+              saved_for_future_matching: true,
+              can_participate: true,
+              can_search: true,
+              can_direct_invite: true,
+              can_auto_route: false,
+              coverage_message: "Building local coverage",
+              automatic_matching_message: "Automatic matching is not yet available in this area.",
+              direct_invitation_message: "Direct contractor invitations are available.",
+              message:
+                "Your request has been saved for future matching in Austin, TX. Automatic matching is not yet available in this area; contractor search and direct invitations remain available.",
+            }
+          : null,
         completed_at: "2026-04-15T16:00:00Z",
       }),
     });
@@ -473,11 +490,24 @@ test("landing page drives into intake and public intake shows branching choices 
   await multiBranch.getByPlaceholder("Name").nth(1).fill("Beta Contracting");
   await multiBranch.getByPlaceholder("Email").nth(1).fill("beta@example.com");
   await multiBranch.getByPlaceholder("Phone").nth(1).fill("555-202-0002");
+  await page.screenshot({ path: "test-results/marketplace-location-direct-invitation-available.png", fullPage: true });
   await page.getByTestId("public-intake-branch-submit").click();
 
   await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
   await expect(page.getByText("2 invites prepared")).toBeVisible();
   await expect(page.getByText("Get Multiple Quotes").first()).toBeVisible();
+  const capabilityStatus = page.getByTestId("public-intake-marketplace-capability-status");
+  await expect(capabilityStatus).toContainText("Building local coverage");
+  await expect(capabilityStatus).toContainText("Your request has been saved for future matching");
+  await expect(capabilityStatus).toContainText("Automatic matching is not yet available in this area");
+  await expect(capabilityStatus).toContainText("Contractor search remains available");
+  await expect(capabilityStatus).toContainText("Direct contractor invitations are available");
+  await expect(capabilityStatus).not.toContainText(/marketplace disabled|marketplace is not enabled/i);
+  await page.screenshot({ path: "test-results/marketplace-location-customer-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(capabilityStatus).toBeVisible();
+  await page.screenshot({ path: "test-results/marketplace-location-customer-mobile.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
   expect(branchRequests.some((body) => body.branch_flow === "multi_contractor")).toBeTruthy();
 
   await page.getByRole("button", { name: "Choose Path" }).click();
@@ -742,6 +772,7 @@ test("public intake contractor search supports explicit specialty search from pr
   await expect(page.getByTestId("public-intake-contractor-distance-listing:100")).toContainText("3.2 miles away");
   await expect(page.getByTestId("public-intake-contractor-source-badge-listing:100")).toHaveClass(/bg-emerald-600/);
   await expect(page.getByTestId("public-intake-contractor-source-badge-listing:101")).toHaveClass(/bg-slate-100/);
+  await page.screenshot({ path: "test-results/marketplace-location-contractor-search-available.png", fullPage: true });
   await expect(page.getByTestId("public-intake-contractor-card-listing:111")).toHaveCount(0);
   await page.getByTestId("public-intake-contractor-load-more").click();
   await expect(page.getByTestId("public-intake-contractor-card-listing:111")).toBeVisible();

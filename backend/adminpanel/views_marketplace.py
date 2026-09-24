@@ -135,42 +135,42 @@ def _marketplace_operational_status(
         return (
             "location_needed",
             "Location needed",
-            "A complete project city and state are required before coverage or routing can be evaluated.",
+            "The request is saved for future matching. Add a complete project city and state to evaluate automatic routing.",
         )
-    if readiness.get("enabled"):
+    if readiness.get("can_auto_route"):
         if eligible_count:
             return (
                 "active",
                 "Active",
-                "Coverage is activated and eligible contractors are available. Routing still requires an explicit admin action.",
+                "Automatic routing is ready and eligible contractors are available. Routing still requires an explicit admin action.",
             )
         return (
             "supply_needed",
             "Supply needed",
-            "Coverage is activated, but no eligible claimed contractors currently match this request.",
+            "Automatic routing is activated, but no eligible claimed contractors currently match this request.",
         )
     if readiness.get("routing_paused_at"):
         return (
             "routing_paused",
             "Routing paused",
-            "Coverage was previously activated and is now paused. No automatic routing will occur.",
+            "Automatic routing was previously activated and is now paused. The request remains saved for future matching.",
         )
     if readiness.get("status") == MarketplaceLocation.STATUS_READY:
         return (
             "coverage_not_activated",
             "Coverage not activated",
-            "Coverage thresholds are met, but an admin has not activated routing for this location.",
+            "Coverage thresholds are met, but an admin has not activated automatic routing for this location.",
         )
     if readiness.get("status") == MarketplaceLocation.STATUS_NEARING_READY:
         return (
             "building_coverage",
             "Building coverage",
-            "Local contractor coverage is progressing but has not met every activation threshold.",
+            "Local contractor coverage is progressing. Automatic matching is not yet available.",
         )
     return (
         "supply_needed",
         "Supply needed",
-        "This location does not yet have enough claimed, verified, payment-ready contractor supply.",
+        "Building local coverage. Automatic matching is not yet available, and the request is saved for future matching.",
     )
 
 
@@ -230,7 +230,7 @@ def _saved_marketplace_request_row(
     cap = int(readiness.get("max_bids_per_request") or 5)
     routed_count = max(counts.values() or [0])
     at_cap = routed_count >= cap
-    enabled = bool(readiness.get("enabled"))
+    enabled = bool(readiness.get("can_auto_route"))
     eligible_count = evaluation["eligible_count"]
     operational_status = evaluation["operational_status"]
     operational_label = evaluation["operational_label"]
@@ -274,6 +274,12 @@ def _saved_marketplace_request_row(
             else {"label": "Review coverage", "target": "/app/admin/marketplace"}
         ),
         "marketplace_enabled": enabled,
+        "capabilities": readiness.get("capabilities"),
+        "can_participate": readiness.get("can_participate", True),
+        "can_search": readiness.get("can_search", True),
+        "can_direct_invite": readiness.get("can_direct_invite", True),
+        "can_auto_route": readiness.get("can_auto_route", enabled),
+        "saved_for_future_matching": not already_routed and not enabled,
         "routed_status": "at_cap" if at_cap else "partially_routed" if already_routed else "not_routed",
         "routable_now": routable_now,
         "already_routed": already_routed,
@@ -379,6 +385,7 @@ def _marketplace_request_aggregates(
         "already_routed": 0,
         "blocked_location_missing": 0,
         "blocked_disabled": 0,
+        "automatic_routing_unavailable": 0,
         "blocked_no_eligible_contractors": 0,
         "at_cap": 0,
         "operational_statuses": {},
@@ -393,7 +400,7 @@ def _marketplace_request_aggregates(
         cap = int(evaluation["readiness"].get("max_bids_per_request") or 5)
         routed_count = max(counts.values() or [0])
         at_cap = routed_count >= cap
-        enabled = bool(evaluation["readiness"].get("enabled"))
+        enabled = bool(evaluation["readiness"].get("can_auto_route"))
         already_routed = routed_count > 0
         routable_now = enabled and not at_cap and evaluation["eligible_count"] > routed_count
         no_eligible = enabled and not at_cap and evaluation["eligible_count"] <= routed_count
@@ -403,6 +410,7 @@ def _marketplace_request_aggregates(
         summary["already_routed"] += int(already_routed)
         summary["blocked_location_missing"] += int(not evaluation["location_complete"])
         summary["blocked_disabled"] += int(evaluation["location_complete"] and not enabled)
+        summary["automatic_routing_unavailable"] += int(evaluation["location_complete"] and not enabled)
         summary["blocked_no_eligible_contractors"] += int(no_eligible)
         summary["at_cap"] += int(at_cap)
 
@@ -1128,7 +1136,7 @@ class AdminMarketplaceRouteIntake(APIView):
             return Response({"detail": "Project intake not found."}, status=status.HTTP_404_NOT_FOUND)
 
         result = create_marketplace_invites_for_intake(intake_id)
-        response_status = status.HTTP_200_OK if result.get("marketplace", {}).get("enabled") else status.HTTP_202_ACCEPTED
+        response_status = status.HTTP_200_OK if result.get("marketplace", {}).get("can_auto_route") else status.HTTP_202_ACCEPTED
         return Response(result, status=response_status)
 
 

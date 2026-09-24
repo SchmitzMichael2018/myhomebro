@@ -36,6 +36,7 @@ from accounts.services.verification import (
 )
 from accounts.verification_views import VerificationEmailAddressThrottle
 from projects.models_attribution import AccountAcquisition, AttributionEvent
+from projects.models_contractor_discovery import MarketplaceLocation
 from projects.services.attribution import acquisition_report
 
 
@@ -86,6 +87,16 @@ class AccountVerificationTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertNotIn("access", response.data)
         user = User.objects.get(email="new.contractor@example.com")
+        self.assertFalse(user.is_active)
+        self.assertEqual(user.verification_state, User.VerificationState.PENDING_EMAIL)
+
+    def test_contractor_registration_is_not_blocked_by_unready_location(self):
+        MarketplaceLocation.objects.create(city="Dallas", state="TX", is_enabled=False)
+
+        response = self.register(email="unready-location-contractor@example.com")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        user = User.objects.get(email="unready-location-contractor@example.com")
         self.assertFalse(user.is_active)
         self.assertEqual(user.verification_state, User.VerificationState.PENDING_EMAIL)
         self.assertEqual(user.phone_number_normalized, "+12105550144")

@@ -413,7 +413,7 @@ class PublicIntakeView(APIView):
                     contractor_rows = []
                 elif branch_flow == "multi_contractor":
                     branch_marketplace = marketplace_enabled_for_intake(intake)
-                    create_marketplace_invites = bool(branch_marketplace.get("enabled"))
+                    create_marketplace_invites = bool(branch_marketplace.get("can_auto_route"))
                 else:
                     return Response(
                         {"detail": "Add at least one contractor contact before continuing."},
@@ -482,7 +482,7 @@ class PublicIntakeView(APIView):
                     "post_submit_flow": intake.post_submit_flow,
                     "branch_invites": branch_invites,
                     "marketplace": branch_marketplace,
-                    "marketplace_available": bool((branch_marketplace or {}).get("marketplace", branch_marketplace or {}).get("enabled")),
+                    "marketplace_available": bool((branch_marketplace or {}).get("marketplace", branch_marketplace or {}).get("can_auto_route")),
                     "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
                     "ai_project_title": intake.ai_project_title,
                     "ai_project_type": intake.ai_project_type,
@@ -604,7 +604,7 @@ class PublicIntakeView(APIView):
                 "post_submit_flow": intake.post_submit_flow,
                 "branch_invites": branch_invites,
                 "marketplace": branch_marketplace,
-                "marketplace_available": bool((branch_marketplace or {}).get("marketplace", branch_marketplace or {}).get("enabled")),
+                "marketplace_available": bool((branch_marketplace or {}).get("marketplace", branch_marketplace or {}).get("can_auto_route")),
                 "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
                 "ai_project_title": intake.ai_project_title,
                 "ai_project_type": intake.ai_project_type,
