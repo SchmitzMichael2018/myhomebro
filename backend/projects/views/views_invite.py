@@ -1,4 +1,6 @@
 # backend/projects/views/views_invite.py
+from threading import Lock
+
 from django.db import transaction
 from django.utils import timezone
 from django.http import HttpResponse
@@ -8,8 +10,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 # ✅ FIX: import from the projects app root, not from the views package
-from projects.models import Homeowner, HomeownerStatus
+from projects.models import Contractor, Homeowner, HomeownerStatus
 from projects.models_invite import ContractorInvite
+from projects.models_project_intake import ProjectIntake
 from projects.serializers_invite import (
     ContractorInviteCreateSerializer,
     ContractorInviteReadSerializer,
@@ -22,12 +25,13 @@ from projects.services.invites_delivery import (
 from projects.services.marketplace_permissions import (
     DIRECT_INVITE_UNAVAILABLE_DETAIL,
     contractor_direct_invite_block_reason,
-    direct_invite_target_contractor,
+    direct_invite_target_resolution,
 )
 
 
-def _get_contractor_for_user(user):
-    return getattr(user, "contractor_profile", None)
+# SQLite ignores select_for_update. Serialize same-process acceptance attempts;
+# the conditional DB updates below remain the cross-process integrity guard.
+_accept_serialization_lock = Lock()
 
 
 def _too_soon(invite: ContractorInvite, seconds: int = 60) -> bool:
@@ -126,23 +130,31 @@ class ContractorInviteViewSet(viewsets.GenericViewSet):
 
     @action(detail=True, methods=["post"], url_path="accept")
     def accept(self, request, token=None):
-        contractor = _get_contractor_for_user(request.user)
-        if not contractor:
-            return Response({"detail": "Only contractors can accept invites."}, status=status.HTTP_403_FORBIDDEN)
-
         current_invite = self.get_object()
-        with transaction.atomic():
+        with _accept_serialization_lock, transaction.atomic():
+            # Re-read the account and eligibility inside the same transaction as
+            # the invitation transition; request.user/contractor_profile may be stale.
+            contractor = (
+                Contractor.objects.select_for_update()
+                .select_related("user")
+                .filter(user_id=request.user.pk)
+                .first()
+            )
+            if not contractor:
+                return Response({"detail": "Only contractors can accept invites."}, status=status.HTTP_403_FORBIDDEN)
             invite = (
                 ContractorInvite.objects.select_for_update()
                 .select_related("source_intake")
                 .get(pk=current_invite.pk)
             )
             source_intake = getattr(invite, "source_intake", None)
-            linked_contractor = direct_invite_target_contractor(
+            linked_contractor, target_valid = direct_invite_target_resolution(
                 invite.contact_identity
             )
             if (
-                contractor_direct_invite_block_reason(contractor)
+                not target_valid
+                or (linked_contractor is not None and linked_contractor.pk != contractor.pk)
+                or contractor_direct_invite_block_reason(contractor)
                 or contractor_direct_invite_block_reason(linked_contractor)
             ):
                 return Response(
@@ -177,12 +189,28 @@ class ContractorInviteViewSet(viewsets.GenericViewSet):
                         status=status.HTTP_409_CONFLICT,
                     )
                 if source_intake.contractor_id != contractor.id:
-                    source_intake.contractor = contractor
-                    source_intake.save(update_fields=["contractor", "updated_at"])
+                    updated = ProjectIntake.objects.filter(
+                        pk=source_intake.pk, contractor__isnull=True
+                    ).update(contractor=contractor, updated_at=timezone.now())
+                    if not updated:
+                        transaction.set_rollback(True)
+                        return Response(
+                            {"detail": "This intake has already been assigned to another contractor."},
+                            status=status.HTTP_409_CONFLICT,
+                        )
 
-            invite.accepted_by_contractor = contractor
-            invite.accepted_at = timezone.now()
-            invite.save(update_fields=["accepted_by_contractor", "accepted_at"])
+            accepted_at = timezone.now()
+            updated = ContractorInvite.objects.filter(
+                pk=invite.pk, accepted_at__isnull=True,
+                accepted_by_contractor__isnull=True,
+            ).update(accepted_by_contractor=contractor, accepted_at=accepted_at)
+            if not updated:
+                # This branch is a conflict, never a second authorized transition.
+                transaction.set_rollback(True)
+                return Response(
+                    {"detail": "Invite already accepted by another contractor."},
+                    status=status.HTTP_409_CONFLICT,
+                )
 
             # Email can be reused across contractors (match by created_by + email)
             existing = Homeowner.objects.filter(created_by=contractor, email=homeowner_email).first()
@@ -209,14 +237,6 @@ class ContractorInviteViewSet(viewsets.GenericViewSet):
                     zip_code="",
                     status=HomeownerStatus.PROSPECT,
                 )
-
-            # ✅ tiny safety: persist accepted_by_contractor_id too if your model uses it
-            try:
-                if hasattr(invite, "accepted_by_contractor_id") and not invite.accepted_by_contractor_id:
-                    invite.accepted_by_contractor_id = contractor.id
-                    invite.save(update_fields=["accepted_by_contractor_id"])
-            except Exception:
-                pass
 
         return Response(
             {

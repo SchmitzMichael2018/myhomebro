@@ -34,14 +34,28 @@ def contractor_direct_invite_block_reason(contractor: Contractor | None) -> str:
     return ""
 
 
-def direct_invite_target_contractor(contact_identity: str) -> Contractor | None:
-    """Resolve an authoritative linked account from a direct-invitation identity."""
+def direct_invite_target_resolution(contact_identity: str) -> tuple[Contractor | None, bool]:
+    """Return (bound account, valid target) from the *current* authoritative record.
+
+    Contact-only and historical invitations are unbound. A valid, unclaimed
+    prospect is also unbound; missing, closed, archived, or ambiguously claimed
+    stable targets fail closed rather than becoming bearer invitations.
+    """
     kind, separator, raw_value = str(contact_identity or "").partition(":")
-    if not separator or not raw_value:
-        return None
+    if not separator:
+        return None, not kind
+    if kind in {"email", "phone", "legacy"}:
+        return None, True
+    if not raw_value:
+        return None, False
     if kind == "contractor":
-        return Contractor.objects.select_related("user").filter(pk=raw_value).first()
+        if not raw_value.isdecimal():
+            return None, False
+        contractor = Contractor.objects.select_related("user").filter(pk=raw_value).first()
+        return contractor, contractor is not None
     if kind == "directory":
+        if not raw_value.isdecimal():
+            return None, False
         entry = (
             ContractorDirectoryEntry.objects.select_related(
                 "claimed_by_contractor__user"
@@ -49,8 +63,12 @@ def direct_invite_target_contractor(contact_identity: str) -> Contractor | None:
             .filter(pk=raw_value)
             .first()
         )
-        return getattr(entry, "claimed_by_contractor", None)
+        if entry is None or entry.is_archived:
+            return None, False
+        return entry.claimed_by_contractor, True
     if kind == "listing":
+        if not raw_value.isdecimal():
+            return None, False
         listing = (
             ContractorDirectoryListing.objects.select_related(
                 "claimed_contractor__user"
@@ -58,27 +76,35 @@ def direct_invite_target_contractor(contact_identity: str) -> Contractor | None:
             .filter(pk=raw_value)
             .first()
         )
-        return getattr(listing, "claimed_contractor", None)
+        if listing is None or str(listing.business_status or "").upper() == "CLOSED_PERMANENTLY":
+            return None, False
+        return listing.claimed_contractor, True
     if kind == "place":
+        entries = ContractorDirectoryEntry.objects.filter(
+            google_place_id=raw_value, is_archived=False
+        )
+        listings = ContractorDirectoryListing.objects.filter(
+            google_place_id=raw_value
+        ).exclude(business_status__iexact="CLOSED_PERMANENTLY")
+        if not entries.exists() and not listings.exists():
+            return None, False
         contractor_ids = set(
-            ContractorDirectoryEntry.objects.filter(
-                google_place_id=raw_value,
+            entries.filter(
                 claimed_by_contractor__isnull=False,
             ).values_list("claimed_by_contractor_id", flat=True)
         )
         contractor_ids.update(
-            ContractorDirectoryListing.objects.filter(
-                google_place_id=raw_value,
+            listings.filter(
                 claimed_contractor__isnull=False,
             ).values_list("claimed_contractor_id", flat=True)
         )
         if len(contractor_ids) == 1:
-            return (
-                Contractor.objects.select_related("user")
-                .filter(pk=contractor_ids.pop())
-                .first()
-            )
-    return None
+            contractor = Contractor.objects.select_related("user").filter(
+                pk=contractor_ids.pop()
+            ).first()
+            return contractor, contractor is not None
+        return None, not contractor_ids
+    return None, False
 
 
 def contractor_marketplace_action_block_reason(contractor: Contractor | None) -> str:

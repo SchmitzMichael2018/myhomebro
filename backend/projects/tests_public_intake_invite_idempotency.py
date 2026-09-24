@@ -632,6 +632,173 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
 
 
 class ContractorInviteCompatibilityTests(TestCase):
+    def test_authoritative_contractor_target_rejects_other_eligible_account_without_changes(self):
+        target_user = get_user_model().objects.create_user(email="target@example.com")
+        target = Contractor.objects.create(user=target_user, business_name="Target")
+        other_user = get_user_model().objects.create_user(email="other@example.com")
+        Contractor.objects.create(user=other_user, business_name="Other")
+        intake = ProjectIntake.objects.create(
+            initiated_by="homeowner", customer_name="Target Customer",
+            customer_email="target-customer@example.com",
+        )
+        invite = ContractorInvite.objects.create(
+            homeowner_name=intake.customer_name,
+            homeowner_email=intake.customer_email,
+            contractor_email=target_user.email, source_intake=intake,
+            contact_identity=f"contractor:{target.pk}",
+        )
+        before = ContractorInvite.objects.filter(pk=invite.pk).values().get()
+        client = APIClient()
+        client.force_authenticate(user=other_user)
+        for _ in range(2):
+            response = client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json")
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.json(), {"detail": DIRECT_INVITE_UNAVAILABLE_DETAIL})
+            self.assertEqual(ContractorInvite.objects.filter(pk=invite.pk).values().get(), before)
+            intake.refresh_from_db()
+            self.assertIsNone(intake.contractor_id)
+            self.assertEqual(Homeowner.objects.count(), 0)
+            self.assertEqual(ContractorOpportunity.objects.count(), 0)
+            self.assertEqual(PublicContractorLead.objects.count(), 0)
+            self.assertEqual(Agreement.objects.count(), 0)
+        client.force_authenticate(user=target_user)
+        self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 200)
+        self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 200)
+        intake.refresh_from_db()
+        self.assertEqual(intake.contractor_id, target.pk)
+        self.assertEqual(Homeowner.objects.count(), 1)
+
+    def test_claimed_listing_binds_at_acceptance_but_unclaimed_prospect_remains_valid(self):
+        first_user = get_user_model().objects.create_user(email="first@example.com")
+        first = Contractor.objects.create(user=first_user, business_name="First")
+        second_user = get_user_model().objects.create_user(email="second@example.com")
+        second = Contractor.objects.create(user=second_user, business_name="Second")
+        listing = ContractorDirectoryListing.objects.create(business_name="Prospect")
+        intake = ProjectIntake.objects.create(
+            initiated_by="homeowner", customer_name="Prospect Customer",
+            customer_email="prospect-customer@example.com",
+        )
+        invite = ContractorInvite.objects.create(
+            homeowner_name=intake.customer_name, homeowner_email=intake.customer_email,
+            contractor_email=first_user.email, source_intake=intake,
+            contact_identity=f"listing:{listing.pk}",
+        )
+        listing.claimed_contractor = first
+        listing.claimed_profile = True
+        listing.save(update_fields=["claimed_contractor", "claimed_profile", "updated_at"])
+        client = APIClient()
+        client.force_authenticate(user=second_user)
+        self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 403)
+        client.force_authenticate(user=first_user)
+        self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 200)
+        intake.refresh_from_db()
+        self.assertEqual(intake.contractor_id, first.pk)
+
+    def test_claimed_directory_and_place_bind_to_only_linked_contractor(self):
+        owner_user = get_user_model().objects.create_user(email="directory-owner@example.com")
+        owner = Contractor.objects.create(user=owner_user, business_name="Directory Owner")
+        other_user = get_user_model().objects.create_user(email="directory-other@example.com")
+        Contractor.objects.create(user=other_user, business_name="Directory Other")
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Directory Prospect", normalized_name="directory prospect",
+            google_place_id="PlaceBound", claimed_by_contractor=owner,
+        )
+        for identity in (f"directory:{entry.pk}", "place:PlaceBound"):
+            with self.subTest(identity=identity):
+                intake = ProjectIntake.objects.create(
+                    initiated_by="homeowner", customer_name="Directory Customer",
+                    customer_email="directory-customer@example.com",
+                )
+                invite = ContractorInvite.objects.create(
+                    homeowner_name=intake.customer_name,
+                    homeowner_email=intake.customer_email,
+                    contractor_email=owner_user.email, source_intake=intake,
+                    contact_identity=identity,
+                )
+                before = ContractorInvite.objects.filter(pk=invite.pk).values().get()
+                client = APIClient()
+                client.force_authenticate(user=other_user)
+                self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 403)
+                self.assertEqual(ContractorInvite.objects.filter(pk=invite.pk).values().get(), before)
+                intake.refresh_from_db()
+                self.assertIsNone(intake.contractor_id)
+                client.force_authenticate(user=owner_user)
+                self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 200)
+                intake.refresh_from_db()
+                self.assertEqual(intake.contractor_id, owner.pk)
+
+    def test_unclaimed_listing_can_be_accepted_by_eligible_contractor(self):
+        user = get_user_model().objects.create_user(email="unclaimed@example.com")
+        contractor = Contractor.objects.create(user=user, business_name="Unclaimed")
+        listing = ContractorDirectoryListing.objects.create(business_name="Unclaimed Prospect")
+        intake = ProjectIntake.objects.create(
+            initiated_by="homeowner", customer_name="Unclaimed Customer",
+            customer_email="unclaimed-customer@example.com",
+        )
+        invite = ContractorInvite.objects.create(
+            homeowner_name=intake.customer_name, homeowner_email=intake.customer_email,
+            contractor_email=user.email, source_intake=intake,
+            contact_identity=f"listing:{listing.pk}",
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+        self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 200)
+        intake.refresh_from_db()
+        self.assertEqual(intake.contractor_id, contractor.pk)
+
+    def test_closed_stable_target_fails_closed(self):
+        user = get_user_model().objects.create_user(email="stable-closer@example.com")
+        contractor = Contractor.objects.create(user=user, business_name="Stable Closer")
+        listing = ContractorDirectoryListing.objects.create(
+            business_name="Closed Prospect", business_status="CLOSED_PERMANENTLY",
+        )
+        intake = ProjectIntake.objects.create(
+            initiated_by="homeowner", customer_name="Closed Customer",
+            customer_email="closed-customer@example.com",
+        )
+        invite = ContractorInvite.objects.create(
+            homeowner_name=intake.customer_name, homeowner_email=intake.customer_email,
+            contractor_email=user.email, source_intake=intake,
+            contact_identity=f"listing:{listing.pk}",
+        )
+        before = ContractorInvite.objects.filter(pk=invite.pk).values().get()
+        client = APIClient()
+        client.force_authenticate(user=user)
+        self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 403)
+        self.assertEqual(ContractorInvite.objects.filter(pk=invite.pk).values().get(), before)
+        intake.refresh_from_db()
+        self.assertIsNone(intake.contractor_id)
+        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Contractor.objects.count(), 1)
+
+    def test_disabled_and_fraud_accounts_fail_closed_after_issuance(self):
+        for index, (field, value) in enumerate((
+            ("verification_state", User.VerificationState.DISABLED),
+            ("trust_classification", User.TrustClassification.SPAM_FRAUD),
+            ("is_active", False),
+        )):
+            with self.subTest(field=field):
+                user = get_user_model().objects.create_user(email=f"blocked-{index}@example.com")
+                contractor = Contractor.objects.create(user=user, business_name="Blocked")
+                intake = ProjectIntake.objects.create(
+                    initiated_by="homeowner", customer_name="Blocked Customer",
+                    customer_email=f"blocked-customer-{index}@example.com",
+                )
+                invite = ContractorInvite.objects.create(
+                    homeowner_name=intake.customer_name, homeowner_email=intake.customer_email,
+                    contractor_email=user.email, source_intake=intake,
+                    contact_identity=f"contractor:{contractor.pk}",
+                )
+                setattr(user, field, value)
+                user.save(update_fields=[field])
+                before = ContractorInvite.objects.filter(pk=invite.pk).values().get()
+                client = APIClient()
+                client.force_authenticate(user=user)
+                self.assertEqual(client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code, 403)
+                self.assertEqual(ContractorInvite.objects.filter(pk=invite.pk).values().get(), before)
+                intake.refresh_from_db()
+                self.assertIsNone(intake.contractor_id)
+
     @patch("projects.views.views_invite.deliver_homeowner_confirmation")
     @patch("projects.views.views_invite.deliver_invite_notifications")
     def test_generic_create_delivers_and_tracks_success_without_source_identity(
@@ -835,6 +1002,45 @@ class ContractorInviteCompatibilityTests(TestCase):
         self.assertFalse(invite.is_accepted)
         self.assertIsNone(intake.contractor_id)
         self.assertEqual(Homeowner.objects.count(), 0)
+
+
+class ConcurrentContractorInviteAcceptanceTests(TransactionTestCase):
+    def test_correct_and_wrong_accounts_racing_cannot_assign_wrong_contractor(self):
+        owner_user = get_user_model().objects.create_user(email="race-owner@example.com")
+        owner = Contractor.objects.create(user=owner_user, business_name="Race Owner")
+        wrong_user = get_user_model().objects.create_user(email="race-wrong@example.com")
+        wrong = Contractor.objects.create(user=wrong_user, business_name="Race Wrong")
+        intake = ProjectIntake.objects.create(
+            initiated_by="homeowner", customer_name="Race Customer",
+            customer_email="race-customer@example.com",
+        )
+        invite = ContractorInvite.objects.create(
+            homeowner_name=intake.customer_name, homeowner_email=intake.customer_email,
+            contractor_email=owner_user.email, source_intake=intake,
+            contact_identity=f"contractor:{owner.pk}",
+        )
+        barrier = threading.Barrier(2)
+
+        def attempt(user):
+            close_old_connections()
+            try:
+                client = APIClient()
+                client.force_authenticate(user=user)
+                barrier.wait(timeout=5)
+                return client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(attempt, (owner_user, wrong_user)))
+        self.assertEqual(sorted(responses), [200, 403])
+        invite.refresh_from_db()
+        intake.refresh_from_db()
+        self.assertEqual(invite.accepted_by_contractor_id, owner.pk)
+        self.assertEqual(intake.contractor_id, owner.pk)
+        self.assertNotEqual(invite.accepted_by_contractor_id, wrong.pk)
+        self.assertEqual(Homeowner.objects.filter(created_by=owner).count(), 1)
+        self.assertEqual(Homeowner.objects.filter(created_by=wrong).count(), 0)
 
 
 class ConcurrentPublicIntakeInviteIdempotencyTests(TransactionTestCase):
