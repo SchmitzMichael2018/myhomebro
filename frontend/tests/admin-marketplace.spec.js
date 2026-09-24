@@ -196,7 +196,12 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
         ? requestRouted
           ? 'Bid cap already reached.'
           : 'Ready to route to eligible contractors.'
-        : 'Marketplace is not enabled for this location yet.',
+        : 'Building local coverage. Automatic matching is not yet available, and the request is saved for future matching.',
+      can_participate: true,
+      can_search: true,
+      can_direct_invite: true,
+      can_auto_route: austinEnabled,
+      saved_for_future_matching: !austinEnabled && !requestRouted,
     };
     const legacyRequest = {
       id: 502, source: 'landing_page', source_label: 'Landing Page',
@@ -238,6 +243,7 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
               routable_now: austinEnabled && !requestRouted ? 1 : 0,
               already_routed: requestRouted ? 1 : 0,
               blocked_disabled: austinEnabled ? 0 : 1,
+              automatic_routing_unavailable: austinEnabled ? 0 : 1,
               blocked_no_eligible_contractors: 0,
               at_cap: requestRouted ? 1 : 0,
             },
@@ -764,12 +770,18 @@ test('admin marketplace routes saved requests after location enablement without 
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Landing');
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Customer Linked');
   await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Contractor Pending');
-  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Marketplace is not enabled for this location yet.');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Building local coverage.');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('saved for future matching');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).not.toContainText(/marketplace disabled|marketplace is not enabled/i);
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
   await expect(page.getByTestId('admin-marketplace-backlog-disabled')).toContainText('1');
+  await expect(page.getByTestId('admin-marketplace-backlog-disabled')).toContainText('Building Coverage');
+  await page.getByTestId('admin-marketplace-saved-requests').screenshot({
+    path: 'test-results/marketplace-location-admin-saved-not-routed.png',
+  });
 
   await page.getByTestId('admin-marketplace-location-enable-Austin-TX').click();
-  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Austin, TX enabled');
+  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Austin, TX activated for automatic routing');
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeEnabled();
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Ready to route to eligible contractors.');
   await expect(page.getByTestId('admin-marketplace-backlog-routable')).toContainText('1');

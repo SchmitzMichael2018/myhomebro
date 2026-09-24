@@ -13,6 +13,7 @@ from projects.models import Agreement, Contractor, ContractorPublicProfile, Home
 from projects.models_customer_portal import SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
+from projects.services.contractor_discovery import create_discovery_invites
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness
 
 
@@ -775,7 +776,20 @@ class MarketplaceGatingTests(TestCase):
         intake.refresh_from_db()
         self.assertEqual(intake.post_submit_flow, "multi_contractor")
         self.assertFalse(response.json()["marketplace_available"])
-        self.assertIn("not yet enabled", response.json()["marketplace"]["message"])
+        marketplace = response.json()["marketplace"]
+        self.assertEqual(
+            marketplace["capabilities"],
+            {
+                "can_participate": True,
+                "can_search": True,
+                "can_direct_invite": True,
+                "can_auto_route": False,
+            },
+        )
+        self.assertTrue(marketplace["request_saved"])
+        self.assertTrue(marketplace["saved_for_future_matching"])
+        self.assertIn("Automatic matching is not yet available", marketplace["message"])
+        self.assertIn("direct invitations remain available", marketplace["message"])
         self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 0)
         self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 0)
         self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 0)
@@ -791,8 +805,69 @@ class MarketplaceGatingTests(TestCase):
         self.assertEqual(saved["results"][0]["marketplace_status"], "supply_needed")
         self.assertEqual(
             saved["results"][0]["reason"],
-            "This location does not yet have enough claimed, verified, payment-ready contractor supply.",
+            "Building local coverage. Automatic matching is not yet available, and the request is saved for future matching.",
         )
+        self.assertTrue(saved["results"][0]["can_participate"])
+        self.assertTrue(saved["results"][0]["can_search"])
+        self.assertTrue(saved["results"][0]["can_direct_invite"])
+        self.assertFalse(saved["results"][0]["can_auto_route"])
+        self.assertTrue(saved["results"][0]["saved_for_future_matching"])
+
+    def test_incomplete_location_is_saved_with_participation_capabilities(self):
+        intake = self._intake(city="", state="")
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {"branch_flow": "multi_contractor"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        marketplace = response.json()["marketplace"]
+        self.assertEqual(marketplace["status"], "location_needed")
+        self.assertTrue(marketplace["request_saved"])
+        self.assertTrue(marketplace["can_participate"])
+        self.assertTrue(marketplace["can_search"])
+        self.assertTrue(marketplace["can_direct_invite"])
+        self.assertFalse(marketplace["can_auto_route"])
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 0)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 0)
+        self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 0)
+
+    @patch("projects.services.contractor_discovery.send_twilio_sms", return_value=(True, "sent"))
+    @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(True, "sent"))
+    def test_direct_invitation_ignores_location_readiness_but_blocks_ineligible_contractor(
+        self,
+        _mock_email,
+        _mock_sms,
+    ):
+        intake = self._intake(city="Dallas", state="TX")
+        contractor = self.contractors[0]
+
+        result = create_discovery_invites(
+            intake=intake,
+            selected_targets=[{"source": "contractor", "id": f"contractor:{contractor.id}", "channel": "in_app"}],
+        )
+
+        self.assertEqual(result["invite_count"], 1)
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 1)
+        self.assertEqual(
+            ContractorDiscoveryInvite.objects.filter(public_intake=intake, contractor=contractor).count(),
+            1,
+        )
+        self.assertEqual(
+            ContractorDiscoveryInvite.objects.filter(public_intake=intake).exclude(contractor=contractor).count(),
+            0,
+        )
+
+        rejected = self.contractors[1]
+        rejected.marketplace_verification_status = Contractor.MARKETPLACE_REJECTED
+        rejected.save(update_fields=["marketplace_verification_status", "updated_at"])
+        with self.assertRaisesMessage(ValueError, "not currently available"):
+            create_discovery_invites(
+                intake=intake,
+                selected_targets=[{"source": "contractor", "id": f"contractor:{rejected.id}", "channel": "in_app"}],
+            )
 
     def test_enabled_city_invites_max_five_claimed_verified_contractors(self):
         MarketplaceLocation.objects.create(

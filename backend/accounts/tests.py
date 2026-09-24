@@ -4,6 +4,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from projects.models import Contractor, Homeowner
+from projects.models_contractor_discovery import MarketplaceLocation
 from projects.services.public_intake_customers import get_or_create_customer_for_public_intake
 
 
@@ -76,6 +77,21 @@ class CustomerAccountRegistrationTests(TestCase):
         self.assertEqual(homeowner.phone_number, "+15551112222")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("/api/accounts/auth/verify-account-email/", mail.outbox[0].body)
+
+    def test_customer_registration_is_not_blocked_by_unready_location(self):
+        MarketplaceLocation.objects.create(city="Dallas", state="TX", is_enabled=False)
+
+        response = self.client.post(
+            self.url,
+            self._payload(email="coverage-building-customer@example.com"),
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(
+            Homeowner.objects.filter(email__iexact="coverage-building-customer@example.com").exists()
+        )
 
     def test_property_manager_registration_creates_property_management_account(self):
         response = self.client.post(

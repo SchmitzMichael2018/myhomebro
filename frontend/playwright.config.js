@@ -36,7 +36,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `cross-env ${captureTestEnv} npm.cmd run dev -- --host ${HOST} --port ${PORT}`,
-    url: baseURL,
+    url: `${baseURL}/src/main.jsx`,
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

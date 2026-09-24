@@ -2,11 +2,20 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, AgreementAssignment, Contractor, Homeowner, Notification, PublicContractorLead
+from projects.models import (
+    Agreement,
+    AgreementAssignment,
+    Contractor,
+    ContractorPublicProfile,
+    Homeowner,
+    Notification,
+    PublicContractorLead,
+)
 from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
@@ -43,6 +52,7 @@ def _use_secure_requests(client):
 
 class ContractorOpportunityFlowTests(TestCase):
     def setUp(self):
+        cache.clear()
         User = get_user_model()
         self.contractor_user = User.objects.create_user(
             email="contractor@example.com",
@@ -540,7 +550,9 @@ class ContractorOpportunityFlowTests(TestCase):
             {
                 "source_type": "opportunity",
                 "source_id": opportunity.id,
-                "scheduled_start": "2026-08-12T14:30:00Z",
+                "scheduled_start": (timezone.now() + timedelta(days=2)).replace(
+                    minute=30, second=0, microsecond=0
+                ).isoformat(),
                 "duration_minutes": 60,
                 "appointment_type": "in_person",
                 "notes": "Confirm slab access.",
@@ -553,7 +565,7 @@ class ContractorOpportunityFlowTests(TestCase):
         appointment = OpportunityEstimateAppointment.objects.get()
         self.assertEqual(appointment.contractor, self.contractor)
         self.assertEqual(appointment.contractor_opportunity, opportunity)
-        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_SCHEDULED)
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_PROPOSED)
         self.assertEqual(appointment.requested_by, OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR)
         self.assertEqual(appointment.timezone, "America/Chicago")
         self.assertIn("Concrete Patio Extension", appointment.customer_message)
@@ -578,8 +590,14 @@ class ContractorOpportunityFlowTests(TestCase):
         )
 
     def test_contractor_can_schedule_estimate_for_public_website_lead(self):
+        public_profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public=self.contractor.business_name,
+            is_public=True,
+        )
         lead = PublicContractorLead.objects.create(
             contractor=self.contractor,
+            public_profile=public_profile,
             full_name="Website Homeowner",
             email="website-homeowner@example.com",
             phone="512-555-0101",
@@ -595,7 +613,9 @@ class ContractorOpportunityFlowTests(TestCase):
             {
                 "source_type": "lead",
                 "source_id": lead.id,
-                "scheduled_start": (timezone.now() + timedelta(days=2)).isoformat(),
+                "scheduled_start": (timezone.now() + timedelta(days=2)).replace(
+                    minute=30, second=0, microsecond=0
+                ).isoformat(),
                 "duration_minutes": 60,
                 "appointment_type": "in_person",
                 "service_location": "100 QA Test Lane, Austin, TX",

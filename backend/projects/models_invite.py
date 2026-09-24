@@ -1,6 +1,7 @@
 # backend/projects/models_invite.py
 import uuid
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -28,6 +29,7 @@ class ContractorInvite(models.Model):
     # Contractor (invitee) contact details (at least one required)
     contractor_email = models.EmailField(blank=True)
     contractor_phone = models.CharField(max_length=20, blank=True)
+    contact_identity = models.CharField(max_length=255, blank=True, default="")
 
     # Optional source intake that originated the invite
     source_intake = models.ForeignKey(
@@ -61,6 +63,13 @@ class ContractorInvite(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_intake", "contact_identity"],
+                condition=Q(source_intake__isnull=False) & ~Q(contact_identity=""),
+                name="uniq_intake_contractor_invite_identity",
+            ),
+        ]
 
     @property
     def is_accepted(self) -> bool:

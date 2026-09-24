@@ -628,7 +628,7 @@ export default function AdminMarketplacePage() {
       } catch {
         // The location update succeeded; keep the local row update even if the overview refresh fails.
       }
-      setStatus(enabled ? `${row.city}, ${row.state} enabled for gated marketplace routing.` : `${row.city}, ${row.state} disabled for marketplace routing.`);
+      setStatus(enabled ? `${row.city}, ${row.state} activated for automatic routing.` : `Automatic routing paused for ${row.city}, ${row.state}.`);
     } catch (error) {
       setStatus(error?.response?.data?.detail || "Could not update marketplace location.");
     }
@@ -1135,7 +1135,7 @@ export default function AdminMarketplacePage() {
                               disabled={row.status === "enabled"}
                               className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Enable
+                              Activate routing
                             </button>
                             <button
                               type="button"
@@ -1144,7 +1144,7 @@ export default function AdminMarketplacePage() {
                               disabled={!row.manual_enabled}
                               className="rounded-lg border border-rose-200/30 bg-rose-300/10 px-3 py-1.5 text-xs font-extrabold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Disable
+                              Pause routing
                             </button>
                           </div>
                         </td>
@@ -1166,10 +1166,10 @@ export default function AdminMarketplacePage() {
             >
               <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard label="Saved Not Routed" value={savedRequests.summary?.saved_not_routed || 0} sub="Waiting on routing" testId="admin-marketplace-backlog-saved" />
-                <MetricCard label="Routable Now" value={savedRequests.summary?.routable_now || 0} sub="Enabled locations" tone="emerald" testId="admin-marketplace-backlog-routable" />
+                <MetricCard label="Routable Now" value={savedRequests.summary?.routable_now || 0} sub="Automatic routing ready" tone="emerald" testId="admin-marketplace-backlog-routable" />
                 <MetricCard label="Already Routed" value={savedRequests.summary?.already_routed || 0} sub="Has invites or bids" testId="admin-marketplace-backlog-routed" />
                 <MetricCard label="Location Missing" value={savedRequests.summary?.blocked_location_missing || 0} sub="Needs request review" tone="amber" testId="admin-marketplace-backlog-location-missing" />
-                <MetricCard label="Disabled Location" value={savedRequests.summary?.blocked_disabled || 0} sub="City not enabled" tone="amber" testId="admin-marketplace-backlog-disabled" />
+                <MetricCard label="Building Coverage" value={savedRequests.summary?.automatic_routing_unavailable ?? savedRequests.summary?.blocked_disabled ?? 0} sub="Saved for future matching" tone="amber" testId="admin-marketplace-backlog-disabled" />
                 <MetricCard label="No Eligible Contractors" value={savedRequests.summary?.blocked_no_eligible_contractors || 0} sub="Claimed supply gap" tone="amber" testId="admin-marketplace-backlog-no-eligible" />
                 <MetricCard label="At Cap" value={savedRequests.summary?.at_cap || 0} sub="Max bids reached" tone="emerald" testId="admin-marketplace-backlog-at-cap" />
               </div>

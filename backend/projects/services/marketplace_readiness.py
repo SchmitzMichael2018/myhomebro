@@ -52,6 +52,28 @@ class MarketplaceThresholds:
     max_bids_per_request: int
 
 
+def marketplace_capabilities(readiness: dict[str, Any]) -> dict[str, bool]:
+    """Describe location policy without conflating participation with routing."""
+    return {
+        "can_participate": True,
+        "can_search": True,
+        "can_direct_invite": True,
+        "can_auto_route": bool(readiness.get("enabled")),
+    }
+
+
+def _with_marketplace_capabilities(readiness: dict[str, Any]) -> dict[str, Any]:
+    capabilities = marketplace_capabilities(readiness)
+    return {
+        **readiness,
+        "capabilities": capabilities,
+        **capabilities,
+        "request_saved": True,
+        "saved_for_future_matching": not capabilities["can_auto_route"],
+        "automatic_matching_available": capabilities["can_auto_route"],
+    }
+
+
 def normalize_location_value(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
 
@@ -240,7 +262,7 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
     state = normalize_location_value(state)
     if not city or not state:
         thresholds = marketplace_thresholds()
-        return {
+        return _with_marketplace_capabilities({
             "city": city, "state": state, "status": LOCATION_MISSING_STATUS,
             "enabled": False, "manual_enabled": False, "manual_approval_required": True,
             "thresholds": thresholds.__dict__,
@@ -258,7 +280,7 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
             "max_bids_per_request": thresholds.max_bids_per_request,
             "location_id": None, "admin_notes": "",
             "activated_at": None, "routing_paused_at": None,
-        }
+        })
     location = get_marketplace_location(city, state)
     thresholds = marketplace_thresholds(location)
     listings = list(_location_listing_qs(city, state))
@@ -308,7 +330,7 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
     else:
         status = MarketplaceLocation.STATUS_NOT_READY
 
-    return {
+    return _with_marketplace_capabilities({
         "city": city,
         "state": state,
         "status": status,
@@ -333,24 +355,32 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
         "admin_notes": location.admin_notes if location else "",
         "activated_at": location.enabled_at.isoformat() if location and location.enabled_at else None,
         "routing_paused_at": location.disabled_at.isoformat() if location and location.disabled_at else None,
-    }
+    })
 
 
 def marketplace_enabled_for_intake(intake: ProjectIntake) -> dict[str, Any]:
     city, state, _zip_code = intake_marketplace_location(intake)
     if not city or not state:
-        return {
+        return _with_marketplace_capabilities({
             "city": normalize_location_value(city),
             "state": normalize_location_value(state),
             "status": LOCATION_MISSING_STATUS,
             "enabled": False,
-            "message": "We need a project city and state before routing this request to eligible contractors.",
-        }
+            "message": "Your request has been saved. Add a project city and state for automatic matching; contractor search and direct invitations remain available.",
+            "coverage_message": "Building local coverage",
+            "automatic_matching_message": "Automatic matching needs a complete project city and state.",
+            "direct_invitation_message": "Direct contractor invitations are available.",
+        })
     readiness = location_readiness(city, state)
-    if readiness["enabled"]:
+    if readiness["can_auto_route"]:
         readiness["message"] = f"Marketplace routing is enabled in {readiness['city']}, {readiness['state']}. We can invite up to {readiness['max_bids_per_request']} eligible contractors."
+        readiness["coverage_message"] = "Local coverage is ready"
+        readiness["automatic_matching_message"] = "Automatic matching is available in this area."
     else:
-        readiness["message"] = f"Marketplace matching is not yet enabled in {readiness['city']}, {readiness['state']}. Your request is saved and can be routed when local coverage is ready."
+        readiness["message"] = f"Your request has been saved for future matching in {readiness['city']}, {readiness['state']}. Automatic matching is not yet available in this area; contractor search and direct invitations remain available."
+        readiness["coverage_message"] = "Building local coverage"
+        readiness["automatic_matching_message"] = "Automatic matching is not yet available in this area."
+    readiness["direct_invitation_message"] = "Direct contractor invitations are available."
     return readiness
 
 
@@ -569,7 +599,7 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     ]
     existing_qs = ContractorDiscoveryInvite.objects.select_for_update().filter(public_intake=intake, status__in=open_statuses)
     existing_count = existing_qs.count()
-    if not readiness.get("enabled"):
+    if not readiness.get("can_auto_route"):
         return {
             "created": [],
             "created_count": 0,
