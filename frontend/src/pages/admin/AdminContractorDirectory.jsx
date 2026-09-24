@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../../api";
+import Modal from "../../components/Modal.jsx";
 
 const RADIUS_OPTIONS = [
   { value: "5", label: "5 miles" },
@@ -11,7 +12,8 @@ const RADIUS_OPTIONS = [
   { value: "100", label: "50+ miles" },
 ];
 
-const DIRECTORY_PAGE_SIZE = 50;
+const DIRECTORY_PAGE_SIZE = 25;
+const DIRECTORY_PAGE_SIZES = [25, 50, 100];
 
 const EXPORT_HEADERS = [
   "id",
@@ -244,8 +246,41 @@ function filtersFromSearch(search) {
   };
 }
 
+function writeFiltersToSearchParams(params, filters) {
+  Object.entries(filters).forEach(([name, value]) => {
+    if (value === false || value === "" || (name === "archived" && value === "active")) {
+      params.delete(name);
+    } else {
+      params.set(name, value === true ? "true" : String(value));
+    }
+  });
+}
+
+function FacetSelect({ name, label, value, options, onChange, testId }) {
+  return (
+    <label>
+      <span className={labelClass}>{label}</span>
+      <select
+        aria-label={label}
+        data-testid={testId}
+        value={value}
+        onChange={(event) => onChange(name, event.target.value)}
+        className={inputClass}
+      >
+        <option value="">All {label.toLowerCase()}s</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label} ({option.count})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export default function AdminContractorDirectory() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchForm, setSearchForm] = useState({
     query: "",
     city: "",
@@ -254,6 +289,7 @@ export default function AdminContractorDirectory() {
     radius_miles: "25",
   });
   const [filters, setFilters] = useState(() => filtersFromSearch(location.search));
+  const filtersRef = useRef(filters);
   const [searchResults, setSearchResults] = useState([]);
   const [selectedSearchResults, setSelectedSearchResults] = useState({});
   const [capturedCount, setCapturedCount] = useState(0);
@@ -266,6 +302,12 @@ export default function AdminContractorDirectory() {
     total_pages: 1,
     has_next: false,
     has_previous: false,
+  });
+  const [directoryFacets, setDirectoryFacets] = useState({
+    primary_service: [],
+    city: [],
+    state: [],
+    zip: [],
   });
   const [searchLoading, setSearchLoading] = useState(false);
   const [directoryLoading, setDirectoryLoading] = useState(false);
@@ -285,19 +327,31 @@ export default function AdminContractorDirectory() {
   const [importError, setImportError] = useState("");
   const [claimLinks, setClaimLinks] = useState({});
   const [joinInviteIds, setJoinInviteIds] = useState({});
+  const [directoryAction, setDirectoryAction] = useState(null);
+  const [directoryActionBusy, setDirectoryActionBusy] = useState(false);
+  const [directoryActionError, setDirectoryActionError] = useState("");
+  const directoryActionLockRef = useRef(false);
+  const directoryRequestIdRef = useRef(0);
+  const directoryTableRef = useRef(null);
 
-  const exportRows = useMemo(
-    () => directoryRows.filter((row) => !row.public_email && row.website),
-    [directoryRows]
+  const activeFacetFilters = useMemo(
+    () => ["primary_service", "city", "state", "zip"].filter((name) => safeText(filters[name])),
+    [filters]
   );
 
-  async function loadDirectory(nextFilters = filters, nextPage = directoryPagination.page) {
+  async function loadDirectory(
+    nextFilters = filters,
+    nextPage = directoryPagination.page,
+    nextPageSize = directoryPagination.page_size
+  ) {
+    const requestId = directoryRequestIdRef.current + 1;
+    directoryRequestIdRef.current = requestId;
     setDirectoryLoading(true);
     setDirectoryError("");
     try {
       const params = {
         page: nextPage,
-        page_size: DIRECTORY_PAGE_SIZE,
+        page_size: nextPageSize,
         ...(safeText(nextFilters.q) ? { q: nextFilters.q } : {}),
         ...(nextFilters.missing_email ? { missing_email: "true" } : {}),
         ...(nextFilters.has_email ? { has_email: "true" } : {}),
@@ -319,6 +373,7 @@ export default function AdminContractorDirectory() {
         ...(safeText(nextFilters.enrichment_status) ? { enrichment_status: nextFilters.enrichment_status } : {}),
       };
       const { data } = await api.get("/projects/admin/contractor-directory/", { params });
+      if (requestId !== directoryRequestIdRef.current) return;
       setDirectoryRows(Array.isArray(data?.results) ? data.results : []);
       setDirectoryPagination({
         page: Number(data?.page || nextPage || 1),
@@ -328,12 +383,19 @@ export default function AdminContractorDirectory() {
         has_next: Boolean(data?.has_next),
         has_previous: Boolean(data?.has_previous),
       });
+      setDirectoryFacets({
+        primary_service: Array.isArray(data?.facets?.primary_service) ? data.facets.primary_service : [],
+        city: Array.isArray(data?.facets?.city) ? data.facets.city : [],
+        state: Array.isArray(data?.facets?.state) ? data.facets.state : [],
+        zip: Array.isArray(data?.facets?.zip) ? data.facets.zip : [],
+      });
     } catch (error) {
+      if (requestId !== directoryRequestIdRef.current) return;
       setDirectoryError(error?.response?.data?.detail || "Could not load contractor directory.");
       setDirectoryRows([]);
       setDirectoryPagination((prev) => ({ ...prev, total_count: 0, total_pages: 1, has_next: false, has_previous: false }));
     } finally {
-      setDirectoryLoading(false);
+      if (requestId === directoryRequestIdRef.current) setDirectoryLoading(false);
     }
   }
 
@@ -344,8 +406,13 @@ export default function AdminContractorDirectory() {
 
   useEffect(() => {
     const nextFilters = filtersFromSearch(location.search);
+    const params = new URLSearchParams(location.search);
+    const nextPage = Math.max(1, Number(params.get("page")) || 1);
+    const requestedPageSize = Number(params.get("page_size")) || DIRECTORY_PAGE_SIZE;
+    const nextPageSize = DIRECTORY_PAGE_SIZES.includes(requestedPageSize) ? requestedPageSize : DIRECTORY_PAGE_SIZE;
+    filtersRef.current = nextFilters;
     setFilters(nextFilters);
-    loadDirectory(nextFilters, 1);
+    loadDirectory(nextFilters, nextPage, nextPageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
@@ -354,13 +421,50 @@ export default function AdminContractorDirectory() {
   }
 
   function setFilterField(name, value) {
-    const next = { ...filters, [name]: value };
-    setFilters(next);
-    loadDirectory(next, 1);
+    const nextFilters = { ...filtersRef.current, [name]: value };
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+    const params = new URLSearchParams(location.search);
+    writeFiltersToSearchParams(params, nextFilters);
+    params.delete("page");
+    navigate(`${location.pathname}?${params.toString()}`);
   }
 
   function changeDirectoryPage(nextPage) {
-    loadDirectory(filters, nextPage);
+    const params = new URLSearchParams(location.search);
+    if (nextPage <= 1) params.delete("page");
+    else params.set("page", String(nextPage));
+    navigate(`${location.pathname}?${params.toString()}`);
+  }
+
+  function changeDirectoryPageSize(nextPageSize) {
+    const params = new URLSearchParams(location.search);
+    params.set("page_size", String(nextPageSize));
+    params.delete("page");
+    navigate(`${location.pathname}?${params.toString()}`);
+  }
+
+  function clearAllFilters() {
+    const nextFilters = filtersFromSearch("");
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+    navigate(location.pathname);
+  }
+
+  async function exportMissingEmails() {
+    setDirectoryError("");
+    try {
+      const params = {
+        ...Object.fromEntries(new URLSearchParams(location.search)),
+        export_missing_email: "true",
+      };
+      delete params.page;
+      delete params.page_size;
+      const { data } = await api.get("/projects/admin/contractor-directory/", { params });
+      downloadCsv(Array.isArray(data?.results) ? data.results : []);
+    } catch (error) {
+      setDirectoryError(error?.response?.data?.detail || "Could not export missing-email contractors.");
+    }
   }
 
   async function runSearch(event) {
@@ -511,27 +615,43 @@ export default function AdminContractorDirectory() {
     }
   }
 
-  async function archiveEntry(row) {
-    setDirectoryError("");
-    setSuccessMessage("");
-    try {
-      await api.post(`/projects/admin/contractor-directory/${row.id}/archive/`, {});
-      setSuccessMessage("Directory entry archived.");
-      await loadDirectory(filters, directoryPagination.page);
-    } catch (error) {
-      setDirectoryError(error?.response?.data?.detail || "Could not archive this directory entry.");
+  function openDirectoryAction(action, row) {
+    setDirectoryActionError("");
+    setDirectoryAction({ action, row });
+  }
+
+  function closeDirectoryAction() {
+    if (!directoryActionLockRef.current) {
+      setDirectoryActionError("");
+      setDirectoryAction(null);
     }
   }
 
-  async function restoreEntry(row) {
+  async function confirmDirectoryAction() {
+    if (!directoryAction || directoryActionLockRef.current) return;
+    const { action, row } = directoryAction;
+    directoryActionLockRef.current = true;
+    setDirectoryActionBusy(true);
+    setDirectoryActionError("");
     setDirectoryError("");
     setSuccessMessage("");
     try {
-      await api.post(`/projects/admin/contractor-directory/${row.id}/restore/`, {});
-      setSuccessMessage("Directory entry restored.");
+      await api.post(`/projects/admin/contractor-directory/${row.id}/${action}/`, {});
+      setSuccessMessage(action === "archive" ? "Directory entry archived." : "Directory entry restored.");
       await loadDirectory(filters, directoryPagination.page);
+      setDirectoryAction(null);
+      window.requestAnimationFrame(() => directoryTableRef.current?.focus());
     } catch (error) {
-      setDirectoryError(error?.response?.data?.detail || "Could not restore this directory entry.");
+      const message =
+        error?.response?.data?.detail
+        || (action === "archive"
+          ? "Could not archive this directory entry."
+          : "Could not restore this directory entry.");
+      setDirectoryActionError(message);
+      setDirectoryError(message);
+    } finally {
+      directoryActionLockRef.current = false;
+      setDirectoryActionBusy(false);
     }
   }
 
@@ -611,7 +731,7 @@ export default function AdminContractorDirectory() {
     setImportError("");
     setImportMessage("");
     try {
-      const rows = importRows.filter((row, index) => Boolean(approvedRows[index])).map((row, index) => ({
+      const rows = importRows.filter((row, index) => Boolean(approvedRows[index])).map((row) => ({
         ...row,
         admin_approved: true,
       }));
@@ -822,13 +942,16 @@ export default function AdminContractorDirectory() {
               Use this view to export contractor websites for manual email/service enrichment.
             </p>
           </div>
-          <button type="button" data-testid="admin-contractor-directory-export" onClick={() => downloadCsv(exportRows)} disabled={!exportRows.length} className="rounded-xl border border-white/20 bg-white px-4 py-2 text-sm font-bold text-[#0a2550] hover:bg-sky-50 disabled:opacity-60">
+          <button type="button" data-testid="admin-contractor-directory-export" onClick={exportMissingEmails} className="rounded-xl border border-white/20 bg-white px-4 py-2 text-sm font-bold text-[#0a2550] hover:bg-sky-50 disabled:opacity-60">
             Export Missing Emails CSV
           </button>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-4 lg:grid-cols-8">
-          <input data-testid="admin-contractor-filter-q" placeholder="Business name" value={filters.q} onChange={(event) => setFilterField("q", event.target.value)} className={inputClass} />
+          <label className="lg:col-span-2">
+            <span className={labelClass}>Search</span>
+            <input data-testid="admin-contractor-filter-q" aria-label="Search directory" placeholder="Name, website, email, or phone" value={filters.q} onChange={(event) => setFilterField("q", event.target.value)} className={inputClass} />
+          </label>
           <label className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm font-semibold text-sky-100">
             <input type="checkbox" data-testid="admin-contractor-filter-missing-email" checked={filters.missing_email} onChange={(event) => setFilterField("missing_email", event.target.checked)} />
             Missing Email
@@ -841,9 +964,10 @@ export default function AdminContractorDirectory() {
             <input type="checkbox" data-testid="admin-contractor-filter-has-website" checked={filters.has_website} onChange={(event) => setFilterField("has_website", event.target.checked)} />
             Has Website
           </label>
-          <input data-testid="admin-contractor-filter-city" placeholder="City" value={filters.city} onChange={(event) => setFilterField("city", event.target.value)} className={inputClass} />
-          <input data-testid="admin-contractor-filter-state" placeholder="State" value={filters.state} onChange={(event) => setFilterField("state", event.target.value)} className={inputClass} />
-          <input data-testid="admin-contractor-filter-zip" placeholder="ZIP" value={filters.zip} onChange={(event) => setFilterField("zip", event.target.value)} className={inputClass} />
+          <FacetSelect name="primary_service" label="Primary service" value={filters.primary_service} options={directoryFacets.primary_service} onChange={setFilterField} testId="admin-contractor-filter-primary-service" />
+          <FacetSelect name="city" label="City" value={filters.city} options={directoryFacets.city} onChange={setFilterField} testId="admin-contractor-filter-city" />
+          <FacetSelect name="state" label="State" value={filters.state} options={directoryFacets.state} onChange={setFilterField} testId="admin-contractor-filter-state" />
+          <FacetSelect name="zip" label="ZIP" value={filters.zip} options={directoryFacets.zip} onChange={setFilterField} testId="admin-contractor-filter-zip" />
           <select value={filters.claimed} onChange={(event) => setFilterField("claimed", event.target.value)} className={inputClass}>
             <option value="">Claimed</option>
             <option value="true">Claimed</option>
@@ -855,7 +979,6 @@ export default function AdminContractorDirectory() {
             <option value="all">All</option>
           </select>
           <input placeholder="Source" value={filters.source} onChange={(event) => setFilterField("source", event.target.value)} className={inputClass} />
-          <input data-testid="admin-contractor-filter-primary-service" placeholder="Primary service" value={filters.primary_service} onChange={(event) => setFilterField("primary_service", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-contact-status" placeholder="Contact status" value={filters.contact_status} onChange={(event) => setFilterField("contact_status", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-outreach-status" placeholder="Outreach status" value={filters.outreach_status} onChange={(event) => setFilterField("outreach_status", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-outreach-method" placeholder="Outreach method" value={filters.preferred_outreach_method} onChange={(event) => setFilterField("preferred_outreach_method", event.target.value)} className={inputClass} />
@@ -868,87 +991,86 @@ export default function AdminContractorDirectory() {
           <input placeholder="Profile status" value={filters.profile_status} onChange={(event) => setFilterField("profile_status", event.target.value)} className={inputClass} />
           <input placeholder="Enrichment status" value={filters.enrichment_status} onChange={(event) => setFilterField("enrichment_status", event.target.value)} className={inputClass} />
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="admin-contractor-active-filters">
+          {activeFacetFilters.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setFilterField(name, "")}
+              className="rounded-full border border-sky-200/25 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-50"
+              aria-label={`Clear ${name.replace(/_/g, " ")} filter`}
+            >
+              {titleize(name)}: {filters[name]} ×
+            </button>
+          ))}
+          {Object.entries(filters).some(([, value]) => Boolean(value)) ? (
+            <button type="button" data-testid="admin-contractor-clear-all-filters" onClick={clearAllFilters} className="text-xs font-bold text-sky-100 underline underline-offset-2">
+              Clear all filters
+            </button>
+          ) : null}
+        </div>
 
         {directoryError ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{directoryError}</div> : null}
 
-        <div className="mt-4 overflow-x-auto" data-testid="admin-contractor-directory-table">
-          <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
-            <thead>
-              <tr className="text-xs uppercase tracking-wide text-sky-100/65">
-                {["Actions", "Business Name", "Website", "Phone", "Email", "Contact Status", "Outreach Status", "Last Outreach", "Preferred Outreach", "Confidence", "Claim Readiness", "Location", "Primary Service", "Normalized Services", "Rating", "Reviews", "Claimed", "Profile Status", "Enrichment Status", "Last Seen"].map((heading) => (
-                  <th key={heading} className={tableHeadClass}>{heading}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {directoryRows.map((row) => (
-                <tr key={row.id} className="border-b border-white/10">
-                  <td className={tableCellClass}>
-                    <div className="flex min-w-44 flex-wrap gap-2">
-                      <button type="button" data-testid={`admin-contractor-edit-${row.id}`} onClick={() => openEdit(row)} className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold text-white">Edit</button>
-                      <button type="button" data-testid={`admin-contractor-claim-link-${row.id}`} onClick={() => generateClaimLink(row)} className="rounded-lg border border-sky-200/30 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-50">Generate Claim Link</button>
-                      {!row.claimed && (safeText(row.public_email) || safeText(row.phone)) ? (
-                        <button
-                          type="button"
-                          data-testid={`admin-contractor-join-invite-${row.id}`}
-                          onClick={() => sendJoinInvite(row, Boolean(row.marketplace_join_invite?.sent_at))}
-                          disabled={Boolean(joinInviteIds[row.id])}
-                          className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50 disabled:opacity-60"
-                        >
-                          {joinInviteIds[row.id] ? "Sending..." : row.marketplace_join_invite?.sent_at ? "Resend Join Invite" : "Send Join Marketplace Invite"}
-                        </button>
-                      ) : null}
-                      {claimLinks[row.id] ? (
-                        <button type="button" data-testid={`admin-contractor-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50">Copy Claim Link</button>
-                      ) : null}
-                      {row.is_archived ? (
-                        <button type="button" data-testid={`admin-contractor-restore-${row.id}`} onClick={() => restoreEntry(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50">Restore Archived Entry</button>
-                      ) : (
-                        <button type="button" data-testid={`admin-contractor-archive-${row.id}`} onClick={() => archiveEntry(row)} className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-50">Archive/Remove Entry</button>
-                      )}
-                      <button type="button" data-testid={`admin-contractor-log-phone-${row.id}`} onClick={() => logOutreach(row, "phone", "Phone call logged manually.")} className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold text-white">Log Phone Call</button>
-                      <button type="button" data-testid={`admin-contractor-log-form-${row.id}`} onClick={() => logOutreach(row, "website_form", "Website form submitted manually.")} className="rounded-lg border border-sky-200/30 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-50">Log Website Form</button>
-                      <button type="button" data-testid={`admin-contractor-log-review-${row.id}`} onClick={() => logOutreach(row, "manual_note", "Marked for manual review.")} className="rounded-lg border border-rose-200/30 bg-rose-300/10 px-3 py-1 text-xs font-bold text-rose-50">Mark Manual Review Needed</button>
-                      {row.claimed_contractor_id ? (
-                        <span className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-white">Contractor #{row.claimed_contractor_id}</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className={`${tableCellClass} font-semibold text-white`}>{row.business_name}</td>
-                  <td className={tableCellClass}>{row.website ? <a href={row.website} target="_blank" rel="noreferrer" className="font-semibold text-sky-100 hover:underline">{websiteHost(row.website)}</a> : <span className="text-sky-100/45">Not listed</span>}</td>
-                  <td className={tableCellClass}>{row.phone || "Not listed"}</td>
-                  <td className={tableCellClass}>{row.public_email || "Email not listed"}</td>
-                  <td className={tableCellClass}>{titleize(row.contact_status || "manual_review_needed")}</td>
-                  <td className={tableCellClass}>
-                    <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-extrabold ${outreachStatusClass(row)}`}>
-                      {outreachStatusLabel(row)}
-                    </span>
-                    <div className="mt-1 whitespace-nowrap text-xs text-sky-100/65">
-                      {Number(row.outreach_attempt_count || 0)} outreach attempt{Number(row.outreach_attempt_count || 0) === 1 ? "" : "s"}
-                    </div>
-                  </td>
-                  <td className={tableCellClass}>
-                    <div className="whitespace-nowrap font-semibold text-sky-50">{formatRelativeTime(row.latest_outreach_at)}</div>
-                    <div className="mt-1 whitespace-nowrap text-xs text-sky-100/65">
-                      {row.latest_outreach_type ? titleize(row.latest_outreach_type) : "Latest action"}
-                    </div>
-                  </td>
-                  <td className={tableCellClass}>{titleize(row.preferred_outreach_method || "unknown")}</td>
-                  <td className={tableCellClass}>{titleize(row.contact_confidence || "low")}</td>
-                  <td className={tableCellClass}>{titleize(row.claim_readiness_status || "needs_manual_review")}</td>
-                  <td className={`${tableCellClass} whitespace-pre-line`}>{formatLocation(row)}</td>
-                  <td className={tableCellClass}>{row.primary_service || ""}</td>
-                  <td className={tableCellClass}>{servicesToText(row.normalized_services || [])}</td>
-                  <td className={tableCellClass}>{row.rating ?? ""}</td>
-                  <td className={tableCellClass}>{row.review_count ?? ""}</td>
-                  <td className={tableCellClass}>{row.claimed ? "Yes" : "No"}</td>
-                  <td className={tableCellClass}>{row.profile_status}</td>
-                  <td className={tableCellClass}>{row.enrichment_status}</td>
-                  <td className={tableCellClass}>{formatDate(row.last_seen_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div ref={directoryTableRef} tabIndex={-1} aria-label="Contractor directory results" className="mt-4 space-y-2 outline-none" data-testid="admin-contractor-directory-table">
+          {directoryRows.map((row) => (
+            <article key={row.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm md:grid-cols-[minmax(12rem,1.4fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_auto] md:items-center" data-testid={`admin-contractor-directory-row-${row.id}`}>
+              <div className="min-w-0">
+                <div className="truncate font-extrabold text-white">{row.business_name}</div>
+                <div className="mt-1 text-xs text-sky-100/65">
+                  {row.primary_service || "Service not set"} · {[
+                    [row.city, row.state].filter(Boolean).join(", "),
+                    row.zip_code,
+                  ].filter(Boolean).join(" ") || "Location not set"}
+                </div>
+              </div>
+              <div className="min-w-0 text-xs text-sky-100/75">
+                {row.website ? <a href={row.website} target="_blank" rel="noreferrer" className="block truncate font-semibold text-sky-100 hover:underline">{websiteHost(row.website)}</a> : <span>Website not listed</span>}
+                <div className="truncate">{row.public_email || "Email not listed"}</div>
+                {row.phone ? <div className="truncate">{row.phone}</div> : null}
+                <div>{titleize(row.contact_status || "manual_review_needed")}</div>
+              </div>
+              <div>
+                <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-extrabold ${outreachStatusClass(row)}`}>
+                  {outreachStatusLabel(row)}
+                </span>
+                <div className="mt-1 text-xs text-sky-100/65">
+                  {formatRelativeTime(row.latest_outreach_at)} · {Number(row.outreach_attempt_count || 0)} attempt{Number(row.outreach_attempt_count || 0) === 1 ? "" : "s"}
+                </div>
+              </div>
+              <div className="text-xs text-sky-100/75">
+                <div>{row.claimed ? "Claimed" : titleize(row.claim_readiness_status || "needs_manual_review")}</div>
+                <div>{titleize(row.profile_status)} profile · {titleize(row.enrichment_status)}</div>
+                <div>Seen {formatDate(row.last_seen_at)}</div>
+              </div>
+              <div className="flex items-center gap-2 md:justify-end">
+                <button type="button" data-testid={`admin-contractor-edit-${row.id}`} onClick={() => openEdit(row)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-[#0a2550]">Edit</button>
+                <details className="relative">
+                  <summary data-testid={`admin-contractor-actions-${row.id}`} aria-label={`More actions for ${row.business_name}`} className="cursor-pointer list-none rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-extrabold text-white">
+                    •••
+                  </summary>
+                  <div className="absolute right-0 z-20 mt-2 grid min-w-64 gap-1 rounded-xl border border-white/15 bg-[#071a38] p-2 shadow-2xl">
+                    <button type="button" data-testid={`admin-contractor-claim-link-${row.id}`} onClick={() => generateClaimLink(row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-sky-50 hover:bg-white/10">Generate Claim Link</button>
+                    {!row.claimed && (safeText(row.public_email) || safeText(row.phone)) ? (
+                      <button type="button" data-testid={`admin-contractor-join-invite-${row.id}`} onClick={() => sendJoinInvite(row, Boolean(row.marketplace_join_invite?.sent_at))} disabled={Boolean(joinInviteIds[row.id])} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-emerald-50 hover:bg-white/10 disabled:opacity-60">
+                        {joinInviteIds[row.id] ? "Sending..." : row.marketplace_join_invite?.sent_at ? "Resend Join Invite" : "Send Join Marketplace Invite"}
+                      </button>
+                    ) : null}
+                    {claimLinks[row.id] ? <button type="button" data-testid={`admin-contractor-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-emerald-50 hover:bg-white/10">Copy Claim Link</button> : null}
+                    {row.is_archived ? (
+                      <button type="button" data-testid={`admin-contractor-restore-${row.id}`} onClick={() => openDirectoryAction("restore", row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-emerald-50 hover:bg-white/10">Restore Archived Entry</button>
+                    ) : (
+                      <button type="button" data-testid={`admin-contractor-archive-${row.id}`} onClick={() => openDirectoryAction("archive", row)} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-amber-50 hover:bg-white/10">Archive/Remove Entry</button>
+                    )}
+                    <button type="button" data-testid={`admin-contractor-log-phone-${row.id}`} onClick={() => logOutreach(row, "phone", "Phone call logged manually.")} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-white hover:bg-white/10">Log Phone Call</button>
+                    <button type="button" data-testid={`admin-contractor-log-form-${row.id}`} onClick={() => logOutreach(row, "website_form", "Website form submitted manually.")} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-sky-50 hover:bg-white/10">Log Website Form</button>
+                    <button type="button" data-testid={`admin-contractor-log-review-${row.id}`} onClick={() => logOutreach(row, "manual_note", "Marked for manual review.")} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-rose-50 hover:bg-white/10">Mark Manual Review Needed</button>
+                    {row.claimed_contractor_id ? <span className="px-3 py-2 text-xs font-bold text-white">Contractor #{row.claimed_contractor_id}</span> : null}
+                  </div>
+                </details>
+              </div>
+            </article>
+          ))}
           {!directoryLoading && !directoryRows.length ? <div className="rounded-xl border border-dashed border-white/20 bg-white/8 px-4 py-6 text-sm text-sky-100/70">No contractors captured yet. Use admin search to start building the directory.</div> : null}
           {directoryLoading ? <div className="px-4 py-6 text-sm text-sky-100/70">Loading contractor directory...</div> : null}
         </div>
@@ -957,6 +1079,17 @@ export default function AdminContractorDirectory() {
             Showing {showingStart}-{showingEnd} of {directoryPagination.total_count}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs font-bold text-sky-100/75">
+              Rows
+              <select
+                aria-label="Directory rows per page"
+                value={directoryPagination.page_size}
+                onChange={(event) => changeDirectoryPageSize(Number(event.target.value))}
+                className="rounded-lg border border-white/20 bg-[#071a38] px-2 py-2 text-white"
+              >
+                {DIRECTORY_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
             <button
               type="button"
               data-testid="admin-contractor-directory-prev"
@@ -981,6 +1114,54 @@ export default function AdminContractorDirectory() {
           </div>
         </div>
       </section>
+
+      <Modal
+        visible={Boolean(directoryAction)}
+        title={directoryAction?.action === "archive"
+          ? `Archive ${directoryAction?.row?.business_name || "directory entry"}?`
+          : `Restore ${directoryAction?.row?.business_name || "directory entry"}?`}
+        onClose={closeDirectoryAction}
+        testId="admin-contractor-directory-action-dialog"
+        containerClassName="mx-4 max-w-lg rounded-2xl"
+      >
+        <p className="text-sm leading-6 text-slate-700">
+          {directoryAction?.action === "archive"
+            ? "This removes the directory entry from active acquisition and outreach views. It does not delete a claimed contractor account or historical records."
+            : "This returns the directory entry to active Directory views."}
+        </p>
+        {directoryActionError ? (
+          <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
+            {directoryActionError}
+          </div>
+        ) : null}
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            data-autofocus
+            data-testid="admin-contractor-directory-action-cancel"
+            disabled={directoryActionBusy}
+            onClick={closeDirectoryAction}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="admin-contractor-directory-action-confirm"
+            disabled={directoryActionBusy}
+            onClick={confirmDirectoryAction}
+            className={`rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-60 ${
+              directoryAction?.action === "archive" ? "bg-rose-700" : "bg-emerald-700"
+            }`}
+          >
+            {directoryActionBusy
+              ? "Working..."
+              : directoryAction?.action === "archive"
+                ? "Archive entry"
+                : "Restore entry"}
+          </button>
+        </div>
+      </Modal>
 
       {editingRow ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" data-testid="admin-contractor-edit-modal">

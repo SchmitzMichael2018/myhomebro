@@ -132,12 +132,12 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         first_page = self.client.get("/api/projects/admin/contractor-directory/")
         self.assertEqual(first_page.status_code, 200)
         self.assertEqual(first_page.data["page"], 1)
-        self.assertEqual(first_page.data["page_size"], 50)
+        self.assertEqual(first_page.data["page_size"], 25)
         self.assertEqual(first_page.data["total_count"], 61)
-        self.assertEqual(first_page.data["total_pages"], 2)
+        self.assertEqual(first_page.data["total_pages"], 3)
         self.assertTrue(first_page.data["has_next"])
         self.assertFalse(first_page.data["has_previous"])
-        self.assertEqual(len(first_page.data["results"]), 50)
+        self.assertEqual(len(first_page.data["results"]), 25)
 
         second_page = self.client.get("/api/projects/admin/contractor-directory/", {"page": 2, "page_size": 50})
         self.assertEqual(second_page.status_code, 200)
@@ -146,10 +146,71 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertTrue(second_page.data["has_previous"])
         self.assertEqual(len(second_page.data["results"]), 11)
 
+    def test_directory_facets_use_full_dataset_and_normalize_historical_variants(self):
+        ContractorDirectoryEntry.objects.create(
+            business_name="Lowercase Concrete",
+            normalized_name=normalize_business_name("Lowercase Concrete"),
+            city=" san antonio ",
+            state="Texas",
+            zip_code="07830-1234",
+            primary_service=" concrete ",
+        )
+        ContractorDirectoryEntry.objects.create(
+            business_name="Dallas Roofing",
+            normalized_name=normalize_business_name("Dallas Roofing"),
+            city="Dallas",
+            state="TX",
+            zip_code="75201",
+            primary_service="Roofing",
+        )
+        for index in range(30):
+            ContractorDirectoryEntry.objects.create(
+                business_name=f"Facet Page {index}",
+                normalized_name=normalize_business_name(f"Facet Page {index}"),
+                city="Austin",
+                state="TX",
+                zip_code="78701",
+                primary_service="Concrete",
+            )
+
+        response = self.client.get("/api/projects/admin/contractor-directory/", {"page_size": 25})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 25)
+        concrete = next(option for option in response.data["facets"]["primary_service"] if option["value"] == "Concrete")
+        texas = next(option for option in response.data["facets"]["state"] if option["value"] == "TX")
+        san_antonio = next(option for option in response.data["facets"]["city"] if option["value"] == "San Antonio")
+        leading_zero_zip = next(option for option in response.data["facets"]["zip"] if option["value"] == "07830")
+        self.assertEqual(concrete["count"], 32)
+        self.assertEqual(texas["label"], "Texas")
+        self.assertEqual(texas["count"], 33)
+        self.assertEqual(san_antonio["count"], 1)
+        self.assertEqual(leading_zero_zip["count"], 1)
+
+        filtered = self.client.get(
+            "/api/projects/admin/contractor-directory/",
+            {"primary_service": "Concrete", "state": "TX", "city": "San Antonio"},
+        )
+        self.assertEqual(filtered.data["total_count"], 1)
+        self.assertEqual(filtered.data["results"][0]["business_name"], "Lowercase Concrete")
+        self.assertEqual(
+            {option["value"] for option in filtered.data["facets"]["city"]},
+            {"Austin", "San Antonio"},
+        )
+        self.assertEqual(
+            {option["value"] for option in filtered.data["facets"]["primary_service"]},
+            {"Concrete"},
+        )
+
+    def test_directory_rejects_excessive_page_sizes(self):
+        response = self.client.get("/api/projects/admin/contractor-directory/", {"page_size": 1000})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["page_size"], 25)
+
     def test_directory_list_filters_still_apply_with_pagination(self):
         self.entry.public_email = "hello@austinconcrete.example"
         self.entry.save(update_fields=["public_email"])
-        for index in range(3):
+        for index in range(30):
             ContractorDirectoryEntry.objects.create(
                 business_name=f"Missing Email Contractor {index}",
                 normalized_name=normalize_business_name(f"Missing Email Contractor {index}"),
@@ -157,16 +218,31 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
                 state="TX",
                 primary_service="Concrete",
             )
+        blank_email = ContractorDirectoryEntry.objects.create(
+            business_name="Blank Email Contractor",
+            normalized_name=normalize_business_name("Blank Email Contractor"),
+            website="https://blank-email.example",
+            public_email="",
+            city="Austin",
+            state="TX",
+            primary_service="Concrete",
+        )
 
         response = self.client.get(
             "/api/projects/admin/contractor-directory/",
-            {"missing_email": "true", "page": 1, "page_size": 2},
+            {"missing_email": "true", "page": 1, "page_size": 25},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["total_count"], 3)
+        self.assertEqual(response.data["total_count"], 31)
         self.assertEqual(response.data["total_pages"], 2)
-        self.assertEqual(len(response.data["results"]), 2)
-        self.assertTrue(all(row["public_email"] is None for row in response.data["results"]))
+        self.assertEqual(len(response.data["results"]), 25)
+        self.assertTrue(all(not row["public_email"] for row in response.data["results"]))
+
+        export_response = self.client.get(
+            "/api/projects/admin/contractor-directory/",
+            {"export_missing_email": "true"},
+        )
+        self.assertIn(blank_email.id, {row["id"] for row in export_response.data["results"]})
 
     def test_csv_import_preview_matches_by_id_and_flags_invalid_email(self):
         csv_text = (
@@ -694,7 +770,13 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["summary"]["captured_count"], 1)
-        self.assertTrue(ContractorDirectoryEntry.objects.filter(business_name="Selected Concrete Co").exists())
+        captured = ContractorDirectoryEntry.objects.get(business_name="Selected Concrete Co")
+        self.assertEqual(captured.primary_service, "Concrete")
+        filtered = self.client.get(
+            "/api/projects/admin/contractor-directory/",
+            {"primary_service": "Concrete"},
+        )
+        self.assertIn(captured.id, [row["id"] for row in filtered.data["results"]])
         self.assertFalse(ContractorDirectoryEntry.objects.filter(business_name="Capitol City Florist").exists())
 
     def test_archive_hides_entry_by_default_and_restore_returns_it(self):

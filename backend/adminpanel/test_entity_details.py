@@ -1,8 +1,17 @@
 from django.contrib.auth import get_user_model
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from projects.models import Agreement, Contractor, ContractorActivityEvent, ContractorPublicProfile, Homeowner, Project
+from projects.models import (
+    Agreement,
+    Contractor,
+    ContractorActivityEvent,
+    ContractorPublicProfile,
+    Homeowner,
+    Project,
+    PublicContractorLead,
+)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -103,10 +112,168 @@ class AdminEntityDetailTests(APITestCase):
         self.assertEqual(event.summary, "Fictional pre-launch contractor account.")
         self.assertTrue(event.metadata["prior_state"]["user_is_active"])
 
-        listing = self.client.get("/api/projects/admin/contractors/")
+        listing = self.client.get("/api/projects/admin/contractors/", {"status": "inactive"})
         row = next(item for item in listing.data["results"] if item["id"] == self.contractor.id)
         self.assertEqual(row["account_status"], "inactive")
         self.assertFalse(row["is_active"])
+
+    def test_contractor_list_defaults_to_operational_accounts_and_exposes_status_counts(self):
+        self.contractor.payouts_enabled = True
+        self.contractor.save(update_fields=["payouts_enabled"])
+        onboarding = Contractor.objects.create(
+            user=get_user_model().objects.create_user("onboarding@example.com"),
+            business_name="Onboarding Builder",
+        )
+        inactive_user = get_user_model().objects.create_user("inactive@example.com", is_active=False)
+        inactive = Contractor.objects.create(user=inactive_user, business_name="Inactive Builder")
+        suspended = Contractor.objects.create(
+            user=get_user_model().objects.create_user("suspended@example.com"),
+            business_name="Suspended Builder",
+            marketplace_verification_status=Contractor.MARKETPLACE_SUSPENDED,
+        )
+        rejected = Contractor.objects.create(
+            user=get_user_model().objects.create_user("rejected@example.com"),
+            business_name="Rejected Builder",
+            marketplace_verification_status=Contractor.MARKETPLACE_REJECTED,
+            charges_enabled=True,
+            payouts_enabled=True,
+        )
+        deauthorized = Contractor.objects.create(
+            user=get_user_model().objects.create_user("deauthorized@example.com"),
+            business_name="Deauthorized Builder",
+            stripe_deauthorized_at=timezone.now(),
+        )
+
+        response = self.client.get("/api/projects/admin/contractors/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertEqual(ids, {self.contractor.id, onboarding.id})
+        self.assertNotIn(inactive.id, ids)
+        self.assertNotIn(rejected.id, ids)
+        self.assertNotIn(suspended.id, ids)
+        self.assertNotIn(deauthorized.id, ids)
+        self.assertEqual(response.data["status_counts"]["active"], 1)
+        self.assertEqual(response.data["status_counts"]["onboarding"], 1)
+        self.assertEqual(response.data["status_counts"]["inactive"], 2)
+        self.assertEqual(response.data["status_counts"]["rejected"], 1)
+        self.assertEqual(response.data["status_counts"]["suspended"], 1)
+        self.assertEqual(response.data["status_counts"]["operational"], 2)
+
+        inactive_response = self.client.get("/api/projects/admin/contractors/", {"status": "inactive"})
+        self.assertEqual(
+            {row["id"] for row in inactive_response.data["results"]},
+            {inactive.id, deauthorized.id},
+        )
+        rejected_response = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "rejected", "q": "Rejected Builder"},
+        )
+        self.assertEqual(rejected_response.data["count"], 1)
+        self.assertEqual(rejected_response.data["results"][0]["id"], rejected.id)
+        self.assertEqual(rejected_response.data["results"][0]["account_status"], "rejected")
+        all_search_response = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "all", "q": "Rejected Builder"},
+        )
+        self.assertEqual(all_search_response.data["results"][0]["id"], rejected.id)
+        all_response = self.client.get("/api/projects/admin/contractors/", {"status": "all"})
+        self.assertEqual(all_response.data["count"], 6)
+
+    def test_rejected_filter_paginates_over_rejected_population_without_mutating_history(self):
+        rejected_user = get_user_model().objects.create_user("rejected-history@example.com")
+        rejected = Contractor.objects.create(
+            user=rejected_user,
+            business_name="Rejected History Builder",
+            marketplace_verification_status=Contractor.MARKETPLACE_REJECTED,
+            charges_enabled=True,
+            payouts_enabled=True,
+            stripe_account_id="acct_rejected_history",
+        )
+        project = Project.objects.create(
+            contractor=rejected,
+            homeowner=self.customer,
+            title="Rejected Historical Project",
+        )
+        agreement = Agreement.objects.create(
+            contractor=rejected,
+            homeowner=self.customer,
+            project=project,
+            total_cost="1250.00",
+        )
+        profile = ContractorPublicProfile.objects.create(
+            contractor=rejected,
+            business_name_public="Rejected History Builder",
+        )
+        lead = PublicContractorLead.objects.create(
+            contractor=rejected,
+            public_profile=profile,
+            full_name="Historical Lead",
+            email="historical-lead@example.com",
+        )
+        activity = ContractorActivityEvent.objects.create(
+            contractor=rejected,
+            agreement=agreement,
+            event_type="historical_event",
+            title="Historical activity",
+        )
+        for index in range(30):
+            Contractor.objects.create(
+                user=get_user_model().objects.create_user(f"newer-{index:02d}@example.com"),
+                business_name=f"Newer Operational Builder {index:02d}",
+            )
+
+        all_first_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "all", "page_size": 25},
+        )
+        self.assertNotIn(rejected.id, {row["id"] for row in all_first_page.data["results"]})
+
+        rejected_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "rejected", "page_size": 25},
+        )
+        self.assertEqual(rejected_page.data["count"], 1)
+        self.assertEqual(rejected_page.data["total_pages"], 1)
+        self.assertEqual(rejected_page.data["results"][0]["id"], rejected.id)
+
+        rejected.refresh_from_db()
+        self.assertTrue(rejected.user.is_active)
+        self.assertEqual(rejected.marketplace_verification_status, Contractor.MARKETPLACE_REJECTED)
+        self.assertEqual(rejected.stripe_account_id, "acct_rejected_history")
+        self.assertTrue(Agreement.objects.filter(id=agreement.id, contractor=rejected).exists())
+        self.assertTrue(PublicContractorLead.objects.filter(id=lead.id, contractor=rejected).exists())
+        self.assertTrue(ContractorActivityEvent.objects.filter(id=activity.id, contractor=rejected).exists())
+
+    def test_contractor_list_filters_and_orders_before_paginating(self):
+        for index in range(30):
+            user = get_user_model().objects.create_user(f"paged-{index:02d}@example.com")
+            Contractor.objects.create(user=user, business_name=f"Paged Builder {index:02d}")
+
+        first_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"q": "Paged Builder", "status": "all", "sort": "name", "page_size": 25},
+        )
+        second_page = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"q": "Paged Builder", "status": "all", "sort": "name", "page_size": 25, "page": 2},
+        )
+
+        self.assertEqual(first_page.data["count"], 30)
+        self.assertEqual(first_page.data["total_pages"], 2)
+        self.assertEqual(len(first_page.data["results"]), 25)
+        self.assertEqual(len(second_page.data["results"]), 5)
+        first_ids = {row["id"] for row in first_page.data["results"]}
+        second_ids = {row["id"] for row in second_page.data["results"]}
+        self.assertFalse(first_ids & second_ids)
+        self.assertEqual(first_page.data["results"][0]["business_name"], "Paged Builder 00")
+        self.assertEqual(second_page.data["results"][-1]["business_name"], "Paged Builder 29")
+
+        invalid_size = self.client.get(
+            "/api/projects/admin/contractors/",
+            {"status": "all", "page_size": 999},
+        )
+        self.assertEqual(invalid_size.data["page_size"], 25)
 
     def test_contractor_inactivation_requires_reason(self):
         response = self.client.post(

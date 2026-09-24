@@ -788,7 +788,11 @@ class MarketplaceGatingTests(TestCase):
         self.assertEqual(saved["summary"]["blocked_disabled"], 1)
         self.assertEqual(saved["results"][0]["id"], intake.id)
         self.assertFalse(saved["results"][0]["routable_now"])
-        self.assertEqual(saved["results"][0]["reason"], "Marketplace is not enabled for this location yet.")
+        self.assertEqual(saved["results"][0]["marketplace_status"], "supply_needed")
+        self.assertEqual(
+            saved["results"][0]["reason"],
+            "This location does not yet have enough claimed, verified, payment-ready contractor supply.",
+        )
 
     def test_enabled_city_invites_max_five_claimed_verified_contractors(self):
         MarketplaceLocation.objects.create(

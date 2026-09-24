@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from collections import Counter
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -25,6 +26,7 @@ from projects.models import Contractor
 from projects.models_customer_portal import PropertyWorkOrder, PropertyWorkOrderActivity
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_directory import (
+    STATE_ABBREVIATIONS,
     normalize_business_name,
     normalize_phone,
     normalize_state,
@@ -45,7 +47,7 @@ from projects.services.contractor_marketplace_join_invites import (
     send_marketplace_join_invite,
 )
 from projects.services.contractor_contactability import refresh_contactability
-from projects.services.contractor_service_taxonomy import clean_raw_services
+from projects.services.contractor_service_taxonomy import clean_raw_services, normalize_contractor_services
 from projects.services.contractor_opportunities import (
     accept_contractor_opportunity,
     create_property_work_order_agreement_draft,
@@ -909,17 +911,53 @@ class AdminContractorSearchCaptureView(APIView):
 
 class AdminContractorDirectoryView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
+    PAGE_SIZES = (25, 50, 100)
 
-    def get(self, request, *args, **kwargs):
-        latest_outreach_type = ContractorDirectoryOutreachLog.objects.filter(directory_entry=OuterRef("pk")).order_by("-created_at", "-id").values("outreach_type")[:1]
-        qs = ContractorDirectoryEntry.objects.annotate(latest_outreach_type=Subquery(latest_outreach_type)).order_by("-last_seen_at", "business_name")
+    @staticmethod
+    def _facet_normalizer(name, value):
+        text = _safe_text(value)
+        if not text:
+            return ""
+        if name == "state":
+            return normalize_state(text)
+        if name == "zip":
+            return normalize_zip(text)
+        if name == "primary_service":
+            normalized = normalize_contractor_services(raw_services=[text])
+            return normalized["primary_service"] or " ".join(text.split()).title()
+        return " ".join(text.split()).title()
+
+    @staticmethod
+    def _facet_label(name, value):
+        if name == "state":
+            state_names = {code: label.title() for label, code in STATE_ABBREVIATIONS.items()}
+            return state_names.get(value, value)
+        return value
+
+    def _matching_variants(self, name, field, selected, cache):
+        normalized_selected = self._facet_normalizer(name, selected)
+        cache_key = (field, normalized_selected)
+        if cache_key not in cache:
+            cache[cache_key] = [
+                raw
+                for raw in ContractorDirectoryEntry.objects.values_list(field, flat=True).distinct()
+                if self._facet_normalizer(name, raw) == normalized_selected
+            ]
+        return cache[cache_key]
+
+    def _filtered_queryset(self, request, *, ignore_facet=None, variant_cache=None):
+        variant_cache = variant_cache if variant_cache is not None else {}
+        latest_outreach_type = ContractorDirectoryOutreachLog.objects.filter(
+            directory_entry=OuterRef("pk")
+        ).order_by("-created_at", "-id").values("outreach_type")[:1]
+        qs = ContractorDirectoryEntry.objects.annotate(latest_outreach_type=Subquery(latest_outreach_type))
         archived = _safe_text(request.query_params.get("archived") or "active").lower()
         if archived in {"archived", "true"}:
             qs = qs.filter(is_archived=True)
         elif archived not in {"all", "*"}:
             qs = qs.filter(is_archived=False)
         if _safe_text(request.query_params.get("missing_email")).lower() == "true":
-            qs = qs.filter(public_email__isnull=True)
+            qs = qs.filter(Q(public_email__isnull=True) | Q(public_email=""))
         if _safe_text(request.query_params.get("has_email")).lower() == "true":
             qs = qs.exclude(public_email__isnull=True).exclude(public_email="")
         if _safe_text(request.query_params.get("has_website")).lower() == "true":
@@ -932,13 +970,26 @@ class AdminContractorDirectoryView(APIView):
                 Q(business_name__icontains=query)
                 | Q(normalized_name__icontains=query)
                 | Q(website_domain__icontains=query)
+                | Q(public_email__icontains=query)
+                | Q(phone__icontains=query)
             )
+
+        facet_fields = {
+            "city": "city",
+            "state": "state",
+            "zip": "zip_code",
+            "primary_service": "primary_service",
+        }
+        for param, field in facet_fields.items():
+            if param == ignore_facet:
+                continue
+            value = _safe_text(request.query_params.get(param))
+            if value:
+                variants = self._matching_variants(param, field, value, variant_cache)
+                qs = qs.filter(**{f"{field}__in": variants}) if variants else qs.none()
+
         for param, field in [
-            ("city", "city__iexact"),
-            ("state", "state__iexact"),
-            ("zip", "zip_code__iexact"),
             ("source", "source"),
-            ("primary_service", "primary_service__iexact"),
             ("profile_status", "profile_status"),
             ("enrichment_status", "enrichment_status"),
             ("contact_status", "contact_status"),
@@ -963,22 +1014,67 @@ class AdminContractorDirectoryView(APIView):
             elif outreach_status == "manual_review_needed":
                 qs = qs.filter(contact_status=ContractorDirectoryEntry.CONTACT_STATUS_MANUAL_REVIEW_NEEDED)
             else:
-                outreach_type_by_status = {
+                outreach_type = {
                     "phone_outreach_logged": ContractorDirectoryOutreachLog.TYPE_PHONE,
                     "website_outreach_logged": ContractorDirectoryOutreachLog.TYPE_WEBSITE_FORM,
                     "claim_link_generated": ContractorDirectoryOutreachLog.TYPE_CLAIM_LINK_COPIED,
                     "email_outreach_logged": ContractorDirectoryOutreachLog.TYPE_EMAIL,
                     "sms_outreach_logged": ContractorDirectoryOutreachLog.TYPE_SMS,
-                }
-                outreach_type = outreach_type_by_status.get(outreach_status)
+                }.get(outreach_status)
                 if outreach_type:
                     qs = qs.filter(latest_outreach_type=outreach_type)
+        return qs
+
+    def _facets(self, request, variant_cache):
+        facets = {}
+        for name, field in {
+            "primary_service": "primary_service",
+            "city": "city",
+            "state": "state",
+            "zip": "zip_code",
+        }.items():
+            counts = Counter()
+            for raw_value in self._filtered_queryset(
+                request,
+                ignore_facet=name,
+                variant_cache=variant_cache,
+            ).values_list(field, flat=True):
+                value = self._facet_normalizer(name, raw_value)
+                if value:
+                    counts[value] += 1
+            facets[name] = [
+                {"value": value, "label": self._facet_label(name, value), "count": count}
+                for value, count in sorted(
+                    counts.items(),
+                    key=lambda item: (self._facet_label(name, item[0]).lower(), item[0]),
+                )
+            ]
+        return facets
+
+    def get(self, request, *args, **kwargs):
+        variant_cache = {}
+        qs = self._filtered_queryset(request, variant_cache=variant_cache).order_by(
+            "-last_seen_at", "business_name", "id"
+        )
+        if _safe_text(request.query_params.get("export_missing_email")).lower() == "true":
+            export_qs = qs.filter(
+                Q(public_email__isnull=True) | Q(public_email="")
+            ).exclude(website__isnull=True).exclude(website="")
+            return Response(
+                {
+                    "results": [_directory_entry_payload(entry) for entry in export_qs],
+                    "export_count": export_qs.count(),
+                },
+                status=status.HTTP_200_OK,
+            )
 
         total_count = qs.count()
         try:
-            page_size = max(1, min(int(request.query_params.get("page_size") or 50), 250))
+            page_size = int(request.query_params.get("page_size") or 25)
         except (TypeError, ValueError):
-            page_size = 50
+            page_size = 25
+        if page_size not in self.PAGE_SIZES:
+            page_size = 25
         try:
             page = max(1, int(request.query_params.get("page") or 1))
         except (TypeError, ValueError):
@@ -996,6 +1092,13 @@ class AdminContractorDirectoryView(APIView):
                 "total_pages": total_pages,
                 "has_next": page < total_pages,
                 "has_previous": page > 1,
+                "available_page_sizes": list(self.PAGE_SIZES),
+                "active_filters": {
+                    name: _safe_text(request.query_params.get(name))
+                    for name in ("primary_service", "city", "state", "zip")
+                    if _safe_text(request.query_params.get(name))
+                },
+                "facets": self._facets(request, variant_cache),
             },
             status=status.HTTP_200_OK,
         )

@@ -18,6 +18,15 @@ async function mockAdminDashboard(page) {
     });
   });
 
+  await page.route('**/api/projects/notifications/**', async (route) => {
+    const isUnreadCount = route.request().url().includes('/unread-count/');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(isUnreadCount ? { count: 0 } : { results: [] }),
+    });
+  });
+
   await page.route('**/api/projects/admin/overview**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -460,49 +469,74 @@ async function mockAdminDashboard(page) {
   });
 
   await page.route('**/api/projects/admin/contractors**', async (route) => {
+    const status = new URL(route.request().url()).searchParams.get('status') || 'operational';
+    const rejectedRow = {
+      id: 103,
+      created_at: '2026-03-20T09:00:00Z',
+      name: 'Rejected Marketplace Builder',
+      business_name: 'Rejected Marketplace Builder',
+      email: 'rejected@example.com',
+      city: 'Dallas',
+      state: 'TX',
+      stripe_account_id: 'acct_rejected123456',
+      account_status: 'rejected',
+      public_profile_status: 'private',
+      gallery_count: 2,
+      review_count: 0,
+      lead_count: 2,
+      agreement_count: 3,
+      fee_revenue: '125.00',
+      recent_activity_at: '2026-03-24T09:00:00Z',
+    };
+    const operationalRows = [
+      {
+        id: 101,
+        created_at: '2026-03-02T10:00:00Z',
+        name: 'Summit Renovations',
+        business_name: 'Summit Renovations',
+        email: 'summit@example.com',
+        city: 'Austin',
+        state: 'TX',
+        stripe_account_id: 'acct_summit123456',
+        account_status: 'active',
+        public_profile_status: 'public',
+        gallery_count: 4,
+        review_count: 6,
+        lead_count: 5,
+        agreement_count: 4,
+        fee_revenue: '720.00',
+        recent_activity_at: '2026-03-25T15:30:00Z',
+      },
+      {
+        id: 102,
+        created_at: '2026-03-18T09:00:00Z',
+        name: 'Lakefront Builders',
+        business_name: 'Lakefront Builders',
+        email: 'lakefront@example.com',
+        city: 'Chicago',
+        state: 'IL',
+        stripe_account_id: '',
+        account_status: 'onboarding',
+        public_profile_status: 'private',
+        gallery_count: 0,
+        review_count: 1,
+        lead_count: 3,
+        agreement_count: 1,
+        fee_revenue: '430.00',
+        recent_activity_at: '2026-03-24T11:00:00Z',
+      },
+    ];
+    const results = status === 'rejected' ? [rejectedRow] : status === 'all' ? [...operationalRows, rejectedRow] : operationalRows;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        count: 2,
-        results: [
-          {
-            id: 101,
-            created_at: '2026-03-02T10:00:00Z',
-            name: 'Summit Renovations',
-            business_name: 'Summit Renovations',
-            email: 'summit@example.com',
-            city: 'Austin',
-            state: 'TX',
-            stripe_account_id: 'acct_summit123456',
-            account_status: 'active',
-            public_profile_status: 'public',
-            gallery_count: 4,
-            review_count: 6,
-            lead_count: 5,
-            agreement_count: 4,
-            fee_revenue: '720.00',
-            recent_activity_at: '2026-03-25T15:30:00Z',
-          },
-          {
-            id: 102,
-            created_at: '2026-03-18T09:00:00Z',
-            name: 'Lakefront Builders',
-            business_name: 'Lakefront Builders',
-            email: 'lakefront@example.com',
-            city: 'Chicago',
-            state: 'IL',
-            stripe_account_id: '',
-            account_status: 'pending_stripe',
-            public_profile_status: 'private',
-            gallery_count: 0,
-            review_count: 1,
-            lead_count: 3,
-            agreement_count: 1,
-            fee_revenue: '430.00',
-            recent_activity_at: '2026-03-24T11:00:00Z',
-          },
-        ],
+        count: results.length,
+        page: 1,
+        page_size: 25,
+        total_pages: 1,
+        status_counts: { operational: 2, active: 1, onboarding: 1, inactive: 0, rejected: 1, suspended: 0, all: 3 },
+        results,
       }),
     });
   });
@@ -789,17 +823,23 @@ async function mockAdminDashboard(page) {
 test('owner admin dashboard smoke renders overview and core admin views', async ({ page }) => {
   test.setTimeout(60000);
   await mockAdminDashboard(page);
+  const overviewResponse = page.waitForResponse((response) => (
+    response.url().endsWith('/api/projects/admin/overview/')
+    && response.request().method() === 'GET'
+    && response.ok()
+  ));
 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
+  await overviewResponse;
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-overview-light.png', fullPage: true });
   await expect(page.getByText('Admin Home')).toHaveCount(0);
   await expect(page.getByText('Support Tools')).toHaveCount(0);
-  await expect(page.getByText('Marketplace Operations Center')).toBeVisible();
-  await expect(page.getByTestId('admin-navigation-tab-support')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-operations-center')).toContainText('Platform Operations Center');
+  await expect(page.getByTestId('admin-navigation-tab-marketplace')).toBeVisible();
   await expect(page.getByTestId('admin-navigation-tab-fee_audit')).toBeVisible();
-  await expect(page.getByTestId('admin-navigation-tab-platform_health')).toBeVisible();
+  await expect(page.getByTestId('admin-navigation-tab-settings')).toBeVisible();
   const attentionClass = await page.getByTestId('admin-needs-attention').getAttribute('class');
   expect(attentionClass).toContain('bg-[#061d42]/95');
   await expect(page.getByTestId('admin-quick-actions')).toBeVisible();
@@ -864,7 +904,7 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await page.goto('/app/admin?view=support', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('admin-navigation-tab-support')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('admin-navigation-tabs').getByRole('tab', { selected: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Support' })).toBeVisible();
   await expect(page.getByText('Password Reset', { exact: true })).toBeVisible();
   await expect(page.getByText("Send a password reset email using Django's standard reset flow.")).toBeVisible();
@@ -923,12 +963,13 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-navigation-tab-overview')).toHaveAttribute('aria-selected', 'false');
   await expect(page.getByTestId('admin-navigation-tab-contractors')).toHaveClass(/is-active/);
   await expect(page.getByTestId('admin-navigation-tab-overview')).not.toHaveClass(/is-active/);
-  await expect(page.getByTestId('admin-contractor-filter')).toHaveClass(/mhb-admin-control/);
+  await expect(page.getByTestId('admin-contractor-status-filter')).toHaveClass(/mhb-admin-control/);
   await expect(page.getByTestId('admin-contractor-search')).toHaveClass(/mhb-admin-control/);
   await expect(page.getByTestId('admin-contractors-table-panel')).toHaveClass(/mhb-admin-contractors-table/);
-  await expect(page.getByTestId('admin-contractor-filter').locator('option')).toHaveCount(4);
+  await expect(page.getByTestId('admin-contractor-status-filter').locator('option')).toHaveCount(7);
+  await expect(page.getByTestId('admin-contractors-pagination')).toContainText('Showing 1-2 of 2 contractors');
   await page.screenshot({ path: 'test-results/admin-contractors-light.png', fullPage: true });
-  const optionColors = await page.getByTestId('admin-contractor-filter').locator('option').evaluateAll((options) =>
+  const optionColors = await page.getByTestId('admin-contractor-status-filter').locator('option').evaluateAll((options) =>
     options.map((option) => ({
       background: getComputedStyle(option).backgroundColor,
       color: getComputedStyle(option).color,
@@ -1009,6 +1050,14 @@ test('admin contractor workspace preserves contrast and containment across appea
           path: `test-results/admin-contractors-${appearance}.png`,
           fullPage: true,
         });
+        if (appearance === 'light') {
+          await page.getByTestId('admin-contractor-status-filter').selectOption('rejected');
+          await expect(page.getByTestId('admin-contractor-row-103')).toContainText('Rejected Marketplace Builder');
+          await page.screenshot({
+            path: 'test-results/admin-contractors-rejected-light.png',
+            fullPage: true,
+          });
+        }
       } else if (viewport.width === 390) {
         await page.screenshot({
           path: `test-results/admin-contractors-narrow-${appearance}.png`,
@@ -1157,8 +1206,14 @@ test('admin templates page renders system template management controls', async (
     return route.continue();
   });
 
+  const templatesResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/projects/templates/')
+    && response.request().method() === 'GET'
+    && response.ok()
+  ));
   await page.goto('/app/admin/templates', { waitUntil: 'domcontentloaded' });
 
+  await templatesResponse;
   await expect(page.getByRole('heading', { name: 'Admin Templates' })).toBeVisible();
   if (await page.getByTestId('templates-new-draft-button').count()) {
     await expect(page.getByTestId('templates-new-draft-button')).toContainText('Create System Template');
