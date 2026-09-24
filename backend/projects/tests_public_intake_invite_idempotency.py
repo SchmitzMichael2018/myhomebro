@@ -8,8 +8,9 @@ from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from accounts.models import User
 from projects.models_invite import ContractorInvite
-from projects.models import Contractor, PublicContractorLead
+from projects.models import Agreement, Contractor, Homeowner, PublicContractorLead
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorDirectoryListing,
@@ -21,6 +22,7 @@ from projects.services.public_intake_invites import (
     canonical_invite_contact,
     get_or_create_public_intake_invite,
 )
+from projects.services.marketplace_permissions import DIRECT_INVITE_UNAVAILABLE_DETAIL
 
 
 class PublicIntakeInviteIdempotencyTests(TestCase):
@@ -164,6 +166,256 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
                 retry.json()["branch_invites"][0]["token"],
             )
         self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 3)
+
+    def _contractor_row(self, contractor=None):
+        contractor = contractor or self.contractor
+        return {
+            "contractor_id": contractor.id,
+            "email": contractor.user.email,
+        }
+
+    @patch("projects.services.invites_delivery.deliver_invite_notifications")
+    def test_ineligible_existing_contractor_statuses_are_rejected_safely(
+        self, delivery
+    ):
+        status_cases = [
+            ("contractor_inactive", {"is_active": False}),
+            (
+                "suspended",
+                {"marketplace_verification_status": Contractor.MARKETPLACE_SUSPENDED},
+            ),
+            (
+                "rejected",
+                {"marketplace_verification_status": Contractor.MARKETPLACE_REJECTED},
+            ),
+            ("user_inactive", {"user__is_active": False}),
+            (
+                "account_disabled",
+                {"user__verification_state": User.VerificationState.DISABLED},
+            ),
+            (
+                "spam_fraud",
+                {"user__trust_classification": User.TrustClassification.SPAM_FRAUD},
+            ),
+        ]
+        for index, (label, changes) in enumerate(status_cases):
+            user = get_user_model().objects.create_user(
+                email=f"ineligible-{index}@example.com"
+            )
+            contractor = Contractor.objects.create(
+                user=user,
+                business_name=f"Ineligible {label}",
+            )
+            for field, value in changes.items():
+                if field.startswith("user__"):
+                    user_field = field.removeprefix("user__")
+                    setattr(user, user_field, value)
+                    user.save(update_fields=[user_field])
+                else:
+                    setattr(contractor, field, value)
+                    contractor.save(update_fields=[field, "updated_at"])
+
+            with self.subTest(status=label):
+                response = self._patch([self._contractor_row(contractor)])
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.json(),
+                    {"detail": DIRECT_INVITE_UNAVAILABLE_DETAIL},
+                )
+
+        self.assertEqual(ContractorInvite.objects.count(), 0)
+        self.assertEqual(ContractorDiscoveryInvite.objects.count(), 0)
+        self.assertEqual(ContractorOpportunity.objects.count(), 0)
+        self.assertEqual(PublicContractorLead.objects.count(), 0)
+        delivery.assert_not_called()
+
+    def test_claimed_targets_apply_linked_account_eligibility(self):
+        eligible_listing = self._patch(
+            [
+                {
+                    "id": f"listing:{self.listing.id}",
+                    "email": self.listing.email,
+                }
+            ]
+        )
+        self.assertEqual(eligible_listing.status_code, 200)
+        ContractorInvite.objects.all().delete()
+
+        status_cases = [
+            ("inactive", "is_active", False),
+            (
+                "suspended",
+                "marketplace_verification_status",
+                Contractor.MARKETPLACE_SUSPENDED,
+            ),
+            (
+                "rejected",
+                "marketplace_verification_status",
+                Contractor.MARKETPLACE_REJECTED,
+            ),
+        ]
+        for label, field, value in status_cases:
+            setattr(self.contractor, field, value)
+            self.contractor.save(update_fields=[field, "updated_at"])
+            with self.subTest(target="listing", status=label):
+                response = self._patch(
+                    [
+                        {
+                            "id": f"listing:{self.listing.id}",
+                            "email": self.listing.email,
+                        }
+                    ]
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.json()["detail"],
+                    DIRECT_INVITE_UNAVAILABLE_DETAIL,
+                )
+            with self.subTest(target="directory", status=label):
+                response = self._patch(
+                    [
+                        {
+                            "directory_entry_id": self.directory_entry.id,
+                            "email": self.directory_entry.public_email,
+                        }
+                    ]
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.json()["detail"],
+                    DIRECT_INVITE_UNAVAILABLE_DETAIL,
+                )
+            setattr(self.contractor, field, True if field == "is_active" else Contractor.MARKETPLACE_UNVERIFIED)
+            self.contractor.save(update_fields=[field, "updated_at"])
+
+        self.assertEqual(ContractorInvite.objects.count(), 0)
+
+    def test_unclaimed_valid_prospect_remains_available_but_archived_records_do_not(self):
+        unclaimed = ContractorDirectoryEntry.objects.create(
+            business_name="Unclaimed Prospect",
+            normalized_name="unclaimed prospect",
+            public_email="prospect@example.com",
+            google_place_id="ChIJ-UnclaimedProspect",
+        )
+        response = self._patch(
+            [
+                {
+                    "directory_entry_id": unclaimed.id,
+                    "email": unclaimed.public_email,
+                }
+            ]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ContractorInvite.objects.count(), 1)
+
+        ContractorInvite.objects.all().delete()
+        unclaimed.is_archived = True
+        unclaimed.save(update_fields=["is_archived"])
+        archived = self._patch(
+            [
+                {
+                    "directory_entry_id": unclaimed.id,
+                    "email": unclaimed.public_email,
+                }
+            ]
+        )
+        self.assertEqual(archived.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.count(), 0)
+        archived_place = self._patch(
+            [
+                {
+                    "google_place_id": unclaimed.google_place_id,
+                    "email": unclaimed.public_email,
+                }
+            ]
+        )
+        self.assertEqual(archived_place.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.count(), 0)
+
+        closed_listing = ContractorDirectoryListing.objects.create(
+            business_name="Closed Prospect",
+            email="closed@example.com",
+            business_status="CLOSED_PERMANENTLY",
+        )
+        closed = self._patch(
+            [
+                {
+                    "id": f"listing:{closed_listing.id}",
+                    "email": closed_listing.email,
+                }
+            ]
+        )
+        self.assertEqual(closed.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.count(), 0)
+
+    def test_location_and_stripe_readiness_do_not_block_eligible_direct_invitation(self):
+        self.contractor.stripe_deauthorized_at = timezone.now()
+        self.contractor.charges_enabled = False
+        self.contractor.payouts_enabled = False
+        self.contractor.save(
+            update_fields=[
+                "stripe_deauthorized_at",
+                "charges_enabled",
+                "payouts_enabled",
+                "updated_at",
+            ]
+        )
+
+        response = self._patch([self._contractor_row()])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ContractorInvite.objects.count(), 1)
+        self.assertEqual(ContractorDiscoveryInvite.objects.count(), 0)
+        self.assertEqual(ContractorOpportunity.objects.count(), 0)
+        self.assertEqual(PublicContractorLead.objects.count(), 0)
+
+    @patch("projects.services.invites_delivery.deliver_invite_notifications")
+    def test_mixed_eligible_and_ineligible_batch_has_zero_side_effects(self, delivery):
+        self.contractor.marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+        self.contractor.save(
+            update_fields=["marketplace_verification_status", "updated_at"]
+        )
+
+        response = self._patch(
+            [
+                {"email": "eligible@example.com"},
+                self._contractor_row(),
+            ]
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("branch_invites", response.json())
+        self.assertNotIn("token", response.json())
+        self.assertEqual(ContractorInvite.objects.count(), 0)
+        self.assertEqual(ContractorDiscoveryInvite.objects.count(), 0)
+        self.assertEqual(ContractorOpportunity.objects.count(), 0)
+        self.assertEqual(PublicContractorLead.objects.count(), 0)
+        delivery.assert_not_called()
+
+    def test_existing_invitation_cannot_bypass_new_ineligible_status(self):
+        first = self._patch([self._contractor_row()])
+        self.assertEqual(first.status_code, 200)
+        invite = ContractorInvite.objects.get()
+        original_token = invite.token
+        original_resend_token = invite.resend_token
+
+        self.contractor.marketplace_verification_status = Contractor.MARKETPLACE_REJECTED
+        self.contractor.save(
+            update_fields=["marketplace_verification_status", "updated_at"]
+        )
+        rejected = self._patch([self._contractor_row()])
+        reordered = self._patch(
+            [{"email": "other@example.com"}, self._contractor_row()]
+        )
+
+        self.assertEqual(rejected.status_code, 400)
+        self.assertEqual(reordered.status_code, 400)
+        self.assertNotIn("token", rejected.json())
+        invite.refresh_from_db()
+        self.assertEqual(invite.token, original_token)
+        self.assertEqual(invite.resend_token, original_resend_token)
+        self.assertFalse(invite.is_accepted)
+        self.assertEqual(ContractorInvite.objects.count(), 1)
 
     def test_two_contacts_reordered_remain_two_and_preserve_tokens(self):
         alpha = {"email": "alpha@example.com"}
@@ -460,6 +712,129 @@ class ContractorInviteCompatibilityTests(TestCase):
         self.assertEqual(invite.accepted_by_contractor, contractor)
         intake.refresh_from_db()
         self.assertEqual(intake.contractor, contractor)
+
+    def test_status_changes_after_issuance_block_acceptance_without_side_effects(self):
+        status_cases = [
+            ("inactive", "contractor", "is_active", False),
+            (
+                "suspended",
+                "contractor",
+                "marketplace_verification_status",
+                Contractor.MARKETPLACE_SUSPENDED,
+            ),
+            (
+                "rejected",
+                "contractor",
+                "marketplace_verification_status",
+                Contractor.MARKETPLACE_REJECTED,
+            ),
+        ]
+        for index, (label, owner, field, value) in enumerate(status_cases):
+            user = get_user_model().objects.create_user(
+                email=f"accept-{label}@example.com"
+            )
+            contractor = Contractor.objects.create(
+                user=user,
+                business_name=f"Acceptance {label}",
+            )
+            intake = ProjectIntake.objects.create(
+                initiated_by="homeowner",
+                customer_name=f"Acceptance {label}",
+                customer_email=f"customer-{index}@example.com",
+            )
+            invite = ContractorInvite.objects.create(
+                homeowner_name=f"Acceptance {label}",
+                homeowner_email=f"customer-{index}@example.com",
+                contractor_email=user.email,
+                source_intake=intake,
+                contact_identity=f"contractor:{contractor.id}",
+            )
+            original_token = invite.token
+            original_resend_token = invite.resend_token
+            target = contractor if owner == "contractor" else user
+            setattr(target, field, value)
+            target.save(update_fields=[field, "updated_at"])
+            client = APIClient()
+            client.force_authenticate(user=user)
+
+            with self.subTest(status=label):
+                first = client.post(
+                    f"/api/projects/invites/{invite.token}/accept/",
+                    {},
+                    format="json",
+                )
+                second = client.post(
+                    f"/api/projects/invites/{invite.token}/accept/",
+                    {},
+                    format="json",
+                )
+                self.assertEqual(first.status_code, 403)
+                self.assertEqual(
+                    first.json(),
+                    {"detail": DIRECT_INVITE_UNAVAILABLE_DETAIL},
+                )
+                self.assertEqual(second.status_code, 403)
+
+            invite.refresh_from_db()
+            intake.refresh_from_db()
+            self.assertEqual(invite.token, original_token)
+            self.assertEqual(invite.resend_token, original_resend_token)
+            self.assertFalse(invite.is_accepted)
+            self.assertIsNone(intake.contractor_id)
+
+        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Agreement.objects.count(), 0)
+        self.assertEqual(ContractorOpportunity.objects.count(), 0)
+        self.assertEqual(PublicContractorLead.objects.count(), 0)
+
+    def test_newly_claimed_ineligible_target_is_rechecked_at_acceptance(self):
+        accepting_user = get_user_model().objects.create_user(
+            email="accepting-prospect@example.com"
+        )
+        accepting_contractor = Contractor.objects.create(
+            user=accepting_user,
+            business_name="Accepting Prospect",
+        )
+        listing = ContractorDirectoryListing.objects.create(
+            business_name="Claimable Prospect",
+            email=accepting_user.email,
+        )
+        intake = ProjectIntake.objects.create(
+            initiated_by="homeowner",
+            customer_name="Claim Customer",
+            customer_email="claim-customer@example.com",
+        )
+        invite = ContractorInvite.objects.create(
+            homeowner_name=intake.customer_name,
+            homeowner_email=intake.customer_email,
+            contractor_email=accepting_user.email,
+            source_intake=intake,
+            contact_identity=f"listing:{listing.id}",
+        )
+        accepting_contractor.marketplace_verification_status = (
+            Contractor.MARKETPLACE_SUSPENDED
+        )
+        accepting_contractor.save(
+            update_fields=["marketplace_verification_status", "updated_at"]
+        )
+        listing.claimed_contractor = accepting_contractor
+        listing.claimed_profile = True
+        listing.save(update_fields=["claimed_contractor", "claimed_profile", "updated_at"])
+        client = APIClient()
+        client.force_authenticate(user=accepting_user)
+
+        response = client.post(
+            f"/api/projects/invites/{invite.token}/accept/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        invite.refresh_from_db()
+        intake.refresh_from_db()
+        self.assertFalse(invite.is_accepted)
+        self.assertIsNone(intake.contractor_id)
+        self.assertEqual(Homeowner.objects.count(), 0)
 
 
 class ConcurrentPublicIntakeInviteIdempotencyTests(TransactionTestCase):

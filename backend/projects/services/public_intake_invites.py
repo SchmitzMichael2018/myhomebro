@@ -16,6 +16,10 @@ from projects.models_contractor_discovery import (
     ContractorDirectoryListing,
 )
 from projects.models_invite import ContractorInvite
+from projects.services.marketplace_permissions import (
+    DIRECT_INVITE_UNAVAILABLE_DETAIL,
+    contractor_direct_invite_block_reason,
+)
 from projects.services.recipient_validation import normalize_valid_email
 from projects.services.sms_service import normalize_phone_to_e164
 
@@ -175,6 +179,8 @@ def _resolved_stable_identity(
         directory_entry = ContractorDirectoryEntry.objects.filter(pk=parsed_id).first()
         if directory_entry is None:
             raise ValueError("Choose a valid contractor directory entry.")
+        if directory_entry.is_archived:
+            raise ValueError("Choose a contractor from an available directory record.")
 
     listing = None
     if listing_id:
@@ -182,11 +188,27 @@ def _resolved_stable_identity(
         listing = ContractorDirectoryListing.objects.filter(pk=parsed_id).first()
         if listing is None:
             raise ValueError("Choose a valid contractor directory listing.")
+        if str(listing.business_status or "").upper() == "CLOSED_PERMANENTLY":
+            raise ValueError("Choose a contractor from an available directory record.")
 
     if contractor and directory_entry and directory_entry.claimed_by_contractor_id != contractor.id:
         raise ValueError("The contractor account does not match the directory entry.")
     if contractor and listing and listing.claimed_contractor_id != contractor.id:
         raise ValueError("The contractor account does not match the directory listing.")
+    linked_contractors = {
+        linked.id: linked
+        for linked in (
+            contractor,
+            getattr(directory_entry, "claimed_by_contractor", None),
+            getattr(listing, "claimed_contractor", None),
+        )
+        if linked is not None
+    }
+    if any(
+        contractor_direct_invite_block_reason(linked)
+        for linked in linked_contractors.values()
+    ):
+        raise ValueError(DIRECT_INVITE_UNAVAILABLE_DETAIL)
     if contractor and not _matches_destination(
         contractor,
         email=email,
@@ -215,11 +237,12 @@ def _resolved_stable_identity(
         if listing and listing.google_place_id != google_place_id:
             raise ValueError("The place record does not match the directory listing.")
         place_entries = ContractorDirectoryEntry.objects.filter(
-            google_place_id=google_place_id
+            google_place_id=google_place_id,
+            is_archived=False,
         )
         place_listings = ContractorDirectoryListing.objects.filter(
-            google_place_id=google_place_id
-        )
+            google_place_id=google_place_id,
+        ).exclude(business_status__iexact="CLOSED_PERMANENTLY")
         trusted_place = (
             directory_entry
             or listing
@@ -233,6 +256,29 @@ def _resolved_stable_identity(
             or place_listings.filter(claimed_contractor=contractor).exists()
         ):
             raise ValueError("The contractor account does not match the place record.")
+        place_contractors = {
+            linked.id: linked
+            for linked in [
+                *(
+                    entry.claimed_by_contractor
+                    for entry in place_entries.select_related(
+                        "claimed_by_contractor__user"
+                    )
+                ),
+                *(
+                    place_listing.claimed_contractor
+                    for place_listing in place_listings.select_related(
+                        "claimed_contractor__user"
+                    )
+                ),
+            ]
+            if linked is not None
+        }
+        if any(
+            contractor_direct_invite_block_reason(linked)
+            for linked in place_contractors.values()
+        ):
+            raise ValueError(DIRECT_INVITE_UNAVAILABLE_DETAIL)
         if not directory_entry and not listing:
             matching_place = any(
                 _matches_destination(

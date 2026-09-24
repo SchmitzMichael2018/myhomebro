@@ -863,7 +863,7 @@ class MarketplaceGatingTests(TestCase):
         rejected = self.contractors[1]
         rejected.marketplace_verification_status = Contractor.MARKETPLACE_REJECTED
         rejected.save(update_fields=["marketplace_verification_status", "updated_at"])
-        with self.assertRaisesMessage(ValueError, "not eligible"):
+        with self.assertRaisesMessage(ValueError, "not currently available"):
             create_discovery_invites(
                 intake=intake,
                 selected_targets=[{"source": "contractor", "id": f"contractor:{rejected.id}", "channel": "in_app"}],

@@ -19,6 +19,11 @@ from projects.services.invites_delivery import (
     deliver_invite_notifications,
     deliver_homeowner_confirmation,
 )
+from projects.services.marketplace_permissions import (
+    DIRECT_INVITE_UNAVAILABLE_DETAIL,
+    contractor_direct_invite_block_reason,
+    direct_invite_target_contractor,
+)
 
 
 def _get_contractor_for_user(user):
@@ -125,27 +130,46 @@ class ContractorInviteViewSet(viewsets.GenericViewSet):
         if not contractor:
             return Response({"detail": "Only contractors can accept invites."}, status=status.HTTP_403_FORBIDDEN)
 
-        invite: ContractorInvite = self.get_object()
-        source_intake = getattr(invite, "source_intake", None)
-        # Idempotency: if already accepted, OK if same contractor
-        if invite.is_accepted:
-            if invite.accepted_by_contractor_id == contractor.id:
-                return Response(
-                    {
-                        "ok": True,
-                        "message": "Invite already accepted.",
-                        "source_intake_id": getattr(source_intake, "id", None),
-                        "source_intake_url": (
-                            f"/app/intake/new?intakeId={source_intake.id}" if source_intake else ""
-                        ),
-                    },
-                    status=status.HTTP_200_OK,
-                )
-            return Response({"detail": "Invite already accepted by another contractor."}, status=status.HTTP_409_CONFLICT)
-
-        homeowner_email = (invite.homeowner_email or "").strip().lower()
-
+        current_invite = self.get_object()
         with transaction.atomic():
+            invite = (
+                ContractorInvite.objects.select_for_update()
+                .select_related("source_intake")
+                .get(pk=current_invite.pk)
+            )
+            source_intake = getattr(invite, "source_intake", None)
+            linked_contractor = direct_invite_target_contractor(
+                invite.contact_identity
+            )
+            if (
+                contractor_direct_invite_block_reason(contractor)
+                or contractor_direct_invite_block_reason(linked_contractor)
+            ):
+                return Response(
+                    {"detail": DIRECT_INVITE_UNAVAILABLE_DETAIL},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            # Idempotency: if already accepted, OK if same contractor.
+            if invite.is_accepted:
+                if invite.accepted_by_contractor_id == contractor.id:
+                    return Response(
+                        {
+                            "ok": True,
+                            "message": "Invite already accepted.",
+                            "source_intake_id": getattr(source_intake, "id", None),
+                            "source_intake_url": (
+                                f"/app/intake/new?intakeId={source_intake.id}" if source_intake else ""
+                            ),
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                return Response(
+                    {"detail": "Invite already accepted by another contractor."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            homeowner_email = (invite.homeowner_email or "").strip().lower()
             if source_intake is not None:
                 if source_intake.contractor_id and source_intake.contractor_id != contractor.id:
                     return Response(
