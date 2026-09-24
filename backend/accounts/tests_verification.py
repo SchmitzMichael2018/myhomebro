@@ -89,6 +89,10 @@ class AccountVerificationTests(TestCase):
         user = User.objects.get(email="new.contractor@example.com")
         self.assertFalse(user.is_active)
         self.assertEqual(user.verification_state, User.VerificationState.PENDING_EMAIL)
+        self.assertEqual(user.phone_number_normalized, "+12105550144")
+        self.assertEqual(user.verification_continuation, "/improvements/bathroom/replace-toilet/diy")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertNotIn("Strong-Test-Password", mail.outbox[0].body)
 
     def test_contractor_registration_is_not_blocked_by_unready_location(self):
         MarketplaceLocation.objects.create(city="Dallas", state="TX", is_enabled=False)
@@ -99,10 +103,6 @@ class AccountVerificationTests(TestCase):
         user = User.objects.get(email="unready-location-contractor@example.com")
         self.assertFalse(user.is_active)
         self.assertEqual(user.verification_state, User.VerificationState.PENDING_EMAIL)
-        self.assertEqual(user.phone_number_normalized, "+12105550144")
-        self.assertEqual(user.verification_continuation, "/improvements/bathroom/replace-toilet/diy")
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertNotIn("Strong-Test-Password", mail.outbox[0].body)
 
     def test_honeypot_returns_plausible_success_without_account(self):
         response = self.register(company_website="https://bot.invalid")

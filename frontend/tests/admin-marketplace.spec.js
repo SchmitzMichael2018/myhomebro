@@ -776,7 +776,9 @@ test('admin marketplace routes saved requests after location enablement without 
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
   await expect(page.getByTestId('admin-marketplace-backlog-disabled')).toContainText('1');
   await expect(page.getByTestId('admin-marketplace-backlog-disabled')).toContainText('Building Coverage');
-  await page.screenshot({ path: 'test-results/marketplace-location-admin-saved-not-routed.png', fullPage: true });
+  await page.getByTestId('admin-marketplace-saved-requests').screenshot({
+    path: 'test-results/marketplace-location-admin-saved-not-routed.png',
+  });
 
   await page.getByTestId('admin-marketplace-location-enable-Austin-TX').click();
   await expect(page.getByTestId('admin-marketplace-status')).toContainText('Austin, TX activated for automatic routing');
