@@ -12,10 +12,10 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models_invite import ContractorInvite
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models import PublicContractorLead
 from projects.services.invites_delivery import build_invite_url
+from projects.services.public_intake_invites import get_or_create_public_intake_invite
 from projects.services.ai.project_understanding import understand_project_request
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.project_titles import generate_project_title, normalize_project_classification
@@ -405,6 +405,11 @@ class PublicIntakeView(APIView):
                         "email": request.data.get("contractor_email", ""),
                         "phone": request.data.get("contractor_phone", ""),
                         "message": request.data.get("contractor_message", ""),
+                        "contractor_id": request.data.get("contractor_id", ""),
+                        "directory_entry_id": request.data.get("directory_entry_id", ""),
+                        "google_place_id": request.data.get("google_place_id", ""),
+                        "contact_id": request.data.get("contact_id", ""),
+                        "website_url": request.data.get("website_url", ""),
                     }
                 ]
 
@@ -428,35 +433,33 @@ class PublicIntakeView(APIView):
             for row in contractor_rows[:5]:
                 if not isinstance(row, dict):
                     continue
-                contractor_email = (row.get("email") or row.get("contractor_email") or "").strip().lower()
-                contractor_phone = (row.get("phone") or row.get("contractor_phone") or "").strip()
-                contractor_name = (row.get("name") or row.get("contractor_name") or "").strip()
-                contractor_message = (row.get("message") or invite_message or "").strip()
-
-                if not contractor_email and not contractor_phone:
+                if not (
+                    (row.get("email") or row.get("contractor_email") or "").strip()
+                    or (row.get("phone") or row.get("contractor_phone") or "").strip()
+                ):
                     continue
 
-                invite = ContractorInvite.objects.create(
-                    homeowner_name=homeowner_name or "Customer",
-                    homeowner_email=homeowner_email,
-                    homeowner_phone=homeowner_phone,
-                    contractor_email=contractor_email,
-                    contractor_phone=contractor_phone,
-                    message="\n".join(
-                        part for part in [
-                            contractor_name and f"Contact: {contractor_name}",
-                            contractor_message,
-                        ]
-                        if part
-                    ),
-                    source_intake=intake,
-                )
+                try:
+                    invite, created = get_or_create_public_intake_invite(
+                        intake=intake,
+                        row=row,
+                        homeowner_name=homeowner_name,
+                        homeowner_email=homeowner_email,
+                        homeowner_phone=homeowner_phone,
+                        invite_message=invite_message,
+                    )
+                except ValueError as exc:
+                    branch_error = str(exc)
+                    break
                 branch_invites.append(
                     {
                         "token": str(invite.token),
                         "contractor_email": invite.contractor_email,
                         "contractor_phone": invite.contractor_phone,
                         "invite_url": build_invite_url(request, invite.token),
+                        "created": created,
+                        "reused": not created,
+                        "status": "accepted" if invite.is_accepted else "pending",
                     }
                 )
 
