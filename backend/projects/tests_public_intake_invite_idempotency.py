@@ -10,7 +10,12 @@ from rest_framework.test import APIClient
 
 from projects.models_invite import ContractorInvite
 from projects.models import Contractor, PublicContractorLead
-from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
+from projects.models_contractor_discovery import (
+    ContractorDirectoryEntry,
+    ContractorDirectoryListing,
+    ContractorDiscoveryInvite,
+    ContractorOpportunity,
+)
 from projects.models_project_intake import ProjectIntake
 from projects.services.public_intake_invites import (
     canonical_invite_contact,
@@ -30,6 +35,27 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
             accomplishment_text="Need a contractor.",
         )
         self.url = f"/api/projects/public-intake/?token={self.intake.share_token}"
+        self.contractor_user = get_user_model().objects.create_user(
+            email="stable-contractor@example.com"
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Stable Contractor",
+            phone="512-555-0140",
+        )
+        self.directory_entry = ContractorDirectoryEntry.objects.create(
+            business_name="Stable Directory",
+            normalized_name="stable directory",
+            public_email="directory@example.com",
+            google_place_id="ChIJ-StableDirectory",
+            claimed_by_contractor=self.contractor,
+        )
+        self.listing = ContractorDirectoryListing.objects.create(
+            business_name="Stable Listing",
+            email="listing@example.com",
+            google_place_id="ChIJ-StableListing",
+            claimed_contractor=self.contractor,
+        )
 
     def _patch(self, contractors):
         return self.client.patch(
@@ -89,23 +115,34 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
 
     def test_stable_contact_identifiers_take_precedence_over_mutable_channels(self):
         identifier_cases = [
-            ("contractor_id", "42"),
-            ("directory_entry_id", "77"),
-            ("google_place_id", "ChIJ-ABC"),
-            ("contact_id", "crm-9"),
+            (
+                {"contractor_id": str(self.contractor.id)},
+                {"email": "stable-contractor@example.com"},
+                {"email": " STABLE-CONTRACTOR@example.com "},
+            ),
+            (
+                {"directory_entry_id": str(self.directory_entry.id)},
+                {"email": "directory@example.com"},
+                {"email": " DIRECTORY@example.com "},
+            ),
+            (
+                {"google_place_id": self.listing.google_place_id},
+                {"email": "listing@example.com"},
+                {"email": " LISTING@example.com "},
+            ),
         ]
-        for index, (field, value) in enumerate(identifier_cases):
-            first = self._patch([{field: value, "email": f"old-{index}@example.com"}])
-            retry = self._patch([{field: value, "email": f"new-{index}@example.com"}])
+        for stable_id, first_contact, retry_contact in identifier_cases:
+            first = self._patch([{**stable_id, **first_contact}])
+            retry = self._patch([{**stable_id, **retry_contact}])
             self.assertEqual(
                 first.json()["branch_invites"][0]["token"],
                 retry.json()["branch_invites"][0]["token"],
             )
-        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 4)
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 3)
 
     def test_two_contacts_reordered_remain_two_and_preserve_tokens(self):
-        alpha = {"contact_id": "alpha", "email": "alpha@example.com"}
-        beta = {"contact_id": "beta", "phone": "512-555-0122"}
+        alpha = {"email": "alpha@example.com"}
+        beta = {"phone": "512-555-0122"}
         first = self._patch([alpha, beta])
         retry = self._patch([beta, alpha])
 
@@ -119,7 +156,7 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
         self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 2)
 
     def test_same_contact_on_different_intake_gets_distinct_invitation(self):
-        first = self._patch([{"contact_id": "shared", "email": "shared@example.com"}])
+        first = self._patch([{"email": "shared@example.com"}])
         other = ProjectIntake.objects.create(
             initiated_by="homeowner",
             lead_source="landing_page",
@@ -130,7 +167,7 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
             f"/api/projects/public-intake/?token={other.share_token}",
             {
                 "branch_flow": "multi_contractor",
-                "contractors": [{"contact_id": "shared", "email": "shared@example.com"}],
+                "contractors": [{"email": "shared@example.com"}],
             },
             format="json",
         )
@@ -164,34 +201,141 @@ class PublicIntakeInviteIdempotencyTests(TestCase):
         self.assertTrue(retry.json()["branch_invites"][0]["reused"])
         self.assertEqual(retry.json()["branch_invites"][0]["status"], "accepted")
 
-    def test_website_normalization_and_opaque_stable_ids(self):
+    def test_website_normalization_and_validated_stable_ids(self):
         self.assertEqual(
-            canonical_invite_contact({"website_url": "HTTPS://www.Example.com/services/?utm=1#top"})[
-                "identity"
-            ],
-            "website:example.com/services",
-        )
-        self.assertEqual(
-            canonical_invite_contact({"id": "listing:77", "email": "listing@example.com"})[
-                "identity"
-            ],
-            "listing:77",
+            canonical_invite_contact(
+                {
+                    "email": "website@example.com",
+                    "website_url": "HTTPS://www.Example.com/services/?utm=1#top",
+                }
+            )["website"],
+            "example.com/services",
         )
         self.assertEqual(
             canonical_invite_contact(
-                {"google_place_id": "ChIJ-CaseSensitive", "email": "place@example.com"}
+                {
+                    "id": f"listing:{self.listing.id}",
+                    "email": "listing@example.com",
+                }
             )["identity"],
-            "place:ChIJ-CaseSensitive",
+            f"listing:{self.listing.id}",
         )
         self.assertEqual(
             canonical_invite_contact(
-                {"email": "valid@example.com", "website_url": "example.com:invalid-port"}
+                {
+                    "google_place_id": self.listing.google_place_id,
+                    "email": "listing@example.com",
+                }
             )["identity"],
-            "email:valid@example.com",
+            f"place:{self.listing.google_place_id}",
         )
-        long_identity = canonical_invite_contact({"email": f"{'a' * 245}@example.com"})["identity"]
-        self.assertLessEqual(len(long_identity), 255)
-        self.assertTrue(long_identity.startswith("email:sha256:"))
+
+    @patch("projects.services.invites_delivery.deliver_invite_notifications")
+    def test_malformed_nonempty_contact_fields_create_nothing_and_do_not_deliver(self, delivery):
+        cases = [
+            {"email": "not-an-email"},
+            {"phone": "abc"},
+            {"email": "not-an-email", "phone": "512-555-0188"},
+            {"email": "valid@example.com", "phone": "abc"},
+            {"email": "valid@example.com", "website_url": "https://[malformed"},
+            {"email": "valid@example.com", "contractor_id": "not-an-id"},
+            {"email": "valid@example.com", "contact_id": "untrusted-free-text"},
+            {
+                "email": "unrelated@example.com",
+                "contractor_id": self.contractor.id,
+            },
+        ]
+        for row in cases:
+            with self.subTest(row=row):
+                response = self._patch([row])
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("detail", response.json())
+                self.assertNotIn("token", response.json())
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 0)
+        delivery.assert_not_called()
+
+    def test_unrelated_malformed_values_never_share_invitation(self):
+        invalid_rows = [
+            [{"name": "One", "phone": "abc"}],
+            [{"name": "Two", "phone": "abc"}],
+            [{"name": "Three", "email": "invalid"}],
+            [{"name": "Four", "email": "invalid"}],
+        ]
+        for rows in invalid_rows:
+            response = self._patch(rows)
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 0)
+
+    def test_mismatched_stable_ids_are_rejected(self):
+        other_user = get_user_model().objects.create_user(email="other-stable@example.com")
+        other_contractor = Contractor.objects.create(
+            user=other_user,
+            business_name="Other Stable Contractor",
+        )
+
+        response = self._patch(
+            [
+                {
+                    "contractor_id": other_contractor.id,
+                    "directory_entry_id": self.directory_entry.id,
+                    "email": "valid@example.com",
+                }
+            ]
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 0)
+
+    @patch("projects.services.invites_delivery.deliver_invite_notifications")
+    def test_mixed_valid_and_invalid_batch_is_atomic(self, delivery):
+        response = self._patch(
+            [
+                {"email": "valid@example.com"},
+                {"phone": "abc"},
+            ]
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 0)
+        self.assertNotIn("branch_invites", response.json())
+        self.assertNotIn("token", response.json())
+        delivery.assert_not_called()
+
+    def test_invalid_contact_after_five_row_cap_still_rejects_whole_batch(self):
+        rows = [{"email": f"valid-{index}@example.com"} for index in range(5)]
+        rows.append({"phone": "abc"})
+
+        response = self._patch(rows)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 0)
+
+    def test_malformed_contact_json_cannot_fall_through_to_automatic_routing(self):
+        with patch(
+            "projects.views.public_intake.create_marketplace_invites_for_intake"
+        ) as automatic_routing:
+            response = self.client.patch(
+                self.url,
+                {
+                    "branch_flow": "multi_contractor",
+                    "contractors": "{malformed",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 0)
+        automatic_routing.assert_not_called()
+
+    def test_names_are_descriptive_and_never_dedupe(self):
+        first = self._patch([{"name": "Same Name", "email": "one@example.com"}])
+        second = self._patch([{"name": "Same Name", "email": "two@example.com"}])
+
+        self.assertNotEqual(
+            first.json()["branch_invites"][0]["token"],
+            second.json()["branch_invites"][0]["token"],
+        )
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=self.intake).count(), 2)
 
 
 class ContractorInviteCompatibilityTests(TestCase):
@@ -295,7 +439,7 @@ class ConcurrentPublicIntakeInviteIdempotencyTests(TransactionTestCase):
             barrier.wait(timeout=5)
             invite, created = get_or_create_public_intake_invite(
                 intake=intake,
-                row={"contact_id": "same-contact", "email": "same@example.com"},
+                row={"email": "same@example.com"},
                 homeowner_name=intake.customer_name,
                 homeowner_email=intake.customer_email,
                 homeowner_phone="",

@@ -15,7 +15,10 @@ from rest_framework.views import APIView
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models import PublicContractorLead
 from projects.services.invites_delivery import build_invite_url
-from projects.services.public_intake_invites import get_or_create_public_intake_invite
+from projects.services.public_intake_invites import (
+    get_or_create_public_intake_invite,
+    validate_public_intake_invite_contacts,
+)
 from projects.services.ai.project_understanding import understand_project_request
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.project_titles import generate_project_title, normalize_project_classification
@@ -387,7 +390,10 @@ class PublicIntakeView(APIView):
 
                     contractor_rows = json.loads(contractor_rows)
                 except Exception:
-                    contractor_rows = []
+                    return Response(
+                        {"detail": "Contractor contacts must be valid JSON."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
             selected_contractors = request.data.get("selected_contractors") or []
             if isinstance(selected_contractors, str):
                 try:
@@ -395,7 +401,10 @@ class PublicIntakeView(APIView):
 
                     selected_contractors = json.loads(selected_contractors)
                 except Exception:
-                    selected_contractors = []
+                    return Response(
+                        {"detail": "Selected contractors must be valid JSON."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
             has_selected_marketplace_contractors = isinstance(selected_contractors, list) and bool(selected_contractors)
 
             if branch_flow == "single_contractor":
@@ -412,6 +421,12 @@ class PublicIntakeView(APIView):
                         "website_url": request.data.get("website_url", ""),
                     }
                 ]
+                if has_selected_marketplace_contractors and not any(
+                    str(value or "").strip()
+                    for key, value in contractor_rows[0].items()
+                    if key != "message"
+                ):
+                    contractor_rows = []
 
             if not isinstance(contractor_rows, list) or not contractor_rows:
                 if has_selected_marketplace_contractors:
@@ -430,27 +445,25 @@ class PublicIntakeView(APIView):
             homeowner_phone = (intake.customer_phone or "").strip()
             invite_message = (request.data.get("branch_message") or "").strip()
 
-            for row in contractor_rows[:5]:
-                if not isinstance(row, dict):
-                    continue
-                if not (
-                    (row.get("email") or row.get("contractor_email") or "").strip()
-                    or (row.get("phone") or row.get("contractor_phone") or "").strip()
-                ):
-                    continue
+            try:
+                validated_contractor_rows = validate_public_intake_invite_contacts(
+                    contractor_rows
+                )
+            except ValueError as exc:
+                return Response(
+                    {"detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-                try:
-                    invite, created = get_or_create_public_intake_invite(
-                        intake=intake,
-                        row=row,
-                        homeowner_name=homeowner_name,
-                        homeowner_email=homeowner_email,
-                        homeowner_phone=homeowner_phone,
-                        invite_message=invite_message,
-                    )
-                except ValueError as exc:
-                    branch_error = str(exc)
-                    break
+            for row in validated_contractor_rows:
+                invite, created = get_or_create_public_intake_invite(
+                    intake=intake,
+                    row=row,
+                    homeowner_name=homeowner_name,
+                    homeowner_email=homeowner_email,
+                    homeowner_phone=homeowner_phone,
+                    invite_message=invite_message,
+                )
                 branch_invites.append(
                     {
                         "token": str(invite.token),

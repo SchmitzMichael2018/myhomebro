@@ -1,5 +1,7 @@
 import hashlib
 
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import migrations, models
 from django.db.models import Q
 
@@ -7,23 +9,31 @@ from django.db.models import Q
 def _normalize_phone(value):
     raw = "".join(ch for ch in str(value or "").strip() if ch.isdigit() or ch == "+")
     if raw.startswith("+"):
-        return raw
+        digits = raw[1:]
+        return raw if digits.isdigit() and 8 <= len(digits) <= 15 else ""
     digits = "".join(ch for ch in raw if ch.isdigit())
     if len(digits) == 10:
         return f"+1{digits}"
     if len(digits) == 11 and digits.startswith("1"):
         return f"+{digits}"
-    return str(value or "").strip()
+    return ""
 
 
 def _identity(invite):
     email = str(invite.contractor_email or "").strip().lower()
+    raw_phone = str(invite.contractor_phone or "").strip()
+    phone = _normalize_phone(raw_phone)
+    if raw_phone and not phone:
+        return ""
     if email:
+        try:
+            validate_email(email)
+        except ValidationError:
+            return ""
         identity = f"email:{email}"
         if len(identity) > 255:
             return f"email:sha256:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
         return identity
-    phone = _normalize_phone(invite.contractor_phone)
     if phone:
         return f"phone:{phone}"
     return ""
