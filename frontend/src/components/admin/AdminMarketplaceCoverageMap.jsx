@@ -377,7 +377,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
         <div className="overflow-hidden rounded-2xl border border-sky-200/20 bg-[#061a39]" role="region" aria-label="National marketplace coverage map">
           <div className="border-b border-white/10 px-4 py-3">
             <h3 className="font-black text-white">United States marketplace coverage</h3>
-            <p className="mt-1 text-xs text-sky-100/65">Use the accessible aggregate list below as an alternative to map navigation. No homeowner coordinates are displayed.</p>
+            <p className="mt-1 text-xs text-sky-100/65">Use Coverage Areas below as an accessible alternative to map navigation. No homeowner coordinates are displayed.</p>
           </div>
           <div className="relative h-[340px] sm:h-[430px]" data-testid="admin-marketplace-google-map">
             <div ref={mapHostRef} className="h-full w-full" aria-hidden={mapStatus !== 'ready'} />

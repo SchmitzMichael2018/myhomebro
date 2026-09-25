@@ -899,6 +899,7 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('20 claimed');
   await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('Coverage Areas');
   await expect(page.getByTestId('admin-marketplace-coverage-fallback')).not.toContainText('Accessible aggregate list');
+  await expect(page.getByTestId('admin-marketplace-coverage-workspace')).not.toContainText('Accessible aggregate list');
   await expect(page.getByTestId('admin-marketplace-metric-phone-ready')).toHaveClass(/cursor-pointer/);
 
   await expect(page.getByText('Import Enriched CSV')).toHaveCount(0);
