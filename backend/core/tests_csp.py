@@ -27,7 +27,7 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         self.assertEqual(Path(template.origin.name).resolve(), expected_template.resolve())
         with open(template.origin.name, encoding="utf-8") as template_file:
             html = template_file.read()
-        self.assertIn("script-src 'self' https://js.stripe.com https://connect-js.stripe.com", html)
+        self.assertIn("script-src 'self' 'wasm-unsafe-eval' https://js.stripe.com https://connect-js.stripe.com", html)
         self.assertIn("frame-src 'self' blob: https://connect-js.stripe.com https://js.stripe.com", html)
         self.assertIn("img-src 'self' data: https://*.stripe.com", html)
         self.assertIn("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", html)
@@ -37,6 +37,7 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         self.assertIn('style id="_goober" nonce="{{ csp_nonce }}"', html)
         self.assertNotIn("script-src 'self' https://*.stripe.com", html)
         self.assertNotIn("'unsafe-eval'", html)
+        self.assertNotIn("'unsafe-inline'", self._directives(html)["script-src"])
         self.assertNotIn("*;", html)
         self.assertEqual(html.count('http-equiv="Content-Security-Policy"'), 1)
         self.assertIn("object-src 'none'", html)
@@ -75,6 +76,8 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         self.assertIn(tile_origin, directives["connect-src"])
         self.assertIn(tile_origin, directives["img-src"])
         self.assertIn("blob:", directives["worker-src"])
+        self.assertIn("'wasm-unsafe-eval'", directives["script-src"])
+        self.assertNotIn("'unsafe-eval'", directives["script-src"])
         self.assertNotIn("https:", directives["script-src"])
         self.assertNotIn("*", directives["script-src"])
 

@@ -67,7 +67,10 @@ class ContractorInviteIdentityMigrationTests(TransactionTestCase):
         super().tearDown()
 
     def test_backfill_preserves_legacy_duplicates_and_enforces_new_invariant(self):
-        from projects.models_invite import ContractorInvite
+        # The disposable database is at 0324 here, so use the matching
+        # historical model rather than today's model with later intake fields.
+        apps = self.executor.loader.project_state([self.migrate_to]).apps
+        ContractorInvite = apps.get_model("projects", "ContractorInvite")
 
         invites = list(ContractorInvite.objects.order_by("created_at", "id"))
         by_name = {invite.homeowner_name: invite for invite in invites}

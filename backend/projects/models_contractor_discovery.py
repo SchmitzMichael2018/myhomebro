@@ -1173,3 +1173,47 @@ class MarketplaceLocation(models.Model):
 
     def __str__(self) -> str:
         return f"{self.city}, {self.state}"
+
+
+AUTOMATIC_MATCHING_TRADES = (
+    "carpentry", "concrete", "drywall", "electrical", "flooring", "gutters",
+    "hvac", "painting", "plumbing", "remodeling", "roofing", "siding", "windows",
+)
+
+
+class MarketplaceAutomaticMatchingApproval(models.Model):
+    """Explicit approval for exactly one normalized city, state, and trade."""
+
+    city_key = models.CharField(max_length=120)
+    state_key = models.CharField(max_length=60)
+    trade = models.CharField(max_length=32, choices=[(trade, trade.title()) for trade in AUTOMATIC_MATCHING_TRADES])
+    is_approved = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="marketplace_matching_approval_updates",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["city_key", "state_key", "trade"],
+                name="uniq_marketplace_matching_city_state_trade",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(city_key="") & ~models.Q(state_key="") & ~models.Q(trade=""),
+                name="marketplace_matching_identity_nonblank",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(trade__in=AUTOMATIC_MATCHING_TRADES),
+                name="marketplace_matching_known_trade",
+            ),
+        ]
+        indexes = [models.Index(fields=["state_key", "city_key"], name="market_match_location_idx")]
+
+    def save(self, *args, **kwargs):
+        self.city_key = " ".join(str(self.city_key or "").split()).casefold()
+        self.state_key = " ".join(str(self.state_key or "").split()).upper()
+        self.trade = " ".join(str(self.trade or "").split()).casefold()
+        super().save(*args, **kwargs)

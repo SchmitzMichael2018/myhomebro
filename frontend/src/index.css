@@ -35,6 +35,13 @@
   }
 }
 
+/* The advanced-marker host is keyboard focusable; keep focus visible on its glyph. */
+gmp-advanced-marker:focus-visible .mhb-coverage-marker,
+gmp-advanced-marker:focus .mhb-coverage-marker {
+  outline: 3px solid #facc15;
+  outline-offset: 3px;
+}
+
 /* === Global Utility Classes === */
 @layer components {
   .input-field {

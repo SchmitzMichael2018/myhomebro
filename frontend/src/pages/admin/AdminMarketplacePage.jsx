@@ -251,6 +251,7 @@ function formatDate(value) {
 function routeButtonCopy(row) {
   if (row?.routable_now) return "Route Now";
   if (row?.marketplace_status === "location_needed") return "Review location";
+  if (row?.marketplace_status === "service_needed") return "Review service";
   if (row?.marketplace_status === "routing_paused") return "Routing paused";
   if (row?.marketplace_status === "coverage_not_activated") return "Review coverage";
   if (row?.marketplace_status === "supply_needed") return "Build supply";
@@ -319,7 +320,7 @@ export default function AdminMarketplacePage() {
         try {
           const readiness = await api.get("/projects/admin/marketplace/");
           if (active) {
-            setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
+            setReadinessRows(readiness?.data?.coverage?.automatic_matching_readiness || []);
             setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
           }
         } catch {
@@ -354,7 +355,7 @@ export default function AdminMarketplacePage() {
 
   async function refreshMarketplaceOverview() {
     const readiness = await api.get("/projects/admin/marketplace/");
-    setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
+    setReadinessRows(readiness?.data?.coverage?.automatic_matching_readiness || []);
     setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
     return readiness?.data;
   }
@@ -587,18 +588,19 @@ export default function AdminMarketplacePage() {
       const { data } = await api.post("/projects/admin/marketplace/locations/", {
         city: row.city,
         state: row.state,
+        trade: row.trade,
         enabled,
       });
       setReadinessRows((prev) => {
-        const next = prev.filter((item) => !(item.city === data.city && item.state === data.state));
-        return [data, ...next].sort((a, b) => String(a.status).localeCompare(String(b.status)) || String(a.city).localeCompare(String(b.city)));
+        const next = prev.filter((item) => !(item.city === data.city && item.state === data.state && item.trade === data.trade));
+        return [data, ...next].sort((a, b) => String(a.state).localeCompare(String(b.state)) || String(a.city).localeCompare(String(b.city)) || String(a.trade).localeCompare(String(b.trade)));
       });
       try {
         await refreshMarketplaceOverview();
       } catch {
         // The location update succeeded; keep the local row update even if the overview refresh fails.
       }
-      setStatus(enabled ? `${row.city}, ${row.state} activated for automatic routing.` : `Automatic routing paused for ${row.city}, ${row.state}.`);
+      setStatus(enabled ? `${row.trade} automatic matching approved in ${row.city}, ${row.state}.` : `${row.trade} automatic matching paused in ${row.city}, ${row.state}.`);
     } catch (error) {
       setStatus(error?.response?.data?.detail || "Could not update marketplace location.");
     }
@@ -920,6 +922,7 @@ export default function AdminMarketplacePage() {
                 <select className={inputClass} aria-label="Filter marketplace status" value={requestFilters.marketplace_status} onChange={(event) => setRequestFilters((prev) => ({ ...prev, marketplace_status: event.target.value }))}>
                   <option value="">All readiness states</option>
                   <option value="location_needed">Location needed</option>
+                  <option value="service_needed">Service needed</option>
                   <option value="coverage_not_activated">Coverage not activated</option>
                   <option value="supply_needed">Supply needed</option>
                   <option value="building_coverage">Building coverage</option>
@@ -1127,73 +1130,70 @@ export default function AdminMarketplacePage() {
             </section>
 
             <Section
-              title="City Readiness"
-              sub="Marketplace routing stays gated until local contractor coverage meets thresholds and an admin enables the city. Google listings count as supply leads; only claimed approved contractors can receive bid invitations."
+              title="Automatic Matching Readiness"
+              sub="Review whether each location and service has enough eligible claimed contractor supply for automatic matching. Customers can create requests, search, and directly invite eligible contractors in every market, regardless of readiness. Unclaimed Directory prospects are not routable supply."
               testId="admin-marketplace-location-readiness"
             >
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
                     <tr>
-                      <th className={tableHeadClass}>City</th>
-                      <th className={tableHeadClass}>Status</th>
-                      <th className={tableHeadClass}>Coverage</th>
-                      <th className={tableHeadClass}>Gaps</th>
-                      <th className={tableHeadClass}>Routing</th>
+                      <th className={tableHeadClass}>Location</th>
+                      <th className={tableHeadClass}>Service/trade</th>
+                      <th className={tableHeadClass}>Automatic matching status</th>
+                      <th className={tableHeadClass}>Eligible claimed supply</th>
+                      <th className={tableHeadClass}>Coverage gaps</th>
+                      <th className={tableHeadClass}>Administrative approval/action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {readinessRows.length ? readinessRows.slice(0, 12).map((row) => (
-                      <tr key={`${row.city}-${row.state}`} data-testid={`admin-marketplace-location-${row.city}-${row.state}`} className="hover:bg-white/5">
+                    {readinessRows.length ? readinessRows.map((row) => (
+                      <tr key={`${row.city}-${row.state}-${row.trade}`} data-testid={`admin-marketplace-location-${row.city}-${row.state}-${row.trade}`} className="hover:bg-white/5">
                         <td className={tableCellClass}>
                           <div className="font-extrabold text-white">{row.city}, {row.state}</div>
-                          <div className="mt-1 text-xs text-sky-100/70">{row.counts?.request_volume || 0} request(s) | Avg {row.counts?.avg_bids_per_request || 0} bids/request</div>
                         </td>
+                        <td className={tableCellClass}><span className="font-bold capitalize text-white">{row.trade}</span></td>
                         <td className={tableCellClass}>
-                          <Badge tone={row.status === "enabled" ? "emerald" : row.status === "ready" ? "sky" : row.status === "nearing_ready" ? "amber" : "rose"}>
-                            {String(row.status || "not_ready").replace(/_/g, " ")}
+                          <Badge tone={row.status === "active" ? "emerald" : row.status === "awaiting_approval" ? "sky" : row.status === "paused" ? "rose" : "amber"}>
+                            {{ active: "Automatic matching active", awaiting_approval: "Threshold met — awaiting admin approval", paused: "Paused", building_coverage: "Building coverage — manual selection required", location_needed: "Location data needed", location_review_needed: "Duplicate legacy locations — admin review required", service_needed: "Service data needed" }[row.status] || "Building coverage — manual selection required"}
                           </Badge>
                         </td>
                         <td className={tableCellClass}>
                           <div className="text-xs text-sky-100/80">
-                            {row.counts?.total_discovered || 0} discovered | {row.counts?.claimed_contractors || 0} claimed | {row.counts?.verified_contractors || 0} verified | {row.counts?.stripe_ready_contractors || 0} Stripe-ready
+                            {row.counts?.claimed_contractors || 0} claimed | {row.counts?.verified_contractors || 0} verified | {row.counts?.stripe_ready_contractors || 0} payment-ready
                           </div>
-                          <div className="mt-1 text-xs text-sky-100/65">{row.counts?.trade_categories || 0} trade categories represented</div>
                         </td>
                         <td className={tableCellClass}>
                           <div className="max-w-md text-xs text-sky-100/75">
-                            {(row.missing_trade_coverage || []).slice(0, 6).join(", ") || "No core trade gaps detected"}
+                            {(row.coverage_gaps || []).map((gap) => gap.replace(/_/g, " ")).join(", ") || "No eligible supply gaps"}
                           </div>
                         </td>
                         <td className={tableCellClass}>
-                          <div className="mb-2 text-xs text-sky-100/75">
-                            Backlog: {row.marketplace_backlog?.saved_not_routed || 0} saved | {row.marketplace_backlog?.routable_now || 0} routable | {row.marketplace_backlog?.at_cap || 0} at cap
-                          </div>
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
-                              data-testid={`admin-marketplace-location-enable-${row.city}-${row.state}`}
+                              data-testid={`admin-marketplace-location-enable-${row.city}-${row.state}-${row.trade}`}
                               onClick={() => setLocationEnabled(row, true)}
-                              disabled={row.status === "enabled"}
+                              disabled={row.status === "active" || row.status === "building_coverage" || row.status === "location_review_needed"}
                               className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Activate routing
+                              Approve matching
                             </button>
                             <button
                               type="button"
-                              data-testid={`admin-marketplace-location-disable-${row.city}-${row.state}`}
+                              data-testid={`admin-marketplace-location-disable-${row.city}-${row.state}-${row.trade}`}
                               onClick={() => setLocationEnabled(row, false)}
                               disabled={!row.manual_enabled}
                               className="rounded-lg border border-rose-200/30 bg-rose-300/10 px-3 py-1.5 text-xs font-extrabold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Pause routing
+                              Pause matching
                             </button>
                           </div>
                         </td>
                       </tr>
                     )) : (
                       <tr>
-                        <td className={tableCellClass} colSpan={5}>No city readiness data yet. Import directory listings to start coverage tracking.</td>
+                        <td className={tableCellClass} colSpan={6}>No location-and-service combinations are currently ready for automatic matching. Customers may still search for and directly invite eligible contractors.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1203,7 +1203,7 @@ export default function AdminMarketplacePage() {
 
             <Section
               title="Saved Marketplace Requests"
-              sub="Requests saved for multi-contractor routing. Route only after the city is enabled and eligible claimed contractors are available."
+              sub="Requests in coverage-building markets remain saved and available for customer-selected contractor invitations. They must not be automatically broadcast until the applicable location and service meet readiness requirements and automatic matching is approved."
               testId="admin-marketplace-saved-requests"
             >
               <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

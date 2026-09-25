@@ -42,6 +42,7 @@ from .models_contractor_discovery import (  # noqa: F401
     ContractorDiscoveryInvite,
     ContractorMarketplaceJoinInvite,
     MarketplaceLocation,
+    MarketplaceAutomaticMatchingApproval,
     OpportunityEstimateAppointment,
     EstimateAppointmentDelivery,
 )

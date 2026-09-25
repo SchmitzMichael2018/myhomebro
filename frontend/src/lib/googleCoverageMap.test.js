@@ -1,7 +1,60 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import { waitForBasemap } from './googleCoverageMap';
+
+function fakeMap() {
+  const listeners = new Map();
+  const removed = vi.fn();
+  return {
+    listeners,
+    removed,
+    addListener(event, callback) {
+      listeners.set(event, callback);
+      return { remove: removed };
+    },
+  };
+}
 
 describe('admin coverage map adapter', () => {
+  it('does not report readiness until Google signals visible tiles', async () => {
+    vi.useFakeTimers();
+    try {
+      const map = fakeMap();
+      const { ready } = waitForBasemap(map, undefined, 100);
+      let resolved = false;
+      ready.then(() => { resolved = true; });
+      await Promise.resolve();
+      expect(resolved).toBe(false);
+      map.listeners.get('tilesloaded')();
+      await ready;
+      expect(resolved).toBe(true);
+      expect(map.removed).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('times out without tiles and permits cancellation without leaking listeners', async () => {
+    vi.useFakeTimers();
+    try {
+      const map = fakeMap();
+      const { ready } = waitForBasemap(map, undefined, 100);
+      const rejection = expect(ready).rejects.toMatchObject({ category: 'timeout' });
+      await vi.advanceTimersByTimeAsync(100);
+      await rejection;
+      expect(map.removed).toHaveBeenCalledOnce();
+
+      const nextMap = fakeMap();
+      const pending = waitForBasemap(nextMap, undefined, 100);
+      const cancelled = expect(pending.ready).rejects.toMatchObject({ category: 'cancelled' });
+      pending.cancel();
+      await cancelled;
+      expect(nextMap.removed).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('uses the modern advanced marker API without deprecated map layers', () => {
     const source = fs.readFileSync(
       new URL('./googleCoverageMap.js', import.meta.url),
