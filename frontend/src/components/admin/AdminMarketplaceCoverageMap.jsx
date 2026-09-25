@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../../api';
+import { PaginationControls } from '../ui/PaginationControls.jsx';
 import {
   createCoverageMap,
   readAdminMapConfig,
@@ -17,9 +18,22 @@ const LAYERS = [
 const CLASSIFICATIONS = {
   critical_gap: 'Critical gap',
   limited_supply: 'Limited supply',
-  covered: 'Covered',
-  supply_only: 'Supply only',
+  covered: 'Coverage ready',
+  supply_only: 'Coverage ready',
 };
+const COVERAGE_PAGE_SIZES = [25, 50, 100];
+const MAP_LOCATION_EXPLANATION = 'MyHomeBro has aggregate records for this area, but not enough privacy-safe business-location data to place a representative marker.';
+
+function positiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function aggregationLevelForZoom(zoom) {
+  if (Number(zoom) >= 9) return 'zip';
+  if (Number(zoom) >= 5) return 'city';
+  return 'state';
+}
 
 function filtersFromSearch(search) {
   const params = new URLSearchParams(search);
@@ -35,6 +49,11 @@ function filtersFromSearch(search) {
     classification: params.get('classification') || '',
     layers,
     area: params.get('area') || '',
+    coverage_page: positiveInt(params.get('coverage_page'), 1),
+    coverage_page_size: COVERAGE_PAGE_SIZES.includes(positiveInt(params.get('coverage_page_size'), 25))
+      ? positiveInt(params.get('coverage_page_size'), 25)
+      : 25,
+    coverage_sort: params.get('coverage_sort') || 'largest_coverage_gap',
   };
 }
 
@@ -51,6 +70,9 @@ function coverageQuery(filters, viewport) {
     date_range: filters.date_range,
     classification: filters.classification,
     layer: filters.layers.length ? filters.layers.join(',') : 'none',
+    coverage_page: filters.coverage_page,
+    coverage_page_size: filters.coverage_page_size,
+    coverage_sort: filters.coverage_sort,
     ...viewport,
   };
   return Object.fromEntries(
@@ -71,13 +93,14 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
   const location = useLocation();
   const navigate = useNavigate();
   const filters = useMemo(() => filtersFromSearch(location.search), [location.search]);
-  const [data, setData] = useState({ points: [], summary: {}, facets: {}, location_needed: {} });
+  const [data, setData] = useState({ points: [], coverage_areas: { results: [], pagination: {} }, summary: {}, facets: {}, location_needed: {} });
   const [viewport, setViewport] = useState({ zoom: 4 });
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
   const [mapStatus, setMapStatus] = useState('loading');
   const [mapError, setMapError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
+  const [coverageRetryKey, setCoverageRetryKey] = useState(0);
   const mapHostRef = useRef(null);
   const mapControllerRef = useRef(null);
   const viewportTimerRef = useRef(null);
@@ -86,19 +109,46 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
   const pointsRef = useRef(data.points || []);
   const layersRef = useRef(filters.layers);
   const selectedAreaRef = useRef(filters.area);
+  const aggregationLevelRef = useRef(aggregationLevelForZoom(viewport.zoom));
   filtersRef.current = filters;
   locationRef.current = location;
   pointsRef.current = data.points || [];
   layersRef.current = filters.layers;
   selectedAreaRef.current = filters.area;
   const config = useMemo(() => readAdminMapConfig(), []);
+  const layersKey = filters.layers.join(',');
   const requestParams = useMemo(
-    () => coverageQuery(filters, viewport),
-    [filters, viewport],
+    () => coverageQuery({
+      trade: filters.trade,
+      state: filters.state,
+      city: filters.city,
+      zip: filters.zip,
+      date_range: filters.date_range,
+      classification: filters.classification,
+      layers: layersKey ? layersKey.split(',') : [],
+      coverage_page: filters.coverage_page,
+      coverage_page_size: filters.coverage_page_size,
+      coverage_sort: filters.coverage_sort,
+    }, viewport),
+    [
+      filters.trade,
+      filters.state,
+      filters.city,
+      filters.zip,
+      filters.date_range,
+      filters.classification,
+      filters.coverage_page,
+      filters.coverage_page_size,
+      filters.coverage_sort,
+      layersKey,
+      viewport,
+    ],
   );
   const selected = useMemo(
-    () => data.points?.find((point) => point.id === filters.area) || null,
-    [data.points, filters.area],
+    () => data.coverage_areas?.results?.find((point) => point.id === filters.area)
+      || data.points?.find((point) => point.id === filters.area)
+      || null,
+    [data.coverage_areas?.results, data.points, filters.area],
   );
 
   const updateSearch = useCallback((changes, { replace = false } = {}) => {
@@ -115,15 +165,28 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       next.area = '';
     }
     if ('zip' in changes && changes.zip !== currentFilters.zip) next.area = '';
-    const params = new URLSearchParams();
-    if (next.trade) params.set('trade', next.trade);
-    if (next.state) params.set('state', next.state);
-    if (next.city) params.set('city', next.city);
-    if (next.zip) params.set('zip', next.zip);
-    if (next.date_range !== '90d') params.set('date_range', next.date_range);
-    if (next.classification) params.set('classification', next.classification);
+    const resetsCoveragePage = [
+      'trade', 'state', 'city', 'zip', 'date_range', 'classification',
+      'layers', 'coverage_sort', 'coverage_page_size',
+    ].some((key) => key in changes && changes[key] !== currentFilters[key]);
+    if (resetsCoveragePage) next.coverage_page = 1;
+    const params = new URLSearchParams(currentLocation.search);
+    const setOrDelete = (key, value, defaultValue = '') => {
+      if (value === defaultValue || value === '' || value == null) params.delete(key);
+      else params.set(key, String(value));
+    };
+    setOrDelete('trade', next.trade);
+    setOrDelete('state', next.state);
+    setOrDelete('city', next.city);
+    setOrDelete('zip', next.zip);
+    setOrDelete('date_range', next.date_range, '90d');
+    setOrDelete('classification', next.classification);
     if (next.layers.length !== LAYERS.length) params.set('layers', next.layers.join(','));
-    if (next.area) params.set('area', next.area);
+    else params.delete('layers');
+    setOrDelete('area', next.area);
+    setOrDelete('coverage_page', next.coverage_page, 1);
+    setOrDelete('coverage_page_size', next.coverage_page_size, 25);
+    setOrDelete('coverage_sort', next.coverage_sort, 'largest_coverage_gap');
     navigate({ pathname: currentLocation.pathname, search: params.toString() ? `?${params}` : '' }, { replace });
   }, [navigate]);
 
@@ -138,7 +201,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
     api.get('/projects/admin/marketplace/coverage/', {
       params: requestParams,
     }).then(({ data: payload }) => {
-      if (active) setData(payload || { points: [], summary: {}, facets: {}, location_needed: {} });
+      if (active) setData(payload || { points: [], coverage_areas: { results: [], pagination: {} }, summary: {}, facets: {}, location_needed: {} });
     }).catch((error) => {
       if (active) {
         setApiError(error?.response?.data?.detail || 'Coverage intelligence could not be loaded.');
@@ -149,7 +212,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
     return () => {
       active = false;
     };
-  }, [requestParams]);
+  }, [requestParams, coverageRetryKey]);
 
   useEffect(() => {
     if (!config.apiKey || !config.mapId) {
@@ -176,7 +239,13 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       onViewportChange(nextViewport) {
         clearTimeout(viewportTimerRef.current);
         viewportTimerRef.current = setTimeout(() => {
-          if (active) setViewport(nextViewport);
+          if (!active) return;
+          const nextLevel = aggregationLevelForZoom(nextViewport.zoom);
+          if (nextLevel !== aggregationLevelRef.current) {
+            aggregationLevelRef.current = nextLevel;
+            updateSearch({ coverage_page: 1 }, { replace: true });
+          }
+          setViewport(nextViewport);
         }, 350);
       },
     }).then(async (controller) => {
@@ -207,7 +276,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       pendingController?.destroy?.();
       mapControllerRef.current = null;
     };
-  }, [retryKey, config, selectPoint]);
+  }, [retryKey, config, selectPoint, updateSearch]);
 
   useEffect(() => {
     mapControllerRef.current?.update?.(data.points || [], filters.layers, filters.area);
@@ -221,6 +290,8 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       && (!filters.city || row.city === filters.city),
   );
   const summary = data.summary || {};
+  const coverageAreas = data.coverage_areas?.results || [];
+  const coveragePagination = data.coverage_areas?.pagination || {};
 
   return (
     <div className="space-y-4" data-testid="admin-marketplace-coverage-workspace">
@@ -294,14 +365,19 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
         </div>
       </div>
 
-      {apiError ? <div role="alert" className="rounded-xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-semibold text-rose-100">{apiError}</div> : null}
+      {apiError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-semibold text-rose-100">
+          <span>{apiError}</span>
+          <button type="button" className="rounded-lg border border-rose-200/40 px-3 py-2" onClick={() => setCoverageRetryKey((value) => value + 1)}>Retry coverage data</button>
+        </div>
+      ) : null}
       {data.limited ? <div role="status" className="rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">{data.instruction}</div> : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="overflow-hidden rounded-2xl border border-sky-200/20 bg-[#061a39]" role="region" aria-label="National marketplace coverage map">
           <div className="border-b border-white/10 px-4 py-3">
             <h3 className="font-black text-white">United States marketplace coverage</h3>
-            <p className="mt-1 text-xs text-sky-100/65">Use the accessible aggregate list below as an alternative to map navigation. No homeowner coordinates are displayed.</p>
+            <p className="mt-1 text-xs text-sky-100/65">Use Coverage Areas below as an accessible alternative to map navigation. No homeowner coordinates are displayed.</p>
           </div>
           <div className="relative h-[340px] sm:h-[430px]" data-testid="admin-marketplace-google-map">
             <div ref={mapHostRef} className="h-full w-full" aria-hidden={mapStatus !== 'ready'} />
@@ -326,7 +402,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
           {selected ? (
             <>
               <h3 className="text-lg font-black text-white">{locationLabel(selected)}</h3>
-              <p className="mt-1 text-sm font-semibold text-sky-100">{CLASSIFICATIONS[selected.coverage_classification] || selected.coverage_classification}</p>
+              <p className="mt-1 text-sm font-semibold text-sky-100">{selected.coverage_status_label || CLASSIFICATIONS[selected.coverage_classification] || selected.coverage_classification}</p>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div><dt className="text-sky-100/55">Active requests</dt><dd className="text-xl font-black text-white">{selected.counts?.active_demand || 0}</dd></div>
                 <div><dt className="text-sky-100/55">Unanswered</dt><dd className="text-xl font-black text-white">{selected.counts?.unanswered_demand || 0}</dd></div>
@@ -338,10 +414,11 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
                 <p className="mt-1 text-sm text-sky-50">{(selected.trade_mix || []).slice(0, 4).map((row) => row.trade).join(', ') || 'No classified trades'}</p>
               </div>
               <p className="mt-4 text-xs leading-5 text-sky-100/65">This aggregate uses normalized geography and safe representative points. It never contains a homeowner address or request coordinate.</p>
+              {selected.has_marker === false ? <p className="mt-3 rounded-lg border border-amber-200/25 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100">{MAP_LOCATION_EXPLANATION}</p> : null}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => onOpenRequests({ state: selected.state, city: selected.city, zip: selected.zip })} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">View requests</button>
                 <button type="button" onClick={() => onOpenDirectory({ state: selected.state, city: selected.city, zip: selected.zip })} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-extrabold text-white">View Directory</button>
-                <button type="button" onClick={() => mapControllerRef.current?.focus?.(selected)} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-extrabold text-white">Zoom to area</button>
+                {selected.has_marker !== false ? <button type="button" onClick={() => mapControllerRef.current?.focus?.(selected)} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-extrabold text-white">Zoom to area</button> : null}
               </div>
             </>
           ) : <div className="text-sm text-sky-100/70">Select an aggregate marker or list row to inspect privacy-safe demand and supply intelligence.</div>}
@@ -349,27 +426,80 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       </div>
 
       <div className={panelClass} data-testid="admin-marketplace-coverage-fallback">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-black text-white">Accessible aggregate list</h3>
-          <span className="text-xs text-sky-100/65">Location data needed: {data.location_needed?.total || 0}</span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-black text-white">Coverage Areas</h3>
+            <p className="mt-1 max-w-3xl text-sm text-sky-100/70">Exact demand and contractor-supply totals for the selected geographic level. Areas without a privacy-safe map location remain available here.</p>
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold text-sky-100">
+            <span>Sort</span>
+            <select className={inputClass} aria-label="Sort Coverage Areas" value={filters.coverage_sort} onChange={(event) => updateSearch({ coverage_sort: event.target.value })}>
+              <option value="largest_coverage_gap">Largest coverage gap</option>
+              <option value="highest_demand">Highest demand</option>
+              <option value="lowest_demand">Lowest demand</option>
+              <option value="highest_claimed_supply">Highest eligible claimed supply</option>
+              <option value="highest_directory_prospects">Highest Directory prospects</option>
+              <option value="area_name">Area name</option>
+            </select>
+          </label>
         </div>
-        <div className="mt-3 overflow-x-auto">
+        {loading ? <div role="status" className="py-8 text-center text-sm font-semibold text-sky-100/70">Loading Coverage Areas…</div> : null}
+        {!loading && !apiError ? (
+          <>
+        <div className="mt-3 hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase tracking-wide text-sky-100/60"><th className="px-2 py-2">Area</th><th className="px-2 py-2">Demand</th><th className="px-2 py-2">Claimed</th><th className="px-2 py-2">Prospects</th><th className="px-2 py-2">Coverage</th></tr></thead>
+            <thead><tr className="text-left text-xs uppercase tracking-wide text-sky-100/60"><th className="px-2 py-2">Area</th><th className="px-2 py-2">Demand</th><th className="px-2 py-2">Eligible claimed supply</th><th className="px-2 py-2">Directory prospects</th><th className="px-2 py-2">Coverage status</th></tr></thead>
             <tbody>
-              {(data.points || []).map((point) => (
-                <tr key={point.id} className="border-t border-white/10">
-                  <td className="px-2 py-2"><button type="button" data-testid={`admin-marketplace-coverage-area-${point.id}`} className="font-bold text-white underline-offset-2 hover:underline focus:underline" onClick={() => selectPoint(point)}>{locationLabel(point)}</button></td>
+              {coverageAreas.map((point) => (
+                <tr key={point.id} aria-selected={filters.area === point.id} className={`border-t border-white/10 ${filters.area === point.id ? 'bg-sky-300/15 ring-1 ring-inset ring-sky-200/50' : ''}`}>
+                  <td className="px-2 py-2"><button type="button" aria-pressed={filters.area === point.id} data-testid={`admin-marketplace-coverage-area-${point.id}`} className="rounded font-bold text-white underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-200" onClick={() => selectPoint(point)}>{locationLabel(point)}</button></td>
                   <td className="px-2 py-2 text-sky-50">{point.counts?.active_demand || 0}</td>
                   <td className="px-2 py-2 text-sky-50">{point.counts?.eligible_claimed_supply || 0}</td>
                   <td className="px-2 py-2 text-sky-50">{point.counts?.directory_prospects || 0}</td>
-                  <td className="px-2 py-2 text-sky-50">{CLASSIFICATIONS[point.coverage_classification] || point.coverage_classification}</td>
+                  <td className="px-2 py-2 text-sky-50">
+                    <span title={point.has_marker === false ? MAP_LOCATION_EXPLANATION : undefined} aria-label={point.has_marker === false ? `${point.coverage_status_label}. ${MAP_LOCATION_EXPLANATION}` : point.coverage_status_label}>
+                      {point.coverage_status_label || CLASSIFICATIONS[point.coverage_classification] || point.coverage_classification}
+                    </span>
+                  </td>
                 </tr>
               ))}
-              {!data.points?.length ? <tr><td colSpan={5} className="px-2 py-8 text-center text-sky-100/70">No aggregate areas match the current filters.</td></tr> : null}
+              {!coverageAreas.length ? <tr><td colSpan={5} className="px-2 py-8 text-center text-sky-100/70">No coverage areas match the current filters. <button type="button" className="font-bold underline" onClick={() => updateSearch({ trade: '', state: '', city: '', zip: '', classification: '', coverage_page: 1 })}>Clear filters</button></td></tr> : null}
             </tbody>
           </table>
         </div>
+        <div className="mt-3 space-y-3 md:hidden" data-testid="admin-marketplace-coverage-cards">
+          {coverageAreas.map((point) => (
+            <button
+              type="button"
+              key={point.id}
+              aria-pressed={filters.area === point.id}
+              onClick={() => selectPoint(point)}
+              className={`block w-full rounded-xl border p-4 text-left focus:outline-none focus:ring-2 focus:ring-sky-200 ${filters.area === point.id ? 'border-sky-200/60 bg-sky-300/15' : 'border-white/10 bg-white/5'}`}
+            >
+              <div className="font-extrabold text-white">{locationLabel(point)}</div>
+              <div className="mt-1 text-sm font-semibold text-sky-100">{point.coverage_status_label}</div>
+              {point.has_marker === false ? <div className="mt-2 text-xs leading-5 text-amber-100">{MAP_LOCATION_EXPLANATION}</div> : null}
+              <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <div><dt className="text-sky-100/60">Demand</dt><dd className="mt-1 font-bold text-white">{point.counts?.active_demand || 0}</dd></div>
+                <div><dt className="text-sky-100/60">Eligible claimed</dt><dd className="mt-1 font-bold text-white">{point.counts?.eligible_claimed_supply || 0}</dd></div>
+                <div><dt className="text-sky-100/60">Prospects</dt><dd className="mt-1 font-bold text-white">{point.counts?.directory_prospects || 0}</dd></div>
+              </dl>
+            </button>
+          ))}
+          {!coverageAreas.length ? <div className="py-6 text-center text-sm text-sky-100/70">No coverage areas match the current filters. <button type="button" className="font-bold underline" onClick={() => updateSearch({ trade: '', state: '', city: '', zip: '', classification: '', coverage_page: 1 })}>Clear filters</button></div> : null}
+        </div>
+        <PaginationControls
+          page={coveragePagination.page || filters.coverage_page}
+          pageSize={coveragePagination.page_size || filters.coverage_page_size}
+          totalItems={coveragePagination.total || 0}
+          pageSizeOptions={COVERAGE_PAGE_SIZES}
+          label="areas"
+          testId="admin-marketplace-coverage-pagination"
+          onPageChange={(page) => updateSearch({ coverage_page: page })}
+          onPageSizeChange={(pageSize) => updateSearch({ coverage_page_size: pageSize })}
+        />
+          </>
+        ) : null}
       </div>
     </div>
   );

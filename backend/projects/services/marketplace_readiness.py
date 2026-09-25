@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,7 @@ DEFAULT_MAX_BIDS_PER_REQUEST = 5
 LOCATION_MISSING_STATUS = "location_needed"
 
 CORE_TRADE_CATEGORIES = set(AUTOMATIC_MATCHING_TRADES)
+_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -270,13 +272,20 @@ def marketplace_request_trade_signature(intake: ProjectIntake) -> tuple[str, ...
 
 
 def automatic_matching_readiness(
-    city: str, state: str, trade: str, *, listings: list[ContractorDirectoryListing] | None = None,
+    city: str,
+    state: str,
+    trade: str,
+    *,
+    listings: list[ContractorDirectoryListing] | None = None,
+    location_matches: list[MarketplaceLocation] | None = None,
+    approval: MarketplaceAutomaticMatchingApproval | None | object = _UNSET,
 ) -> dict[str, Any]:
     """Fail-closed location-and-trade gate backed only by routable supply."""
     city = normalize_location_value(city)
     state = normalize_location_value(state)
     trade = normalize_trade(trade)
-    location_matches = matching_marketplace_locations(city, state)
+    if location_matches is None:
+        location_matches = matching_marketplace_locations(city, state)
     location = location_matches[0] if len(location_matches) == 1 else None
     thresholds = marketplace_thresholds(location)
     claimed_ids: set[int] = set()
@@ -304,12 +313,13 @@ def automatic_matching_readiness(
         "stripe_ready_contractors": len(payment_ready_ids) >= thresholds.min_stripe_ready_contractors,
     }
     supply_ready = bool(payment_ready_ids) and all(checks.values())
-    approval = None
-    if city and state and trade in CORE_TRADE_CATEGORIES:
+    if approval is _UNSET and city and state and trade in CORE_TRADE_CATEGORIES:
         city_key, state_key = automatic_matching_location_keys(city, state)
         approval = MarketplaceAutomaticMatchingApproval.objects.filter(
             city_key=city_key, state_key=state_key, trade=trade,
         ).first()
+    elif approval is _UNSET:
+        approval = None
     approved = bool(approval and approval.is_approved)
     paused = bool(approval and not approval.is_approved)
     if not city or not state or trade not in CORE_TRADE_CATEGORIES:
@@ -342,20 +352,107 @@ def automatic_matching_readiness(
     })
 
 
-def automatic_matching_readiness_rows(city: str, state: str) -> list[dict[str, Any]]:
+def automatic_matching_readiness_rows(
+    city: str,
+    state: str,
+    *,
+    listings: list[ContractorDirectoryListing] | None = None,
+    entries: list[ContractorDirectoryEntry] | None = None,
+    location_matches: list[MarketplaceLocation] | None = None,
+    approvals: dict[str, MarketplaceAutomaticMatchingApproval] | None = None,
+) -> list[dict[str, Any]]:
     """Show services represented by supply or explicitly reviewed by admins."""
     city_key, state_key = automatic_matching_location_keys(city, state)
-    trades = set(MarketplaceAutomaticMatchingApproval.objects.filter(
-        city_key=city_key, state_key=state_key,
-    ).values_list("trade", flat=True))
-    listings = _location_listings(city, state)
+    if approvals is None:
+        approvals = {
+            row.trade: row
+            for row in MarketplaceAutomaticMatchingApproval.objects.filter(
+                city_key=city_key,
+                state_key=state_key,
+            )
+        }
+    trades = set(approvals)
+    if listings is None:
+        listings = _location_listings(city, state)
     for listing in listings:
         trades.update(_listing_trades(listing))
-    for entry in _location_entries(city, state):
+    if entries is None:
+        entries = _location_entries(city, state)
+    for entry in entries:
         trades.update(_entry_trades(entry))
     return [
-        automatic_matching_readiness(city, state, trade, listings=listings)
+        automatic_matching_readiness(
+            city,
+            state,
+            trade,
+            listings=listings,
+            location_matches=location_matches,
+            approval=approvals.get(trade),
+        )
         for trade in sorted(trades & CORE_TRADE_CATEGORIES)
+    ]
+
+
+def automatic_matching_readiness_rows_for_locations(
+    location_keys: list[tuple[str, str]],
+) -> list[dict[str, Any]]:
+    """Build all readiness rows before slicing so filtered totals stay authoritative.
+
+    Query count is fixed, but CPU and memory still scale with the full listing,
+    entry, location, and approval populations. Reassess this batch aggregation
+    against production volume before substantially expanding the directory.
+    """
+    normalized_locations = {
+        automatic_matching_location_keys(city, state): (city, state)
+        for city, state in location_keys
+        if city and state
+    }
+    listings_by_location = defaultdict(list)
+    listings = ContractorDirectoryListing.objects.select_related(
+        "claimed_contractor",
+        "claimed_contractor__user",
+    )
+    for listing in listings.iterator(chunk_size=500):
+        key = automatic_matching_location_keys(listing.city, listing.state)
+        if key in normalized_locations:
+            listings_by_location[key].append(listing)
+
+    entries_by_location = defaultdict(list)
+    entries = ContractorDirectoryEntry.objects.all()
+    for entry in entries.iterator(chunk_size=500):
+        for key in {
+            automatic_matching_location_keys(entry.city, entry.state),
+            automatic_matching_location_keys(
+                entry.service_city,
+                entry.service_state,
+            ),
+        }:
+            if key in normalized_locations:
+                entries_by_location[key].append(entry)
+
+    configured_locations = defaultdict(list)
+    for location in MarketplaceLocation.objects.all().order_by("id"):
+        key = automatic_matching_location_keys(location.city, location.state)
+        if key in normalized_locations:
+            configured_locations[key].append(location)
+
+    approvals_by_location = defaultdict(dict)
+    for approval in MarketplaceAutomaticMatchingApproval.objects.all().order_by("id"):
+        key = (approval.city_key, approval.state_key)
+        if key in normalized_locations:
+            approvals_by_location[key][approval.trade] = approval
+
+    return [
+        row
+        for key, (city, state) in sorted(normalized_locations.items())
+        for row in automatic_matching_readiness_rows(
+            city,
+            state,
+            listings=listings_by_location[key],
+            entries=entries_by_location[key],
+            location_matches=configured_locations[key],
+            approvals=approvals_by_location[key],
+        )
     ]
 
 

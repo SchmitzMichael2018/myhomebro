@@ -31,6 +31,17 @@ from projects.services.marketplace_request_lifecycle import (
 
 POINT_LIMIT = 500
 MIN_PUBLIC_BUSINESS_POINTS = 2
+COVERAGE_PAGE_SIZES = {25, 50, 100}
+COVERAGE_DEFAULT_PAGE_SIZE = 25
+COVERAGE_SORTS = {
+    "highest_demand",
+    "lowest_demand",
+    "highest_claimed_supply",
+    "highest_directory_prospects",
+    "largest_coverage_gap",
+    "area_name",
+}
+DEFAULT_COVERAGE_SORT = "largest_coverage_gap"
 CONTACT_READY_STATUSES = {
     ContractorDirectoryEntry.CONTACT_STATUS_CONTACT_READY,
     ContractorDirectoryEntry.CONTACT_STATUS_EMAIL_READY,
@@ -292,6 +303,79 @@ def _classification(demand: int, supply: int) -> str:
     return "location_needed"
 
 
+def _positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _coverage_pagination(params, total: int) -> dict[str, int | bool]:
+    requested_size = _positive_int(
+        params.get("coverage_page_size"),
+        COVERAGE_DEFAULT_PAGE_SIZE,
+    )
+    page_size = (
+        requested_size
+        if requested_size in COVERAGE_PAGE_SIZES
+        else COVERAGE_DEFAULT_PAGE_SIZE
+    )
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(_positive_int(params.get("coverage_page"), 1), total_pages)
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_previous": page > 1,
+        "has_next": page < total_pages,
+    }
+
+
+def _coverage_sort_key(sort: str):
+    identity = lambda row: (
+        row["state"].casefold(),
+        row["city"].casefold(),
+        row["zip"].casefold(),
+        row["id"],
+    )
+    if sort == "highest_demand":
+        return lambda row: (-row["counts"]["active_demand"], *identity(row))
+    if sort == "lowest_demand":
+        return lambda row: (row["counts"]["active_demand"], *identity(row))
+    if sort == "highest_claimed_supply":
+        return lambda row: (
+            -row["counts"]["eligible_claimed_supply"],
+            *identity(row),
+        )
+    if sort == "highest_directory_prospects":
+        return lambda row: (-row["counts"]["directory_prospects"], *identity(row))
+    if sort == "area_name":
+        return identity
+    return lambda row: (
+        -max(
+            row["counts"]["active_demand"]
+            - row["counts"]["eligible_claimed_supply"],
+            0,
+        ),
+        -row["counts"]["active_demand"],
+        *identity(row),
+    )
+
+
+def _coverage_status(classification: str, has_marker: bool) -> tuple[str, str]:
+    if not has_marker:
+        return "location_needed", "Map location unavailable"
+    labels = {
+        "critical_gap": "Critical gap",
+        "limited_supply": "Limited supply",
+        "covered": "Coverage ready",
+        "supply_only": "Coverage ready",
+    }
+    return classification, labels.get(classification, "Coverage ready")
+
+
 def build_marketplace_coverage_map(params) -> dict[str, Any]:
     level = _aggregation_level(params)
     trade_filter = normalize_trade(params.get("trade"))
@@ -458,6 +542,7 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         )
 
     points = []
+    coverage_areas = []
     totals = Counter()
     summary_claimed_ids = set()
     classification_totals = Counter()
@@ -493,14 +578,6 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
             totals[name] += value
         summary_claimed_ids.update(group["claimed_ids"])
         classification_totals[classification] += 1
-        if representative is None:
-            location_needed_ids["active_demand"].update(group["request_ids"])
-            location_needed_ids["eligible_claimed_supply"].update(group["claimed_ids"])
-            location_needed_ids["directory_prospects"].update(group["prospect_ids"])
-            continue
-        latitude, longitude, coordinate_source = representative
-        if not _matches_bounds(latitude, longitude, params):
-            continue
         trade_names = (
             set(group["demand_trades"])
             | set(group["supply_trades"])
@@ -522,26 +599,59 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
             )
         )
         dates = group["demand_dates"]
-        points.append({
+        has_marker = representative is not None
+        coverage_status, coverage_status_label = _coverage_status(
+            classification,
+            has_marker,
+        )
+        area = {
             "id": "|".join(key),
             "aggregation_level": level,
             "state": group["state"],
             "city": group["city"],
             "zip": group["zip"],
-            "latitude": latitude,
-            "longitude": longitude,
-            "coordinate_source": coordinate_source,
+            "has_marker": has_marker,
             "counts": counts,
             "total": counts["active_demand"] + counts["eligible_claimed_supply"] + counts["directory_prospects"],
             "coverage_classification": classification,
+            "coverage_status": coverage_status,
+            "coverage_status_label": coverage_status_label,
             "trade_mix": trade_mix[:8],
             "oldest_active_demand_age_days": max((now - value).days for value in dates) if dates else None,
             "newest_active_demand_age_days": min((now - value).days for value in dates) if dates else None,
-        })
+        }
+        if representative is not None:
+            latitude, longitude, coordinate_source = representative
+            area.update({
+                "latitude": latitude,
+                "longitude": longitude,
+                "coordinate_source": coordinate_source,
+            })
+        coverage_areas.append(area)
+        if representative is None:
+            location_needed_ids["active_demand"].update(group["request_ids"])
+            location_needed_ids["eligible_claimed_supply"].update(group["claimed_ids"])
+            location_needed_ids["directory_prospects"].update(group["prospect_ids"])
+            continue
+        if not _matches_bounds(latitude, longitude, params):
+            continue
+        points.append(area)
 
     points.sort(key=lambda row: (-row["total"], row["state"], row["city"], row["zip"]))
     limited = len(points) > POINT_LIMIT
     returned_points = points[:POINT_LIMIT]
+    coverage_sort = _text(params.get("coverage_sort"))
+    if coverage_sort not in COVERAGE_SORTS:
+        coverage_sort = DEFAULT_COVERAGE_SORT
+    # Full aggregation precedes slicing: map totals, facets, and marker limits
+    # describe the filtered population, while only this table page is returned.
+    # Work remains linear in eligible requests/listings and grouped areas.
+    coverage_areas.sort(key=_coverage_sort_key(coverage_sort))
+    coverage_pagination = _coverage_pagination(params, len(coverage_areas))
+    coverage_start = (
+        (coverage_pagination["page"] - 1) * coverage_pagination["page_size"]
+    )
+    coverage_end = coverage_start + coverage_pagination["page_size"]
     layer_for_count = {
         "active_demand": "demand",
         "eligible_claimed_supply": "claimed_supply",
@@ -574,6 +684,7 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
             "date_range": date_range,
             "classification": classification_filter,
             "layer": sorted(selected_layers),
+            "coverage_sort": coverage_sort,
         },
         "aggregation_level": level,
         "points": returned_points,
@@ -581,9 +692,14 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         "clusters": returned_points,
         "summary": {
             **totals,
-            "area_count": len(points),
+            "area_count": len(coverage_areas),
             "returned_area_count": len(returned_points),
             "coverage_classifications": dict(sorted(classification_totals.items())),
+        },
+        "coverage_areas": {
+            "results": coverage_areas[coverage_start:coverage_end],
+            "pagination": coverage_pagination,
+            "sort": coverage_sort,
         },
         "facets": {
             "trades": sorted(all_trades),
