@@ -97,6 +97,12 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(austin["counts"]["claimed_contractors"], 1)
         self.assertFalse(austin["enabled"])
 
+        lightweight = self.client.get(
+            "/api/projects/admin/marketplace/",
+            {"include_readiness": "false"},
+        ).json()
+        self.assertEqual(lightweight["coverage"]["automatic_matching_readiness"], [])
+
     def test_legacy_saved_request_without_location_is_not_nearing_ready_or_routable(self):
         ContractorDirectoryListing.objects.create(
             source=ContractorDirectoryListing.SOURCE_MYHOMEBRO,
@@ -175,8 +181,10 @@ class AdminMarketplaceTests(TestCase):
             {"city": "Austin", "state": "TX", "trade": f"trade-{index}"}
             for index in range(101)
         ]
-        with patch("adminpanel.views_marketplace.automatic_matching_readiness_rows") as mocked_rows:
-            mocked_rows.side_effect = lambda city, state: rows if city == "Austin" else []
+        with patch(
+            "adminpanel.views_marketplace.automatic_matching_readiness_rows_for_locations",
+            return_value=rows,
+        ):
             response = self.client.get("/api/projects/admin/marketplace/")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(len(response.json()["coverage"]["automatic_matching_readiness"]), 101)
@@ -547,8 +555,10 @@ class AdminMarketplaceTests(TestCase):
         self.client.force_authenticate(user=regular_user)
 
         response = self.client.get("/api/projects/admin/marketplace/coverage/")
+        readiness_response = self.client.get("/api/projects/admin/marketplace/readiness/")
 
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(readiness_response.status_code, 403)
 
     def test_coverage_excludes_archived_demand_ineligible_supply_and_closed_prospects(self):
         ProjectIntake.objects.create(
@@ -645,6 +655,167 @@ class AdminMarketplaceTests(TestCase):
         self.assertFalse(roofing["limited"])
         ids = [row["id"] for row in roofing["points"]]
         self.assertEqual(ids, sorted(ids))
+
+    def test_coverage_areas_are_server_paged_sorted_and_independent_of_map_points(self):
+        states = [
+            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        ]
+        for index, state in enumerate(states, start=1):
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor",
+                status="submitted",
+                project_city=f"Coverage City {index}",
+                project_state=state,
+                project_postal_code=f"{index:05d}",
+                ai_project_type="Roofing",
+            )
+
+        first = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {"aggregation_level": "state", "coverage_sort": "area_name"},
+        ).json()
+        second = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {
+                "aggregation_level": "state",
+                "coverage_page": 2,
+                "coverage_sort": "area_name",
+            },
+        ).json()
+
+        self.assertEqual(first["coverage_areas"]["pagination"]["page_size"], 25)
+        self.assertEqual(len(first["coverage_areas"]["results"]), 25)
+        self.assertGreater(first["coverage_areas"]["pagination"]["total"], 25)
+        self.assertEqual(first["summary"]["area_count"], first["coverage_areas"]["pagination"]["total"])
+        self.assertGreater(len(first["points"]), len(second["coverage_areas"]["results"]))
+        first_ids = {row["id"] for row in first["coverage_areas"]["results"]}
+        second_ids = {row["id"] for row in second["coverage_areas"]["results"]}
+        self.assertFalse(first_ids & second_ids)
+        ordered_ids = [
+            row["id"]
+            for row in first["coverage_areas"]["results"] + second["coverage_areas"]["results"]
+        ]
+        self.assertEqual(ordered_ids, sorted(ordered_ids))
+
+        invalid = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {"coverage_page": 999, "coverage_page_size": 1000},
+        ).json()["coverage_areas"]["pagination"]
+        self.assertEqual(invalid["page_size"], 25)
+        self.assertEqual(invalid["page"], invalid["total_pages"])
+
+        for page_size in (25, 50, 100):
+            pagination = self.client.get(
+                "/api/projects/admin/marketplace/coverage/",
+                {"coverage_page_size": page_size},
+            ).json()["coverage_areas"]["pagination"]
+            self.assertEqual(pagination["page_size"], page_size)
+
+    def test_unmapped_coverage_area_remains_in_precise_paginated_results(self):
+        ProjectIntake.objects.create(
+            post_submit_flow="multi_contractor",
+            status="submitted",
+            project_city="Demand Only",
+            project_state="TX",
+            project_postal_code="79999",
+            project_address_line1="Private homeowner location",
+            ai_project_type="Roofing",
+        )
+
+        payload = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {
+                "aggregation_level": "city",
+                "state": "TX",
+                "city": "Demand Only",
+            },
+        ).json()
+
+        self.assertEqual(payload["points"], [])
+        self.assertEqual(payload["coverage_areas"]["pagination"]["total"], 1)
+        area = payload["coverage_areas"]["results"][0]
+        self.assertFalse(area["has_marker"])
+        self.assertEqual(area["coverage_status"], "location_needed")
+        self.assertEqual(area["coverage_status_label"], "Map location unavailable")
+        self.assertNotIn("latitude", area)
+        self.assertNotIn("longitude", area)
+        self.assertNotIn("Private homeowner location", str(payload))
+
+    def test_automatic_matching_readiness_has_independent_server_pagination(self):
+        for index in range(30):
+            ContractorDirectoryListing.objects.create(
+                source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+                google_place_id=f"readiness-place-{index}",
+                business_name=f"Readiness Business {index}",
+                city=f"Readiness City {index:02d}",
+                state="TX",
+                primary_trade="roofing",
+                trade_categories=["roofing"],
+            )
+
+        first = self.client.get(
+            "/api/projects/admin/marketplace/readiness/",
+            {"readiness_sort": "location"},
+        ).json()
+        second = self.client.get(
+            "/api/projects/admin/marketplace/readiness/",
+            {"readiness_page": 2, "readiness_sort": "location"},
+        ).json()
+
+        self.assertEqual(first["pagination"]["page_size"], 25)
+        self.assertEqual(len(first["results"]), 25)
+        self.assertGreater(first["pagination"]["total"], 25)
+        first_keys = {(row["state"], row["city"], row["trade"]) for row in first["results"]}
+        second_keys = {(row["state"], row["city"], row["trade"]) for row in second["results"]}
+        self.assertFalse(first_keys & second_keys)
+
+        filtered = self.client.get(
+            "/api/projects/admin/marketplace/readiness/",
+            {
+                "readiness_city": "Readiness City 07",
+                "readiness_trade": "roofing",
+                "readiness_page_size": 50,
+            },
+        ).json()
+        self.assertEqual(filtered["pagination"]["total"], 1)
+        self.assertEqual(filtered["results"][0]["city"], "Readiness City 07")
+        self.assertEqual(filtered["pagination"]["page_size"], 50)
+
+        invalid = self.client.get(
+            "/api/projects/admin/marketplace/readiness/",
+            {"readiness_page": 999, "readiness_page_size": 101},
+        ).json()["pagination"]
+        self.assertEqual(invalid["page_size"], 25)
+        self.assertEqual(invalid["page"], invalid["total_pages"])
+
+        for page_size in (25, 50, 100):
+            pagination = self.client.get(
+                "/api/projects/admin/marketplace/readiness/",
+                {"readiness_page_size": page_size},
+            ).json()["pagination"]
+            self.assertEqual(pagination["page_size"], page_size)
+
+    def test_readiness_query_count_does_not_grow_per_location(self):
+        with CaptureQueriesContext(connection) as small:
+            self.client.get("/api/projects/admin/marketplace/readiness/")
+        for index in range(20):
+            ContractorDirectoryListing.objects.create(
+                source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+                google_place_id=f"query-count-place-{index}",
+                business_name=f"Query Count Business {index}",
+                city=f"Query Count City {index}",
+                state="TX",
+                primary_trade="roofing",
+                trade_categories=["roofing"],
+            )
+
+        with CaptureQueriesContext(connection) as large:
+            response = self.client.get("/api/projects/admin/marketplace/readiness/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(large), len(small) + 2)
 
     def test_city_aggregation_without_safe_representative_point_is_location_needed(self):
         ProjectIntake.objects.create(

@@ -22,7 +22,7 @@ from .marketplace_analytics import build_marketplace_analytics
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import CORE_TRADE_CATEGORIES, automatic_matching_location_keys, automatic_matching_readiness, automatic_matching_readiness_rows, create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_enabled_for_intake, marketplace_request_trade_signature, matching_marketplace_locations, normalize_location_value, normalize_trade
+from projects.services.marketplace_readiness import CORE_TRADE_CATEGORIES, automatic_matching_location_keys, automatic_matching_readiness, automatic_matching_readiness_rows_for_locations, create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_enabled_for_intake, marketplace_request_trade_signature, matching_marketplace_locations, normalize_location_value, normalize_trade
 from projects.services.marketplace_request_lifecycle import (
     LIFECYCLE_ARCHIVED,
     LIFECYCLE_PURGE_DUE,
@@ -57,6 +57,175 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(float(str(value)))
     except Exception:
         return default
+
+
+READINESS_PAGE_SIZES = {25, 50, 100}
+READINESS_DEFAULT_PAGE_SIZE = 25
+READINESS_SORTS = {
+    "location",
+    "trade",
+    "largest_supply_gap",
+    "closest_to_readiness",
+    "approval_state",
+}
+
+
+def _positive_int(value: Any, default: int) -> int:
+    parsed = _safe_int(value, default)
+    return parsed if parsed > 0 else default
+
+
+def _marketplace_location_keys() -> list[tuple[str, str]]:
+    location_keys = {
+        (normalize_location_value(city), normalize_location_value(state))
+        for city, state in ContractorDirectoryListing.objects.exclude(
+            city="", state="",
+        ).values_list("city", "state")
+    }
+    location_keys.update(
+        {
+            (normalize_location_value(city), normalize_location_value(state))
+            for city, state in MarketplaceLocation.objects.values_list("city", "state")
+        }
+    )
+    location_keys.update(
+        {
+            (normalize_location_value(city), normalize_location_value(state))
+            for city, state in ContractorDirectoryEntry.objects.exclude(
+                city="", state="",
+            ).values_list("city", "state")
+        }
+    )
+    location_keys.update(
+        {
+            (normalize_location_value(city), normalize_location_value(state))
+            for city, state in ContractorDirectoryEntry.objects.exclude(
+                service_city="", service_state="",
+            ).values_list("service_city", "service_state")
+        }
+    )
+    normalized_locations = {}
+    for city, state in sorted(location_keys):
+        if city and state:
+            normalized_locations.setdefault(
+                automatic_matching_location_keys(city, state),
+                (city, state),
+            )
+    for city_key, state_key in MarketplaceAutomaticMatchingApproval.objects.values_list(
+        "city_key", "state_key",
+    ).distinct():
+        normalized_locations.setdefault(
+            (city_key, state_key),
+            (city_key.title(), state_key),
+        )
+    return list(normalized_locations.values())
+
+
+def _readiness_supply_gap(row: dict[str, Any]) -> int:
+    thresholds = row.get("thresholds") or {}
+    counts = row.get("counts") or {}
+    return sum(
+        max(
+            int(thresholds.get(threshold_name) or 0)
+            - int(counts.get(count_name) or 0),
+            0,
+        )
+        for threshold_name, count_name in (
+            ("min_claimed_contractors", "claimed_contractors"),
+            ("min_verified_contractors", "verified_contractors"),
+            ("min_stripe_ready_contractors", "stripe_ready_contractors"),
+        )
+    )
+
+
+def _readiness_rows(params) -> dict[str, Any]:
+    state_filter = normalize_location_value(params.get("readiness_state")).upper()
+    city_filter = normalize_location_value(params.get("readiness_city")).casefold()
+    trade_filter = normalize_trade(params.get("readiness_trade"))
+    status_filter = _safe_text(params.get("readiness_status"))
+    location_keys = [
+        (city, state)
+        for city, state in _marketplace_location_keys()
+        if city and state
+        and (not state_filter or state.upper() == state_filter)
+        and (not city_filter or city.casefold() == city_filter)
+    ]
+    rows = automatic_matching_readiness_rows_for_locations(location_keys)
+    rows = [
+        row
+        for row in rows
+        if (not state_filter or row["state"].upper() == state_filter)
+        and (not city_filter or row["city"].casefold() == city_filter)
+        and (not trade_filter or row["trade"] == trade_filter)
+        and (not status_filter or row["status"] == status_filter)
+    ]
+    readiness_sort = _safe_text(params.get("readiness_sort"))
+    if readiness_sort not in READINESS_SORTS:
+        readiness_sort = "largest_supply_gap"
+    identity = lambda row: (
+        row["state"].casefold(),
+        row["city"].casefold(),
+        row["trade"].casefold(),
+        int(row.get("location_id") or 0),
+    )
+    if readiness_sort == "trade":
+        key = lambda row: (
+            row["trade"].casefold(),
+            row["state"].casefold(),
+            row["city"].casefold(),
+            int(row.get("location_id") or 0),
+        )
+    elif readiness_sort == "largest_supply_gap":
+        key = lambda row: (-_readiness_supply_gap(row), *identity(row))
+    elif readiness_sort == "closest_to_readiness":
+        key = lambda row: (
+            len(row.get("coverage_gaps") or []),
+            _readiness_supply_gap(row),
+            *identity(row),
+        )
+    elif readiness_sort == "approval_state":
+        status_order = {
+            "awaiting_approval": 0,
+            "active": 1,
+            "paused": 2,
+            "building_coverage": 3,
+            "location_review_needed": 4,
+        }
+        key = lambda row: (status_order.get(row["status"], 9), *identity(row))
+    else:
+        key = identity
+    rows.sort(key=key)
+    requested_size = _positive_int(
+        params.get("readiness_page_size"),
+        READINESS_DEFAULT_PAGE_SIZE,
+    )
+    page_size = (
+        requested_size
+        if requested_size in READINESS_PAGE_SIZES
+        else READINESS_DEFAULT_PAGE_SIZE
+    )
+    total = len(rows)
+    total_pages = max(1, math.ceil(total / page_size))
+    page = min(_positive_int(params.get("readiness_page"), 1), total_pages)
+    start = (page - 1) * page_size
+    return {
+        "results": rows[start:start + page_size],
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "has_previous": page > 1,
+            "has_next": page < total_pages,
+        },
+        "sort": readiness_sort,
+        "applied_filters": {
+            "state": state_filter,
+            "city": normalize_location_value(params.get("readiness_city")),
+            "trade": trade_filter,
+            "status": status_filter,
+        },
+    }
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -968,47 +1137,18 @@ class AdminMarketplaceOverview(APIView):
         claimed_count = listings.filter(claimed_profile=True).count()
         unclaimed_count = listings.filter(claimed_profile=False).count()
         opted_out_count = listings.filter(Q(sms_opt_out=True) | Q(email_opt_out=True)).count()
-        location_keys = {
-            (normalize_location_value(city), normalize_location_value(state))
-            for city, state in listings.exclude(city="", state="").values_list("city", "state")
-        }
-        location_keys.update(
-            {
-                (normalize_location_value(city), normalize_location_value(state))
-                for city, state in MarketplaceLocation.objects.values_list("city", "state")
-            }
-        )
-        location_keys.update(
-            {
-                (normalize_location_value(city), normalize_location_value(state))
-                for city, state in ContractorDirectoryEntry.objects.exclude(city="", state="").values_list("city", "state")
-            }
-        )
-        location_keys.update(
-            {
-                (normalize_location_value(city), normalize_location_value(state))
-                for city, state in ContractorDirectoryEntry.objects.exclude(service_city="", service_state="").values_list("service_city", "service_state")
-            }
-        )
-        normalized_locations = {}
-        for city, state in sorted(location_keys):
-            if city and state:
-                normalized_locations.setdefault(automatic_matching_location_keys(city, state), (city, state))
-        for city_key, state_key in MarketplaceAutomaticMatchingApproval.objects.values_list("city_key", "state_key").distinct():
-            normalized_locations.setdefault((city_key, state_key), (city_key.title(), state_key))
-        location_keys = normalized_locations.values()
+        location_keys = _marketplace_location_keys()
         saved_marketplace_requests = _marketplace_overview_requests_payload()
         location_rows = [
             location_readiness(city, state)
             for city, state in location_keys
             if city and state
         ]
-        automatic_matching_rows = [
-            row
-            for city, state in location_keys
-            if city and state
-            for row in automatic_matching_readiness_rows(city, state)
-        ]
+        automatic_matching_rows = (
+            automatic_matching_readiness_rows_for_locations(location_keys)
+            if _safe_bool(request.query_params.get("include_readiness", True))
+            else []
+        )
         automatic_matching_rows.sort(
             key=lambda row: (row["state"], row["city"], row["trade"])
         )
@@ -1141,6 +1281,16 @@ class AdminMarketplaceCoverage(APIView):
     def get(self, request):
         return Response(
             build_marketplace_coverage_map(request.query_params),
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminMarketplaceReadiness(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request):
+        return Response(
+            _readiness_rows(request.query_params),
             status=status.HTTP_200_OK,
         )
 

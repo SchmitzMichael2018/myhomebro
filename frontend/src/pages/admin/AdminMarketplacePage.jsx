@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
 import Modal from "../../components/Modal.jsx";
 import AdminMarketplaceCoverageMap from "../../components/admin/AdminMarketplaceCoverageMap.jsx";
+import { PaginationControls } from "../../components/ui/PaginationControls.jsx";
 import { useWhoAmI } from "../../hooks/useWhoAmI";
 
 const DIRECTORY_BASE = "/projects/admin/contractor-directory";
@@ -12,6 +13,22 @@ const panelClass = "rounded-xl border border-white/10 bg-white/[0.08] p-4";
 const inputClass = "mhb-admin-control";
 const tableHeadClass = "border-b border-white/10 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-sky-100/65";
 const tableCellClass = "border-b border-white/10 px-3 py-3 align-top text-sm text-sky-50/85";
+const READINESS_PAGE_SIZES = [25, 50, 100];
+
+function positiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readinessStateFromSearch(search) {
+  const params = new URLSearchParams(search);
+  const pageSize = positiveInt(params.get("readiness_page_size"), 25);
+  return {
+    page: positiveInt(params.get("readiness_page"), 1),
+    pageSize: READINESS_PAGE_SIZES.includes(pageSize) ? pageSize : 25,
+    sort: params.get("readiness_sort") || "largest_supply_gap",
+  };
+}
 
 function viewKey(pathname) {
   if (pathname.includes("/marketplace/listings/")) return "listing";
@@ -287,6 +304,10 @@ export default function AdminMarketplacePage() {
 
   const [rows, setRows] = useState([]);
   const [readinessRows, setReadinessRows] = useState([]);
+  const [readinessPagination, setReadinessPagination] = useState({});
+  const [readinessLoading, setReadinessLoading] = useState(true);
+  const [readinessError, setReadinessError] = useState("");
+  const [readinessRetryKey, setReadinessRetryKey] = useState(0);
   const [listing, setListing] = useState(null);
   const [filters, setFilters] = useState({ q: "", city: "", state: "", service: "", claimed: "" });
   const [loading, setLoading] = useState(true);
@@ -318,14 +339,14 @@ export default function AdminMarketplacePage() {
         const { data } = await api.get(`${DIRECTORY_BASE}/`, { params: { limit: 500 } });
         if (active) setRows(directoryRows(data));
         try {
-          const readiness = await api.get("/projects/admin/marketplace/");
+          const readiness = await api.get("/projects/admin/marketplace/", {
+            params: { include_readiness: false },
+          });
           if (active) {
-            setReadinessRows(readiness?.data?.coverage?.automatic_matching_readiness || []);
             setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
           }
         } catch {
           if (active) {
-            setReadinessRows([]);
             setSavedRequests({ summary: {}, results: [] });
           }
         }
@@ -354,11 +375,72 @@ export default function AdminMarketplacePage() {
   }, [whoLoading, isAdmin]);
 
   async function refreshMarketplaceOverview() {
-    const readiness = await api.get("/projects/admin/marketplace/");
-    setReadinessRows(readiness?.data?.coverage?.automatic_matching_readiness || []);
+    const readiness = await api.get("/projects/admin/marketplace/", {
+      params: { include_readiness: false },
+    });
     setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
     return readiness?.data;
   }
+
+  const readinessState = useMemo(
+    () => readinessStateFromSearch(location.search),
+    [location.search],
+  );
+
+  function updateReadinessSearch(changes) {
+    const next = { ...readinessState, ...changes };
+    if (
+      ("sort" in changes && changes.sort !== readinessState.sort)
+      || ("pageSize" in changes && changes.pageSize !== readinessState.pageSize)
+    ) {
+      next.page = 1;
+    }
+    const search = new URLSearchParams(location.search);
+    if (next.page === 1) search.delete("readiness_page");
+    else search.set("readiness_page", String(next.page));
+    if (next.pageSize === 25) search.delete("readiness_page_size");
+    else search.set("readiness_page_size", String(next.pageSize));
+    if (next.sort === "largest_supply_gap") search.delete("readiness_sort");
+    else search.set("readiness_sort", next.sort);
+    navigate({
+      pathname: location.pathname,
+      search: search.toString() ? `?${search.toString()}` : "",
+    });
+  }
+
+  useEffect(() => {
+    if (whoLoading || !isAdmin || currentView !== "overview") return undefined;
+    let active = true;
+    setReadinessLoading(true);
+    setReadinessError("");
+    api.get("/projects/admin/marketplace/readiness/", {
+      params: {
+        readiness_page: readinessState.page,
+        readiness_page_size: readinessState.pageSize,
+        readiness_sort: readinessState.sort,
+      },
+    }).then(({ data }) => {
+      if (!active) return;
+      setReadinessRows(data?.results || []);
+      setReadinessPagination(data?.pagination || {});
+    }).catch((error) => {
+      if (!active) return;
+      setReadinessError(error?.response?.data?.detail || "Automatic Matching Readiness could not be loaded.");
+    }).finally(() => {
+      if (active) setReadinessLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    whoLoading,
+    isAdmin,
+    currentView,
+    readinessState.page,
+    readinessState.pageSize,
+    readinessState.sort,
+    readinessRetryKey,
+  ]);
 
   async function loadMarketplaceRequests(nextFilters = requestFilters, page = 1) {
     setLoading(true);
@@ -600,6 +682,7 @@ export default function AdminMarketplacePage() {
       } catch {
         // The location update succeeded; keep the local row update even if the overview refresh fails.
       }
+      setReadinessRetryKey((value) => value + 1);
       setStatus(enabled ? `${row.trade} automatic matching approved in ${row.city}, ${row.state}.` : `${row.trade} automatic matching paused in ${row.city}, ${row.state}.`);
     } catch (error) {
       setStatus(error?.response?.data?.detail || "Could not update marketplace location.");
@@ -1134,7 +1217,28 @@ export default function AdminMarketplacePage() {
               sub="Review whether each location and service has enough eligible claimed contractor supply for automatic matching. Customers can create requests, search, and directly invite eligible contractors in every market, regardless of readiness. Unclaimed Directory prospects are not routable supply."
               testId="admin-marketplace-location-readiness"
             >
-              <div className="overflow-x-auto">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-sky-100">
+                  <span>Sort</span>
+                  <select className={inputClass} aria-label="Sort Automatic Matching Readiness" value={readinessState.sort} onChange={(event) => updateReadinessSearch({ sort: event.target.value })}>
+                    <option value="largest_supply_gap">Largest supply gap</option>
+                    <option value="closest_to_readiness">Closest to readiness</option>
+                    <option value="location">Location</option>
+                    <option value="trade">Trade</option>
+                    <option value="approval_state">Approval state</option>
+                  </select>
+                </label>
+              </div>
+              {readinessError ? (
+                <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-semibold text-rose-100">
+                  <span>{readinessError}</span>
+                  <button type="button" className="rounded-lg border border-rose-200/40 px-3 py-2" onClick={() => setReadinessRetryKey((value) => value + 1)}>Retry readiness data</button>
+                </div>
+              ) : null}
+              {readinessLoading ? <div role="status" className="py-8 text-center text-sm font-semibold text-sky-100/70">Loading Automatic Matching Readiness…</div> : null}
+              {!readinessLoading && !readinessError ? (
+                <>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full">
                   <thead>
                     <tr>
@@ -1193,12 +1297,59 @@ export default function AdminMarketplacePage() {
                       </tr>
                     )) : (
                       <tr>
-                        <td className={tableCellClass} colSpan={6}>No location-and-service combinations are currently ready for automatic matching. Customers may still search for and directly invite eligible contractors.</td>
+                        <td className={tableCellClass} colSpan={6}>No location–trade readiness records match the current filters.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
+              <div className="space-y-3 md:hidden" data-testid="admin-marketplace-readiness-cards">
+                {readinessRows.length ? readinessRows.map((row) => (
+                  <article key={`${row.city}-${row.state}-${row.trade}`} data-testid={`admin-marketplace-location-mobile-${row.city}-${row.state}-${row.trade}`} className="rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-sky-50">
+                    <div className="font-extrabold text-white">{row.city}, {row.state}</div>
+                    <div className="mt-1 font-bold capitalize text-sky-100">{row.trade}</div>
+                    <div className="mt-3">
+                      <Badge tone={row.status === "active" ? "emerald" : row.status === "awaiting_approval" ? "sky" : row.status === "paused" ? "rose" : "amber"}>
+                        {{ active: "Automatic matching active", awaiting_approval: "Threshold met — awaiting admin approval", paused: "Paused", building_coverage: "Building coverage — manual selection required", location_needed: "Location data needed", location_review_needed: "Duplicate legacy locations — admin review required", service_needed: "Service data needed" }[row.status] || "Building coverage — manual selection required"}
+                      </Badge>
+                    </div>
+                    <dl className="mt-3 space-y-3 text-xs">
+                      <div><dt className="font-bold text-sky-100/60">Eligible claimed supply</dt><dd className="mt-1">{row.counts?.claimed_contractors || 0} claimed | {row.counts?.verified_contractors || 0} verified | {row.counts?.stripe_ready_contractors || 0} payment-ready</dd></div>
+                      <div><dt className="font-bold text-sky-100/60">Coverage gaps</dt><dd className="mt-1">{(row.coverage_gaps || []).map((gap) => gap.replace(/_/g, " ")).join(", ") || "No eligible supply gaps"}</dd></div>
+                    </dl>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setLocationEnabled(row, true)}
+                        disabled={row.status === "active" || row.status === "building_coverage" || row.status === "location_review_needed"}
+                        className="min-h-11 rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-2 text-xs font-extrabold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Approve matching
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLocationEnabled(row, false)}
+                        disabled={!row.manual_enabled}
+                        className="min-h-11 rounded-lg border border-rose-200/30 bg-rose-300/10 px-3 py-2 text-xs font-extrabold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Pause matching
+                      </button>
+                    </div>
+                  </article>
+                )) : <p className="py-6 text-center text-sm text-sky-100/70">No location–trade readiness records match the current filters.</p>}
+              </div>
+              <PaginationControls
+                page={readinessPagination.page || readinessState.page}
+                pageSize={readinessPagination.page_size || readinessState.pageSize}
+                totalItems={readinessPagination.total || 0}
+                pageSizeOptions={READINESS_PAGE_SIZES}
+                label="location–trade combinations"
+                testId="admin-marketplace-readiness-pagination"
+                onPageChange={(page) => updateReadinessSearch({ page })}
+                onPageSizeChange={(pageSize) => updateReadinessSearch({ pageSize })}
+              />
+                </>
+              ) : null}
             </Section>
 
             <Section
