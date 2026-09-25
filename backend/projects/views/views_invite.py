@@ -130,8 +130,8 @@ class ContractorInviteViewSet(viewsets.GenericViewSet):
 
     @action(detail=True, methods=["post"], url_path="accept")
     def accept(self, request, token=None):
-        current_invite = self.get_object()
         with _accept_serialization_lock, transaction.atomic():
+            current_invite = self.get_object()
             # Re-read the account and eligibility inside the same transaction as
             # the invitation transition; request.user/contractor_profile may be stale.
             contractor = (
