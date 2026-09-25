@@ -2434,10 +2434,10 @@ test("customer can share a personal contractor referral QR", async ({ page }) =>
 
   await page.goto("/portal/referral-token", { waitUntil: "domcontentloaded" });
   await page.getByTestId("customer-dashboard-tab-referrals").click();
-  await expect(page.getByTestId("customer-referral-panel")).toContainText("Know a great contractor?");
+  await expect(page.getByTestId("customer-referral-panel")).toContainText("Know someone who could use MyHomeBro?");
   await expect(page.getByTestId("customer-referral-link")).toContainText("CUSTOMER25");
   await expect(page.getByTestId("customer-referral-qr")).toBeVisible();
-  await expect(page.getByTestId("customer-referral-payout-notice")).toContainText("project credit and direct deposit");
+  await expect(page.getByTestId("customer-referral-payout-notice")).toContainText("Cash payout remains gated until your supported Stripe payout identity is ready.");
 });
 
 test("customer portal is reachable from the landing page and loads secure records", async ({ page }) => {
@@ -5605,7 +5605,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("coming soon");
   await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Request Amendment");
   await expect(page.getByTestId("customer-project-review-prompt")).toContainText("Share feedback about your project experience.");
-  await page.getByTestId("customer-project-review-prompt").getByLabel("Rating").selectOption("5");
+  await page.getByTestId("customer-project-review-prompt").getByRole("button", { name: "5 stars" }).click();
   await page.getByTestId("customer-project-review-prompt").getByLabel("Review title").fill("Professional project experience");
   await page.getByTestId("customer-project-review-prompt").getByLabel("Written review").fill("The contractor kept the project clean and communicated clearly.");
   await page.getByTestId("customer-project-review-prompt").getByRole("button", { name: "Submit Review" }).click();
@@ -6565,7 +6565,7 @@ test("customer portal login failure and token password creation states render", 
   await page.getByTestId("customer-portal-login-email-input").fill("customer@example.com");
   await page.getByTestId("customer-portal-login-password-input").fill("bad-password");
   await page.getByTestId("customer-portal-login-button").click();
-  await expect(page.getByTestId("customer-portal-login-error")).toContainText("Invalid email or password.");
+  await expect(page.getByTestId("customer-portal-login-error")).toContainText("Email or password is incorrect. Please try again.");
 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();

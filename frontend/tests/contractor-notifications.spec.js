@@ -349,7 +349,7 @@ test('contractor dashboard surfaces backend priority action in the current prior
   await expect(priorities).toContainText('Send your next agreement');
   await expect(priorities).toContainText('Open draft');
   await expect(priorities).toContainText('Resolve payment issues');
-  await page.getByTestId('dashboard-next-action-button-next-best:send_first_agreement').click();
+  await priorities.getByRole('button', { name: 'Open draft' }).click();
   await expect(page).toHaveURL(/\/app\/agreements\/321\/wizard\?step=1/);
 });
 

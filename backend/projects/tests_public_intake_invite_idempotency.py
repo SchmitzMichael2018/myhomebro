@@ -2,7 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 from unittest.mock import patch
 
-from django.db import close_old_connections
+from django.db import close_old_connections, connections
+from django.db.backends.base.base import BaseDatabaseWrapper
 from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
@@ -1019,7 +1020,9 @@ class ConcurrentContractorInviteAcceptanceTests(TransactionTestCase):
             contractor_email=owner_user.email, source_intake=intake,
             contact_identity=f"contractor:{owner.pk}",
         )
+        original_token = invite.token
         barrier = threading.Barrier(2)
+        worker_connections_closed = []
 
         def attempt(user):
             close_old_connections()
@@ -1029,17 +1032,52 @@ class ConcurrentContractorInviteAcceptanceTests(TransactionTestCase):
                 barrier.wait(timeout=5)
                 return client.post(f"/api/projects/invites/{invite.token}/accept/", {}, format="json").status_code
             finally:
-                close_old_connections()
+                # SQLite deliberately ignores close() for Django's shared
+                # in-memory test database. Close this worker's own handle via
+                # the base implementation; the main test connection keeps
+                # the database alive for TransactionTestCase teardown.
+                worker_connection = connections["default"]
+                BaseDatabaseWrapper.close(worker_connection)
+                worker_connections_closed.append((
+                    worker_connection.connection is None,
+                    worker_connection.in_atomic_block,
+                    worker_connection.closed_in_transaction,
+                ))
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             responses = list(executor.map(attempt, (owner_user, wrong_user)))
         self.assertEqual(sorted(responses), [200, 403])
+        self.assertEqual(worker_connections_closed, [(True, False, False), (True, False, False)])
         invite.refresh_from_db()
         intake.refresh_from_db()
         self.assertEqual(invite.accepted_by_contractor_id, owner.pk)
         self.assertEqual(intake.contractor_id, owner.pk)
         self.assertNotEqual(invite.accepted_by_contractor_id, wrong.pk)
         self.assertEqual(Homeowner.objects.filter(created_by=owner).count(), 1)
+        self.assertEqual(Homeowner.objects.filter(created_by=wrong).count(), 0)
+
+        # The next write must not inherit a worker-held read lock or change
+        # the accepted invite's token/idempotent ownership.
+        next_intake = ProjectIntake.objects.create(
+            initiated_by="homeowner", customer_name="Next Customer",
+            customer_email="next-customer@example.com",
+        )
+        next_invite = ContractorInvite.objects.create(
+            homeowner_name=next_intake.customer_name,
+            homeowner_email=next_intake.customer_email,
+            contractor_email=owner_user.email,
+            source_intake=next_intake,
+            contact_identity=f"contractor:{owner.pk}",
+        )
+        next_client = APIClient()
+        next_client.force_authenticate(user=owner_user)
+        self.assertEqual(
+            next_client.post(f"/api/projects/invites/{next_invite.token}/accept/", {}, format="json").status_code,
+            200,
+        )
+        invite.refresh_from_db()
+        self.assertEqual(invite.accepted_by_contractor_id, owner.pk)
+        self.assertEqual(invite.token, original_token)
         self.assertEqual(Homeowner.objects.filter(created_by=wrong).count(), 0)
 
 
@@ -1069,7 +1107,7 @@ class ConcurrentPublicIntakeInviteIdempotencyTests(TransactionTestCase):
             )
             return invite.pk, str(invite.token), created
         finally:
-            close_old_connections()
+            BaseDatabaseWrapper.close(connections["default"])
 
     def test_concurrent_identical_attempts_share_one_row_and_token(self):
         barrier = threading.Barrier(2)

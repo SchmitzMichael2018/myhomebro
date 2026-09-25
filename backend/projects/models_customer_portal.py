@@ -1799,6 +1799,7 @@ class SmartNotificationEvent(models.TextChoices):
     CUSTOMER_REQUEST_SUBMITTED = "customer_request_submitted", "Customer Request Submitted"
     PROPERTY_PROFILE_UPDATED = "property_profile_updated", "Property Profile Updated"
     MARKETPLACE_REQUEST_ROUTED = "marketplace_request_routed", "Marketplace Request Routed"
+    MARKETPLACE_REQUEST_ARCHIVED = "marketplace_request_archived", "Marketplace Request Archived"
     CUSTOMER_BID_RECEIVED = "customer_bid_received", "Customer Bid Received"
     BID_AWARDED = "bid_awarded", "Bid Awarded"
     AGREEMENT_NEEDS_SIGNATURE = "agreement_needs_signature", "Agreement Needs Signature"

@@ -589,6 +589,16 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     intake = ProjectIntake.objects.select_for_update().get(pk=intake_id)
     readiness = marketplace_enabled_for_intake(intake)
     max_bids = int(readiness.get("max_bids_per_request") or DEFAULT_MAX_BIDS_PER_REQUEST)
+    if intake.marketplace_archived_at:
+        return {
+            "created": [],
+            "created_count": 0,
+            "skipped_count": 0,
+            "cap": max_bids,
+            "cap_reached": False,
+            "archived": True,
+            "marketplace": {**readiness, "can_auto_route": False},
+        }
     open_statuses = [
         ContractorDiscoveryInvite.STATUS_PENDING,
         ContractorDiscoveryInvite.STATUS_SENT,

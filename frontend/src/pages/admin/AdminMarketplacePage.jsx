@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
+import Modal from "../../components/Modal.jsx";
 import { useWhoAmI } from "../../hooks/useWhoAmI";
 
 const DIRECTORY_BASE = "/projects/admin/contractor-directory";
@@ -19,6 +20,19 @@ function viewKey(pathname) {
   if (pathname.includes("/marketplace/contractors")) return "coverage";
   if (pathname.includes("/marketplace/import")) return "directory";
   return "overview";
+}
+
+function requestFiltersFromSearch(search) {
+  const params = new URLSearchParams(search);
+  return {
+    q: params.get("q") || "",
+    city: params.get("city") || "",
+    state: params.get("state") || "",
+    trade: params.get("trade") || "",
+    marketplace_status: params.get("marketplace_status") || "",
+    lifecycle_status: params.get("lifecycle_status") || "operational",
+    sort: params.get("sort") || "submitted_desc",
+  };
 }
 
 function asList(value) {
@@ -338,7 +352,10 @@ export default function AdminMarketplacePage() {
   const [claimLinks, setClaimLinks] = useState({});
   const [joinInviteIds, setJoinInviteIds] = useState({});
   const [savedRequests, setSavedRequests] = useState({ summary: {}, results: [] });
-  const [requestFilters, setRequestFilters] = useState({ q: "", city: "", state: "", trade: "", marketplace_status: "", sort: "submitted_desc" });
+  const [requestFilters, setRequestFilters] = useState(() => requestFiltersFromSearch(location.search));
+  const [requestLifecycleAction, setRequestLifecycleAction] = useState(null);
+  const [requestLifecycleBusy, setRequestLifecycleBusy] = useState(false);
+  const [requestLifecycleError, setRequestLifecycleError] = useState("");
   const [coverageMap, setCoverageMap] = useState({ clusters: [], unlocated: {}, privacy: "" });
   const [selectedCluster, setSelectedCluster] = useState(null);
   const [coverageEntityType, setCoverageEntityType] = useState("");
@@ -418,12 +435,33 @@ export default function AdminMarketplacePage() {
       Object.entries(nextFilters).forEach(([key, value]) => {
         if (String(value || "").trim()) params[key] = value;
       });
+      const search = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => search.set(key, String(value)));
+      navigate({ pathname: location.pathname, search: `?${search.toString()}` }, { replace: true });
       const { data } = await api.get("/projects/admin/marketplace/requests/", { params });
       setSavedRequests(data || { summary: {}, results: [], pagination: {} });
     } catch (error) {
       setStatus(error?.response?.data?.detail || "Could not load marketplace requests.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function confirmRequestLifecycleAction() {
+    if (!requestLifecycleAction) return;
+    setRequestLifecycleBusy(true);
+    setRequestLifecycleError("");
+    try {
+      await api.post(`/projects/admin/marketplace/requests/${requestLifecycleAction.row.id}/lifecycle/`, {
+        action: requestLifecycleAction.action,
+        confirmed: true,
+      });
+      setRequestLifecycleAction(null);
+      await loadMarketplaceRequests(requestFilters, Number(savedRequests.pagination?.page || 1));
+    } catch (error) {
+      setRequestLifecycleError(error?.response?.data?.detail || `Could not ${requestLifecycleAction.action} this request.`);
+    } finally {
+      setRequestLifecycleBusy(false);
     }
   }
 
@@ -936,7 +974,7 @@ export default function AdminMarketplacePage() {
               testId="admin-marketplace-request-filters"
             >
               <form
-                className="grid gap-3 md:grid-cols-2 xl:grid-cols-7"
+                className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
                 onSubmit={(event) => {
                   event.preventDefault();
                   loadMarketplaceRequests(requestFilters, 1);
@@ -955,6 +993,16 @@ export default function AdminMarketplacePage() {
                   <option value="active">Active</option>
                   <option value="routing_paused">Routing paused</option>
                 </select>
+                <select className={inputClass} aria-label="Filter lifecycle status" value={requestFilters.lifecycle_status} onChange={(event) => setRequestFilters((prev) => ({ ...prev, lifecycle_status: event.target.value }))}>
+                  <option value="operational">Operational / open</option>
+                  <option value="reminder_due">Reminder due</option>
+                  <option value="responded">Responded</option>
+                  <option value="archive_due">Archive due</option>
+                  <option value="archived">Archived</option>
+                  <option value="purge_due">Purge due</option>
+                  <option value="retention_protected">Retention protected</option>
+                  <option value="all">All lifecycle states</option>
+                </select>
                 <select className={inputClass} aria-label="Sort requests" value={requestFilters.sort} onChange={(event) => setRequestFilters((prev) => ({ ...prev, sort: event.target.value }))}>
                   <option value="submitted_desc">Newest submitted</option>
                   <option value="submitted_asc">Oldest submitted</option>
@@ -967,7 +1015,39 @@ export default function AdminMarketplacePage() {
             </Section>
 
             <Section title="Marketplace request queue" sub={`${savedRequests.pagination?.total || 0} matching requests`} testId="admin-marketplace-request-queue">
-              <div className="overflow-x-auto">
+              <p className="mb-4 text-sm leading-6 text-sky-100/70">
+                Archived unanswered requests are removed from operational queues. Eligible unconverted requests are permanently removed after the retention period. Requests connected to project, financial, dispute, warranty, or other protected history are retained.
+              </p>
+              <div className="space-y-3 md:hidden">
+                {(savedRequests.results || []).length ? savedRequests.results.map((row) => (
+                  <article key={row.id} data-testid={`admin-marketplace-request-mobile-${row.id}`} className="rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-sky-50">
+                    <div className="font-extrabold text-white">{row.request_title}</div>
+                    <div className="mt-1 text-xs text-sky-100/60">#{row.id} · {formatDate(row.submitted_at)}</div>
+                    <dl className="mt-3 grid gap-3 text-xs">
+                      <div><dt className="font-bold text-sky-100/60">Location / trade</dt><dd className="mt-1">{row.location_complete ? [row.city, row.state, row.zip].filter(Boolean).join(", ") : "Location needed"} · {row.project_subtype || row.project_type || "Trade pending"}</dd></div>
+                      <div><dt className="font-bold text-sky-100/60">Readiness</dt><dd className="mt-1">{row.marketplace_status_label || String(row.marketplace_status || "").replace(/_/g, " ")}</dd></div>
+                      <div><dt className="font-bold text-sky-100/60">Lifecycle</dt><dd className="mt-1">{String(row.lifecycle_status || "open").replace(/_/g, " ")} · {row.request_age_days || 0} days old</dd></div>
+                      {row.archived_at ? <div><dt className="font-bold text-sky-100/60">Archived</dt><dd className="mt-1">{formatDate(row.archived_at)} · {String(row.archive_reason || "archived").replace(/_/g, " ")}</dd></div> : null}
+                      {row.protection_reason ? <div><dt className="font-bold text-amber-200">Retention protection</dt><dd className="mt-1 text-amber-100">{row.protection_reason}</dd></div> : null}
+                      <div><dt className="font-bold text-sky-100/60">Supply</dt><dd className="mt-1">{row.eligible_contractors || 0} eligible · {row.counts?.invites || 0} invites · cap {row.cap || 5}</dd></div>
+                    </dl>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {row.archived_at ? (
+                        <>
+                          <button type="button" onClick={() => navigate(`/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">View request</button>
+                          <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "restore", row }); }} className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-extrabold text-emerald-950">Restore</button>
+                        </>
+                      ) : (
+                        <>
+                          {row.routable_now ? <button type="button" onClick={() => routeSavedRequest(row)} disabled={routingIds[row.id]} className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-extrabold text-emerald-950 disabled:opacity-50">{routingIds[row.id] ? "Routing..." : "Route request"}</button> : <button type="button" onClick={() => navigate(row.marketplace_action?.target || `/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">{row.marketplace_action?.label || "View request"}</button>}
+                          <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "archive", row }); }} className="rounded-lg border border-rose-300/50 px-3 py-2 text-xs font-extrabold text-rose-100">Archive</button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )) : <p className="text-sm text-sky-100/70">No marketplace requests match these filters.</p>}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full">
                   <thead>
                     <tr>
@@ -975,6 +1055,7 @@ export default function AdminMarketplacePage() {
                       <th className={tableHeadClass}>Request</th>
                       <th className={tableHeadClass}>Location / trade</th>
                       <th className={tableHeadClass}>Readiness</th>
+                      <th className={tableHeadClass}>Lifecycle</th>
                       <th className={tableHeadClass}>Supply</th>
                       <th className={tableHeadClass}>Primary action</th>
                     </tr>
@@ -1000,23 +1081,44 @@ export default function AdminMarketplacePage() {
                           <div className="mt-2 max-w-sm text-xs text-sky-100/65">{row.marketplace_status_reason}</div>
                         </td>
                         <td className={tableCellClass}>
+                          <Badge tone={row.lifecycle_status === "responded" ? "emerald" : row.lifecycle_status === "retention_protected" ? "amber" : row.lifecycle_status === "archived" || row.lifecycle_status === "purge_due" ? "rose" : "slate"}>
+                            {String(row.lifecycle_status || "open").replace(/_/g, " ")}
+                          </Badge>
+                          <div className="mt-2 text-xs text-sky-100/65">{row.request_age_days || 0} days old</div>
+                          {row.archived_at ? <div className="mt-1 text-xs text-sky-100/65">Archived {formatDate(row.archived_at)} · {String(row.archive_reason || "archived").replace(/_/g, " ")}</div> : null}
+                          {row.purge_eligible_at ? <div className="mt-1 text-xs text-sky-100/65">Purge eligible {formatDate(row.purge_eligible_at)}</div> : null}
+                          {row.protection_reason ? <div className="mt-1 max-w-xs text-xs text-amber-200">{row.protection_reason}</div> : null}
+                        </td>
+                        <td className={tableCellClass}>
                           <div>{row.eligible_contractors || 0} eligible</div>
                           <div className="mt-1 text-xs text-sky-100/60">{row.counts?.invites || 0} invites · cap {row.cap || 5}</div>
                         </td>
                         <td className={tableCellClass}>
-                          {row.routable_now ? (
-                            <button type="button" onClick={() => routeSavedRequest(row)} disabled={routingIds[row.id]} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950 disabled:opacity-50">
-                              {routingIds[row.id] ? "Routing..." : "Route request"}
-                            </button>
+                          {row.archived_at ? (
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" onClick={() => navigate(`/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">View request</button>
+                              <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "restore", row }); }} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950">Restore</button>
+                            </div>
                           ) : (
-                            <button type="button" onClick={() => navigate(row.marketplace_action?.target || `/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">
-                              {row.marketplace_action?.label || "View request"}
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              {row.routable_now ? (
+                                <button type="button" onClick={() => routeSavedRequest(row)} disabled={routingIds[row.id]} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950 disabled:opacity-50">
+                                  {routingIds[row.id] ? "Routing..." : "Route request"}
+                                </button>
+                              ) : (
+                                <button type="button" onClick={() => navigate(row.marketplace_action?.target || `/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">
+                                  {row.marketplace_action?.label || "View request"}
+                                </button>
+                              )}
+                              <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "archive", row }); }} className="rounded-lg border border-rose-300/50 px-3 py-1.5 text-xs font-extrabold text-rose-100">
+                                Archive
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
                     )) : (
-                      <tr><td className={tableCellClass} colSpan={6}>No marketplace requests match these filters.</td></tr>
+                      <tr><td className={tableCellClass} colSpan={7}>No marketplace requests match these filters.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1027,6 +1129,26 @@ export default function AdminMarketplacePage() {
                 <button type="button" disabled={!savedRequests.pagination?.has_next || loading} onClick={() => loadMarketplaceRequests(requestFilters, Number(savedRequests.pagination?.page || 1) + 1)} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Next</button>
               </div>
             </Section>
+            <Modal
+              visible={Boolean(requestLifecycleAction)}
+              title={`${requestLifecycleAction?.action === "archive" ? "Archive" : "Restore"} marketplace request?`}
+              onClose={() => !requestLifecycleBusy && setRequestLifecycleAction(null)}
+              testId="admin-marketplace-request-lifecycle-dialog"
+              containerClassName="mx-4 max-w-lg rounded-2xl"
+            >
+              <p className="text-sm leading-6 text-slate-700">
+                {requestLifecycleAction?.action === "archive"
+                  ? "This removes the request from operational queues without deleting its history. It will not route or notify contractors."
+                  : "This returns the request to a safe review state. It will not route the request or resend invitations."}
+              </p>
+              {requestLifecycleError ? <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{requestLifecycleError}</div> : null}
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" data-autofocus disabled={requestLifecycleBusy} onClick={() => setRequestLifecycleAction(null)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-60">Cancel</button>
+                <button type="button" disabled={requestLifecycleBusy} onClick={confirmRequestLifecycleAction} className={`rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-60 ${requestLifecycleAction?.action === "archive" ? "bg-rose-700" : "bg-emerald-700"}`}>
+                  {requestLifecycleBusy ? "Saving..." : requestLifecycleAction?.action === "archive" ? "Archive request" : "Restore request"}
+                </button>
+              </div>
+            </Modal>
           </main>
         ) : null}
 
