@@ -85,10 +85,12 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
   const locationRef = useRef(location);
   const pointsRef = useRef(data.points || []);
   const layersRef = useRef(filters.layers);
+  const selectedAreaRef = useRef(filters.area);
   filtersRef.current = filters;
   locationRef.current = location;
   pointsRef.current = data.points || [];
   layersRef.current = filters.layers;
+  selectedAreaRef.current = filters.area;
   const config = useMemo(() => readAdminMapConfig(), []);
   const requestParams = useMemo(
     () => coverageQuery(filters, viewport),
@@ -154,7 +156,13 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       setMapStatus('missing_config');
       return undefined;
     }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setMapStatus('offline');
+      return undefined;
+    }
     let active = true;
+    let pendingController = null;
+    const abortController = new AbortController();
     setMapStatus('loading');
     setMapError('');
     createCoverageMap({
@@ -162,6 +170,8 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       config,
       points: pointsRef.current,
       layers: layersRef.current,
+      selectedAreaId: selectedAreaRef.current,
+      signal: abortController.signal,
       onSelect: selectPoint,
       onViewportChange(nextViewport) {
         clearTimeout(viewportTimerRef.current);
@@ -169,31 +179,39 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
           if (active) setViewport(nextViewport);
         }, 350);
       },
-    }).then((controller) => {
+    }).then(async (controller) => {
+      pendingController = controller;
+      await controller.ready;
       if (!active) {
         controller.destroy?.();
         return;
       }
       mapControllerRef.current = controller;
-      controller.update?.(pointsRef.current, layersRef.current);
+      controller.update?.(pointsRef.current, layersRef.current, selectedAreaRef.current);
       setMapStatus('ready');
-    }).catch(() => {
+    }).catch((error) => {
+      pendingController?.destroy?.();
       if (active) {
-        setMapStatus('error');
-        setMapError('The map could not be loaded. Coverage data remains available below.');
+        const category = error?.category === 'timeout' ? 'timeout' : 'provider_error';
+        console.warn(`[coverage-map] ${category}`);
+        setMapStatus(category);
+        setMapError(category === 'timeout'
+          ? 'The basemap did not finish loading. Coverage data remains available below.'
+          : 'The map provider is unavailable. Coverage data remains available below.');
       }
     });
     return () => {
       active = false;
+      abortController.abort();
       clearTimeout(viewportTimerRef.current);
-      mapControllerRef.current?.destroy?.();
+      pendingController?.destroy?.();
       mapControllerRef.current = null;
     };
   }, [retryKey, config, selectPoint]);
 
   useEffect(() => {
-    mapControllerRef.current?.update?.(data.points || [], filters.layers);
-  }, [data.points, filters.layers]);
+    mapControllerRef.current?.update?.(data.points || [], filters.layers, filters.area);
+  }, [data.points, filters.layers, filters.area]);
 
   const cities = (data.facets?.cities || []).filter(
     (row) => !filters.state || row.state === filters.state,
@@ -287,11 +305,11 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
           </div>
           <div className="relative h-[340px] sm:h-[430px]" data-testid="admin-marketplace-google-map">
             <div ref={mapHostRef} className="h-full w-full" aria-hidden={mapStatus !== 'ready'} />
-            {mapStatus === 'loading' ? <div role="status" className="absolute inset-0 grid place-items-center bg-slate-950/80 text-sm font-bold text-white">Loading coverage map…</div> : null}
+            {mapStatus === 'loading' ? <div role="status" className="absolute inset-0 grid place-items-center bg-slate-950/80 text-sm font-bold text-white">Loading United States basemap…</div> : null}
             {mapStatus === 'missing_config' ? <div role="status" className="absolute inset-0 grid place-items-center bg-slate-950/90 p-6 text-center text-sm text-sky-100">Google Maps is not configured for this environment. Aggregate coverage remains available below.</div> : null}
-            {mapStatus === 'error' ? (
+            {['provider_error', 'timeout', 'offline'].includes(mapStatus) ? (
               <div role="alert" className="absolute inset-0 grid place-items-center bg-slate-950/90 p-6 text-center text-sm text-sky-100">
-                <div><p>{mapError}</p><button type="button" className="mt-3 rounded-lg bg-white px-3 py-2 font-bold text-slate-900" onClick={() => setRetryKey((value) => value + 1)}>Retry map</button></div>
+                <div><p>{mapStatus === 'offline' ? 'You appear to be offline. Coverage data remains available below.' : mapError}</p><button type="button" className="mt-3 rounded-lg bg-white px-3 py-2 font-bold text-slate-900" onClick={() => setRetryKey((value) => value + 1)}>Retry map</button></div>
               </div>
             ) : null}
           </div>
