@@ -8,6 +8,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from projects.models import Contractor, PublicContractorLead
+from projects.models_customer_portal import CustomerRequest
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorDirectoryListing,
@@ -20,23 +21,16 @@ from projects.services.marketplace_readiness import (
     intake_marketplace_location,
     marketplace_request_trade_signature,
     normalize_location_value,
+    normalize_trade,
 )
 from projects.services.marketplace_request_lifecycle import (
-    LIFECYCLE_ARCHIVED,
-    LIFECYCLE_PURGE_DUE,
-    LIFECYCLE_RETENTION_PROTECTED,
-    lifecycle_state,
     meaningful_response_intake_ids,
     request_started_at,
 )
 
 
 POINT_LIMIT = 500
-OPERATIONAL_EXCLUDED_LIFECYCLES = {
-    LIFECYCLE_ARCHIVED,
-    LIFECYCLE_PURGE_DUE,
-    LIFECYCLE_RETENTION_PROTECTED,
-}
+MIN_PUBLIC_BUSINESS_POINTS = 2
 CONTACT_READY_STATUSES = {
     ContractorDirectoryEntry.CONTACT_STATUS_CONTACT_READY,
     ContractorDirectoryEntry.CONTACT_STATUS_EMAIL_READY,
@@ -102,8 +96,10 @@ def _text(value: Any) -> str:
 def _state(value: Any) -> str:
     normalized = normalize_location_value(value)
     if len(normalized) == 2:
-        return normalized.upper()
-    return STATE_NAMES.get(normalized.casefold(), normalized)
+        code = normalized.upper()
+    else:
+        code = STATE_NAMES.get(normalized.casefold(), "")
+    return code if code in STATE_CENTERS else ""
 
 
 def _zip(value: Any) -> str:
@@ -115,13 +111,17 @@ def _trades(*values: Any) -> set[str]:
     for value in values:
         items = value if isinstance(value, list) else [value]
         for item in items:
-            normalized = normalize_location_value(item).casefold()
+            normalized = normalize_trade(item)
             if normalized:
                 result.add(normalized)
     return result
 
 
 def _marketplace_requests():
+    cancelled_ids = CustomerRequest.objects.filter(
+        status=CustomerRequest.STATUS_CANCELLED,
+        source_intake_id__isnull=False,
+    ).values("source_intake_id")
     return ProjectIntake.objects.filter(
         Q(post_submit_flow="multi_contractor")
         | Q(
@@ -129,7 +129,14 @@ def _marketplace_requests():
             status__in=["submitted", "analyzed"],
             contractor__isnull=True,
         )
-    ).exclude(traffic_classification__in=("test", "spam_fraud", "archived"))
+    ).filter(
+        status__in=("submitted", "analyzed"),
+        agreement_id__isnull=True,
+        converted_at__isnull=True,
+        marketplace_archived_at__isnull=True,
+    ).exclude(
+        traffic_classification__in=("test", "spam_fraud", "archived"),
+    ).exclude(pk__in=cancelled_ids)
 
 
 def _date_cutoff(value: str):
@@ -165,42 +172,53 @@ def _point_key(level: str, state: str, city: str, zip_code: str):
 
 
 def _directory_centroids() -> dict[tuple[str, str, str], tuple[float, float]]:
-    coordinates: dict[tuple[str, str, str], list[tuple[float, float]]] = defaultdict(list)
+    # Only independently published Google Places businesses may locate an
+    # aggregate. A claimed/manual profile can contain a contractor's home.
+    # Requiring distinct public businesses and coarsening the result prevents
+    # a single directory coordinate from becoming a residential map pin.
+    coordinates: dict[tuple[str, str, str], dict[str, tuple[float, float]]] = defaultdict(dict)
     entries = ContractorDirectoryEntry.objects.filter(
         is_archived=False,
+        source=ContractorDirectoryEntry.SOURCE_GOOGLE_PLACES,
         latitude__isnull=False,
         longitude__isnull=False,
-    ).values_list(
+    ).exclude(google_place_id__isnull=True).exclude(google_place_id="").values_list(
+        "google_place_id",
         "service_state", "service_city", "service_zip",
         "state", "city", "zip_code", "latitude", "longitude",
     )
-    for service_state, service_city, service_zip, state, city, zip_code, lat, lng in entries.iterator():
-        state = _state(service_state or state)
-        city = normalize_location_value(service_city or city)
-        zip_code = _zip(service_zip or zip_code)
-        if state and city:
-            coordinates[(state, city, "")].append((float(lat), float(lng)))
-            if zip_code:
-                coordinates[(state, city, zip_code)].append((float(lat), float(lng)))
-    listings = ContractorDirectoryListing.objects.exclude(
-        business_status__iexact="CLOSED_PERMANENTLY",
-    ).filter(latitude__isnull=False, longitude__isnull=False).values_list(
-        "state", "city", "zip_code", "latitude", "longitude",
-    )
-    for state, city, zip_code, lat, lng in listings.iterator():
+    for place_id, _service_state, _service_city, _service_zip, state, city, zip_code, lat, lng in entries.iterator():
         state = _state(state)
         city = normalize_location_value(city)
         zip_code = _zip(zip_code)
-        if state and city:
-            coordinates[(state, city, "")].append((float(lat), float(lng)))
+        if state and city and -90 <= lat <= 90 and -180 <= lng <= 180:
+            coordinates[(state, city, "")][place_id] = (lat, lng)
             if zip_code:
-                coordinates[(state, city, zip_code)].append((float(lat), float(lng)))
+                coordinates[(state, city, zip_code)][place_id] = (lat, lng)
+    listings = ContractorDirectoryListing.objects.exclude(
+        business_status__iexact="CLOSED_PERMANENTLY",
+    ).filter(
+        source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+        latitude__isnull=False,
+        longitude__isnull=False,
+    ).exclude(google_place_id="").values_list(
+        "google_place_id", "state", "city", "zip_code", "latitude", "longitude",
+    )
+    for place_id, state, city, zip_code, lat, lng in listings.iterator():
+        state = _state(state)
+        city = normalize_location_value(city)
+        zip_code = _zip(zip_code)
+        if state and city and -90 <= lat <= 90 and -180 <= lng <= 180:
+            coordinates[(state, city, "")][place_id] = (lat, lng)
+            if zip_code:
+                coordinates[(state, city, zip_code)][place_id] = (lat, lng)
     return {
         key: (
-            round(sum(lat for lat, _ in values) / len(values), 4),
-            round(sum(lng for _, lng in values) / len(values), 4),
+            round(sum(lat for lat, _ in values.values()) / len(values), 2),
+            round(sum(lng for _, lng in values.values()) / len(values), 2),
         )
         for key, values in coordinates.items()
+        if len(values) >= MIN_PUBLIC_BUSINESS_POINTS
     }
 
 
@@ -215,7 +233,7 @@ def _representative_point(
         return (*point, "public_state_center") if point else None
     lookup = (state, city, zip_code if level == "zip" else "")
     point = centroids.get(lookup)
-    return (*point, "directory_business_centroid") if point else None
+    return (*point, "public_directory_business_centroid") if point else None
 
 
 def _matches_geo(state: str, city: str, zip_code: str, params) -> bool:
@@ -276,12 +294,24 @@ def _classification(demand: int, supply: int) -> str:
 
 def build_marketplace_coverage_map(params) -> dict[str, Any]:
     level = _aggregation_level(params)
-    trade_filter = _text(params.get("trade")).casefold()
+    trade_filter = normalize_trade(params.get("trade"))
     date_range = _text(params.get("date_range")).lower() or "90d"
     cutoff = _date_cutoff(date_range)
+    selected_layers = {
+        item.strip()
+        for item in _text(params.get("layer")).split(",")
+        if item.strip()
+    }
+    classification_filter = _text(params.get("classification"))
     groups = defaultdict(lambda: None)
-    location_needed = Counter()
-    ungrouped_location_needed = Counter()
+    location_needed_ids = {
+        "active_demand": set(),
+        "eligible_claimed_supply": set(),
+        "directory_prospects": set(),
+    }
+    ungrouped_location_needed_ids = {
+        name: set() for name in location_needed_ids
+    }
     all_states, all_cities, all_zips, all_trades = set(), set(), set(), set()
     centroids = _directory_centroids()
 
@@ -320,12 +350,6 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         "marketplace_restored_at", "marketplace_hold_reason",
     )
     for intake in request_qs.only(*request_fields).iterator(chunk_size=500):
-        lifecycle = lifecycle_state(
-            intake,
-            has_meaningful_response=intake.id in responded_ids,
-        )
-        if lifecycle["code"] in OPERATIONAL_EXCLUDED_LIFECYCLES:
-            continue
         started_at = request_started_at(intake)
         if cutoff and started_at < cutoff:
             continue
@@ -337,8 +361,7 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         group = group_for(state, city, zip_code)
         if group is None:
             if _matches_geo(_state(state), normalize_location_value(city), _zip(zip_code), params):
-                location_needed["active_demand"] += 1
-                ungrouped_location_needed["active_demand"] += 1
+                ungrouped_location_needed_ids["active_demand"].add(intake.id)
             continue
         group["request_ids"].add(intake.id)
         if intake.id in responded_ids:
@@ -347,8 +370,6 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         group["demand_dates"].append(started_at)
 
     seen_prospects = set()
-    unlocated_claimed = set()
-
     def add_directory_record(
         *,
         record_key,
@@ -370,7 +391,6 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         normalized_zip = _zip(zip_code)
         if not _matches_geo(normalized_state, normalized_city, normalized_zip, params):
             return
-        group = group_for(state, city, zip_code)
         eligible_claimed = bool(
             claimed
             and contractor
@@ -381,21 +401,20 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         if claimed:
             if not eligible_claimed:
                 return
+            group = group_for(state, city, zip_code)
             if group is None:
-                if contractor.id not in unlocated_claimed:
-                    unlocated_claimed.add(contractor.id)
-                    location_needed["eligible_claimed_supply"] += 1
-                    ungrouped_location_needed["eligible_claimed_supply"] += 1
+                ungrouped_location_needed_ids["eligible_claimed_supply"].add(contractor.id)
                 return
-            group["claimed_ids"].add(contractor.id)
-            _add_trade_counts(group["supply_trades"], normalized_trades)
+            if contractor.id not in group["claimed_ids"]:
+                group["claimed_ids"].add(contractor.id)
+                _add_trade_counts(group["supply_trades"], normalized_trades)
             return
         if record_key in seen_prospects:
             return
         seen_prospects.add(record_key)
+        group = group_for(state, city, zip_code)
         if group is None:
-            location_needed["directory_prospects"] += 1
-            ungrouped_location_needed["directory_prospects"] += 1
+            ungrouped_location_needed_ids["directory_prospects"].add(record_key)
             return
         group["prospect_ids"].add(record_key)
         if contact_ready:
@@ -406,11 +425,15 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         "claimed_by_contractor", "claimed_by_contractor__user",
     )
     for entry in entries.iterator(chunk_size=500):
+        # Claimed entries without a reviewed Marketplace listing are not
+        # routable supply under eligible_marketplace_listings().
+        if entry.claimed:
+            continue
         add_directory_record(
             record_key=f"place:{entry.google_place_id}" if entry.google_place_id else f"entry:{entry.id}",
-            claimed=entry.claimed,
+            claimed=False,
             contractor=entry.claimed_by_contractor,
-            record_eligible=entry.profile_status == ContractorDirectoryEntry.PROFILE_REVIEWED,
+            record_eligible=False,
             state=entry.service_state or entry.state,
             city=entry.service_city or entry.city,
             zip_code=entry.service_zip or entry.zip_code,
@@ -436,13 +459,8 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
 
     points = []
     totals = Counter()
+    summary_claimed_ids = set()
     classification_totals = Counter()
-    selected_layers = {
-        item.strip()
-        for item in _text(params.get("layer")).split(",")
-        if item.strip()
-    }
-    classification_filter = _text(params.get("classification"))
     now = timezone.now()
     for key, group in groups.items():
         if group is None:
@@ -473,10 +491,12 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
                 continue
         for name, value in counts.items():
             totals[name] += value
+        summary_claimed_ids.update(group["claimed_ids"])
         classification_totals[classification] += 1
         if representative is None:
-            for name in ("active_demand", "eligible_claimed_supply", "directory_prospects"):
-                location_needed[name] += counts[name]
+            location_needed_ids["active_demand"].update(group["request_ids"])
+            location_needed_ids["eligible_claimed_supply"].update(group["claimed_ids"])
+            location_needed_ids["directory_prospects"].update(group["prospect_ids"])
             continue
         latitude, longitude, coordinate_source = representative
         if not _matches_bounds(latitude, longitude, params):
@@ -522,16 +542,28 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
     points.sort(key=lambda row: (-row["total"], row["state"], row["city"], row["zip"]))
     limited = len(points) > POINT_LIMIT
     returned_points = points[:POINT_LIMIT]
-    location_needed_payload = {
-        **location_needed,
-        "total": sum(location_needed.values()),
+    layer_for_count = {
+        "active_demand": "demand",
+        "eligible_claimed_supply": "claimed_supply",
+        "directory_prospects": "directory_prospects",
     }
+    visible_ungrouped = {
+        name: ids if not classification_filter and (not selected_layers or layer_for_count[name] in selected_layers) else set()
+        for name, ids in ungrouped_location_needed_ids.items()
+    }
+    location_needed_payload = {
+        name: len(ids | visible_ungrouped[name]) for name, ids in location_needed_ids.items()
+    }
+    location_needed_payload["total"] = sum(location_needed_payload.values())
     for summary_name, missing_name in (
         ("active_demand", "active_demand"),
         ("eligible_claimed_supply", "eligible_claimed_supply"),
         ("directory_prospects", "directory_prospects"),
     ):
-        totals[summary_name] += ungrouped_location_needed.get(missing_name, 0)
+        totals[summary_name] += len(visible_ungrouped[missing_name])
+    totals["eligible_claimed_supply"] = len(
+        summary_claimed_ids | visible_ungrouped["eligible_claimed_supply"]
+    )
     return {
         "applied_filters": {
             "aggregation_level": level,
@@ -583,6 +615,7 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
         "privacy": (
             "Demand uses normalized state, city, and ZIP aggregates. Request and "
             "homeowner coordinates are never read or serialized. State markers use "
-            "public state centers; city and ZIP markers use active Directory business centroids."
+            "public state centers; city and ZIP markers require at least two distinct "
+            "public Google Places businesses and use coarsened centroids."
         ),
     }

@@ -29,6 +29,7 @@ function requestFiltersFromSearch(search) {
     q: params.get("q") || "",
     city: params.get("city") || "",
     state: params.get("state") || "",
+    zip: params.get("zip") || "",
     trade: params.get("trade") || "",
     marketplace_status: params.get("marketplace_status") || "",
     lifecycle_status: params.get("lifecycle_status") || "operational",
@@ -914,6 +915,7 @@ export default function AdminMarketplacePage() {
                 <input className={inputClass} aria-label="Search requests" placeholder="Search requests" value={requestFilters.q} onChange={(event) => setRequestFilters((prev) => ({ ...prev, q: event.target.value }))} />
                 <input className={inputClass} aria-label="Filter request city" placeholder="City" value={requestFilters.city} onChange={(event) => setRequestFilters((prev) => ({ ...prev, city: event.target.value }))} />
                 <input className={inputClass} aria-label="Filter request state" placeholder="State" value={requestFilters.state} onChange={(event) => setRequestFilters((prev) => ({ ...prev, state: event.target.value }))} />
+                <input className={inputClass} aria-label="Filter request ZIP" placeholder="ZIP" value={requestFilters.zip} onChange={(event) => setRequestFilters((prev) => ({ ...prev, zip: event.target.value }))} />
                 <input className={inputClass} aria-label="Filter request trade" placeholder="Trade" value={requestFilters.trade} onChange={(event) => setRequestFilters((prev) => ({ ...prev, trade: event.target.value }))} />
                 <select className={inputClass} aria-label="Filter marketplace status" value={requestFilters.marketplace_status} onChange={(event) => setRequestFilters((prev) => ({ ...prev, marketplace_status: event.target.value }))}>
                   <option value="">All readiness states</option>
@@ -1092,6 +1094,13 @@ export default function AdminMarketplacePage() {
             >
               <AdminMarketplaceCoverageMap
                 onOpenRequests={(filters) => {
+                  setRequestFilters((previous) => ({
+                    ...previous,
+                    q: "",
+                    state: filters.state || "",
+                    city: filters.city || "",
+                    zip: filters.zip || "",
+                  }));
                   const search = new URLSearchParams();
                   Object.entries(filters).forEach(([key, value]) => {
                     if (value) search.set(key, value);
@@ -1101,7 +1110,7 @@ export default function AdminMarketplacePage() {
                 onOpenDirectory={(filters) => openDirectoryFilters({
                   state: filters.state,
                   city: filters.city,
-                  zip_code: filters.zip,
+                  zip: filters.zip,
                 })}
               />
             </Section>

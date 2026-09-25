@@ -5,16 +5,19 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models import Agreement, Contractor, ContractorPublicProfile, Homeowner, Notification, Project, ProjectStatus, PublicContractorLead
-from projects.models_customer_portal import SmartNotification, SmartNotificationEvent
+from projects.models_customer_portal import CustomerRequest, SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_discovery import create_discovery_invites
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness
+from projects.services.marketplace_coverage_map import build_marketplace_coverage_map
 
 
 class AdminMarketplaceTests(TestCase):
@@ -390,6 +393,15 @@ class AdminMarketplaceTests(TestCase):
         self.claimed_listing.longitude = -97.7431
         self.claimed_listing.zip_code = "78701"
         self.claimed_listing.save(update_fields=["latitude", "longitude", "zip_code", "updated_at"])
+        for index, point in enumerate(((30.271, -97.741), (30.279, -97.749))):
+            ContractorDirectoryListing.objects.create(
+                source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+                google_place_id=f"public-austin-{index}",
+                business_name=f"Public business {index}",
+                city="Austin", state="TX", zip_code="78701",
+                latitude=point[0], longitude=point[1],
+                primary_trade="roofing",
+            )
         ProjectIntake.objects.create(
             post_submit_flow="multi_contractor",
             status="submitted",
@@ -414,9 +426,89 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(zip_level["aggregation_level"], "zip")
         self.assertEqual(city["points"][0]["city"], "Austin")
         self.assertEqual(zip_level["points"][0]["zip"], "78701")
-        self.assertEqual(city["points"][0]["coordinate_source"], "directory_business_centroid")
-        self.assertEqual(zip_level["points"][0]["coordinate_source"], "directory_business_centroid")
+        self.assertEqual(city["points"][0]["coordinate_source"], "public_directory_business_centroid")
+        self.assertEqual(zip_level["points"][0]["coordinate_source"], "public_directory_business_centroid")
+        self.assertNotEqual((city["points"][0]["latitude"], city["points"][0]["longitude"]), (30.2672, -97.7431))
         self.assertEqual(city["points"][0]["coverage_classification"], "covered")
+
+    def test_coverage_does_not_use_single_or_private_business_coordinate_as_demand_point(self):
+        self.claimed_listing.latitude = 30.2672
+        self.claimed_listing.longitude = -97.7431
+        self.claimed_listing.zip_code = "78701"
+        self.claimed_listing.save(update_fields=["latitude", "longitude", "zip_code", "updated_at"])
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+            google_place_id="only-public-place",
+            business_name="One public business",
+            city="Austin", state="TX", zip_code="78701",
+            latitude=30.271, longitude=-97.741,
+        )
+        ProjectIntake.objects.create(
+            post_submit_flow="multi_contractor", status="submitted",
+            project_city="Austin", project_state="TX", project_postal_code="78701",
+            project_address_line1="Private home address", ai_project_type="Roofing",
+        )
+        payload = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {"aggregation_level": "zip", "state": "TX", "city": "Austin"},
+        ).json()
+        self.assertEqual(payload["points"], [])
+        self.assertEqual(payload["summary"]["active_demand"], 1)
+        self.assertEqual(payload["location_needed"]["active_demand"], 1)
+        self.assertNotIn("Private home address", str(payload))
+
+    def test_coverage_excludes_draft_converted_and_cancelled_demand(self):
+        for status in ("draft", "converted"):
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor", status=status,
+                project_city="Austin", project_state="TX", ai_project_type="Roofing",
+            )
+        cancelled = ProjectIntake.objects.create(
+            post_submit_flow="multi_contractor", status="submitted",
+            project_city="Austin", project_state="TX", ai_project_type="Roofing",
+        )
+        CustomerRequest.objects.create(
+            source_intake=cancelled,
+            status=CustomerRequest.STATUS_CANCELLED,
+            customer_email="cancelled-test@example.com",
+            request_type=CustomerRequest.TYPE_REPAIR,
+            title="Cancelled test request",
+            description="Test-only record",
+        )
+        payload = self.client.get("/api/projects/admin/marketplace/coverage/").json()
+        self.assertEqual(payload["summary"].get("active_demand", 0), 0)
+
+    def test_coverage_query_count_does_not_grow_per_request(self):
+        ProjectIntake.objects.create(
+            post_submit_flow="multi_contractor", status="submitted",
+            project_city="Austin", project_state="TX", ai_project_type="Roofing",
+        )
+        with CaptureQueriesContext(connection) as small:
+            build_marketplace_coverage_map({})
+        for _ in range(25):
+            ProjectIntake.objects.create(
+                post_submit_flow="multi_contractor", status="submitted",
+                project_city="Austin", project_state="TX", ai_project_type="Roofing",
+            )
+        with CaptureQueriesContext(connection) as large:
+            result = build_marketplace_coverage_map({})
+        self.assertEqual(result["summary"]["active_demand"], 26)
+        self.assertLessEqual(len(large), len(small) + 2)
+
+    def test_coverage_summary_counts_a_claimed_contractor_once_across_areas(self):
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_MYHOMEBRO,
+            google_place_id="same-claimed-second-location",
+            business_name="Claimed Pro second location",
+            city="Dallas", state="TX", primary_trade="roofing",
+            claimed_profile=True, claimed_contractor=self.claimed_contractor,
+            manually_reviewed=True,
+        )
+        payload = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {"aggregation_level": "city"},
+        ).json()
+        self.assertEqual(payload["summary"]["eligible_claimed_supply"], 1)
 
     def test_coverage_requires_admin_permission(self):
         user_model = get_user_model()
@@ -543,6 +635,20 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(payload["points"], [])
         self.assertEqual(payload["location_needed"]["active_demand"], 1)
         self.assertEqual(payload["summary"]["active_demand"], 1)
+
+        supply_only = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {"zoom": 6, "state": "TX", "city": "Demand Only", "layer": "claimed_supply"},
+        ).json()
+        self.assertEqual(supply_only["summary"]["active_demand"], 0)
+        self.assertEqual(supply_only["location_needed"]["active_demand"], 0)
+
+        no_layers = self.client.get(
+            "/api/projects/admin/marketplace/coverage/",
+            {"zoom": 6, "state": "TX", "city": "Demand Only", "layer": "none"},
+        ).json()
+        self.assertEqual(no_layers["points"], [])
+        self.assertEqual(no_layers["summary"]["active_demand"], 0)
 
     def test_marketplace_analytics_reports_funnel_city_and_contractor_conversion(self):
         profile = ContractorPublicProfile.objects.create(contractor=self.claimed_contractor)

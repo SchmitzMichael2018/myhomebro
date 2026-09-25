@@ -20,6 +20,7 @@ import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
 export default function AuthenticatedLayout() {
   const location = useLocation();
   const isMarketing = location.pathname.startsWith("/app/marketing");
+  const isMarketplaceCoverage = location.pathname === "/app/admin/marketplace";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -28,6 +29,25 @@ export default function AuthenticatedLayout() {
       delete root.dataset.mhbSurface;
     };
   }, [isMarketing]);
+
+  const appActions = (
+    <header
+      className={`pointer-events-none z-40 ${isMarketplaceCoverage ? "absolute" : "fixed"}`}
+      style={{
+        right: "max(1rem, env(safe-area-inset-right, 0px))",
+        top: "max(1rem, env(safe-area-inset-top, 0px))",
+      }}
+      aria-label="Application actions"
+      data-testid="global-header-actions"
+    >
+      <div className="pointer-events-auto flex items-center gap-2">
+        {isCaptureInboxEnabled() ? <CaptureLauncher /> : null}
+        <GlobalCopilotTrigger />
+        <AppearanceMenu />
+        <NotificationBell />
+      </div>
+    </header>
+  );
 
   return (
     <AppearanceProvider>
@@ -39,22 +59,7 @@ export default function AuthenticatedLayout() {
         <div className="mhb-authenticated-content">
           <MobileSidebarShell sidebar={<Sidebar variant="plain" />}>
             <AssistantDockProvider>
-              <header
-                className="pointer-events-none fixed z-40"
-                style={{
-                  right: "max(1rem, env(safe-area-inset-right, 0px))",
-                  top: "max(1rem, env(safe-area-inset-top, 0px))",
-                }}
-                aria-label="Application actions"
-                data-testid="global-header-actions"
-              >
-                <div className="pointer-events-auto flex items-center gap-2">
-                  {isCaptureInboxEnabled() ? <CaptureLauncher /> : null}
-                  <GlobalCopilotTrigger />
-                  <AppearanceMenu />
-                  <NotificationBell />
-                </div>
-              </header>
+              {!isMarketplaceCoverage ? appActions : null}
               <div className="flex h-screen w-full overflow-hidden">
                 <Sidebar />
                 <main
@@ -70,7 +75,8 @@ export default function AuthenticatedLayout() {
                     overflowX: "hidden",
                   }}
                 >
-                  <div style={{ flex: 1, minHeight: 0 }}>
+                  <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+                    {isMarketplaceCoverage ? appActions : null}
                     <div className="mhb-content-pad">
                       {location.state?.fromGuidedHelp ? (
                         <Link

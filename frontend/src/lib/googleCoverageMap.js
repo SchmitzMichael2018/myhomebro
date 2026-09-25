@@ -102,8 +102,7 @@ export async function createCoverageMap({
     });
     markers = nextPoints.map((point) => {
       const size = Math.max(32, Math.min(54, 28 + Math.sqrt(point.total || 1) * 5));
-      const content = document.createElement('button');
-      content.type = 'button';
+      const content = document.createElement('div');
       content.className = 'mhb-coverage-marker';
       content.style.cssText = [
         `width:${size}px`,
@@ -125,13 +124,10 @@ export async function createCoverageMap({
         map,
         position: { lat: point.latitude, lng: point.longitude },
         title: content.getAttribute('aria-label'),
-        content,
         gmpClickable: true,
       });
-      content.addEventListener('click', () => onSelect(point));
-      if (typeof marker.addListener === 'function') {
-        marker.addListener('click', () => onSelect(point));
-      }
+      marker.append(content);
+      marker.addEventListener('gmp-click', () => onSelect(point));
       return marker;
     });
   }

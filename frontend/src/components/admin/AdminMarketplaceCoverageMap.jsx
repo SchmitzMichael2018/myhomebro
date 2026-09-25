@@ -23,7 +23,7 @@ const CLASSIFICATIONS = {
 
 function filtersFromSearch(search) {
   const params = new URLSearchParams(search);
-  const layers = (params.get('layers') || 'demand,claimed_supply,directory_prospects,coverage_gaps')
+  const layers = (params.has('layers') ? params.get('layers') : 'demand,claimed_supply,directory_prospects,coverage_gaps')
     .split(',')
     .filter(Boolean);
   return {
@@ -50,7 +50,7 @@ function coverageQuery(filters, viewport) {
     zip: filters.zip,
     date_range: filters.date_range,
     classification: filters.classification,
-    layer: filters.layers.join(','),
+    layer: filters.layers.length ? filters.layers.join(',') : 'none',
     ...viewport,
   };
   return Object.fromEntries(
@@ -120,7 +120,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
     if (next.zip) params.set('zip', next.zip);
     if (next.date_range !== '90d') params.set('date_range', next.date_range);
     if (next.classification) params.set('classification', next.classification);
-    if (next.layers.length) params.set('layers', next.layers.join(','));
+    if (next.layers.length !== LAYERS.length) params.set('layers', next.layers.join(','));
     if (next.area) params.set('area', next.area);
     navigate({ pathname: currentLocation.pathname, search: params.toString() ? `?${params}` : '' }, { replace });
   }, [navigate]);
@@ -264,10 +264,10 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
           </div>
         </fieldset>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => { setViewport({ zoom: 4 }); mapControllerRef.current?.reset?.(); updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', area: '' }); }}>
+          <button type="button" className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => { setViewport({ zoom: 4 }); mapControllerRef.current?.reset?.(); updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', layers: LAYERS.map(([value]) => value), area: '' }); }}>
             Reset national view
           </button>
-          <button type="button" className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', area: '' })}>
+          <button type="button" className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', layers: LAYERS.map(([value]) => value), area: '' })}>
             Clear filters
           </button>
           <span className="text-sm text-sky-100/70" aria-live="polite">

@@ -1049,6 +1049,9 @@ test('admin marketplace has one compact navigation and mocked national coverage 
   await page.screenshot({ path: 'test-results/coverage-map-gap-layer.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toBeVisible();
+  await page.getByTestId('admin-marketplace-coverage-fallback').scrollIntoViewIfNeeded();
+  const actionsBottom = await page.getByTestId('global-header-actions').evaluate((element) => element.getBoundingClientRect().bottom);
+  expect(actionsBottom).toBeLessThan(0);
   await page.screenshot({ path: 'test-results/coverage-map-mobile-fallback.png', fullPage: true });
 
   await navigation.getByRole('button', { name: 'Requests', exact: true }).click();
@@ -1095,6 +1098,40 @@ test('coverage filters restore from URL, cascade, and respond to browser history
   await expect(page.getByLabel('Filter map state')).toHaveValue('TX');
   await expect(page.getByLabel('Filter map city')).toHaveValue('Austin');
   await expect(page.getByLabel('Filter map ZIP')).toHaveValue('78701');
+});
+
+test('coverage layer filters can all be switched off and restored from the URL', async ({ page }) => {
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  for (const name of ['Active demand', 'Claimed supply', 'Directory prospects', 'Coverage gaps']) {
+    await page.getByRole('checkbox', { name }).click();
+    await expect(page.getByRole('checkbox', { name })).not.toBeChecked();
+  }
+  await expect(page).toHaveURL(/layers=/);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  for (const name of ['Active demand', 'Claimed supply', 'Directory prospects', 'Coverage gaps']) {
+    await expect(page.getByRole('checkbox', { name })).not.toBeChecked();
+  }
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  for (const name of ['Active demand', 'Claimed supply', 'Directory prospects', 'Coverage gaps']) {
+    await expect(page.getByRole('checkbox', { name })).toBeChecked();
+  }
+});
+
+test('coverage details hand off state, city, and ZIP to the existing request queue', async ({ page }) => {
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace?state=TX&city=Austin&zip=78701', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-coverage-area-TX||').click();
+  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|').click();
+  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|78701').click();
+  await page.getByRole('button', { name: 'View requests' }).click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/requests/);
+  await expect(page.getByLabel('Filter request state')).toHaveValue('TX');
+  await expect(page.getByLabel('Filter request city')).toHaveValue('Austin');
+  await expect(page.getByLabel('Filter request ZIP')).toHaveValue('78701');
+  await expect(page).toHaveURL(/zip=78701/);
 });
 
 test('coverage remains usable when Google configuration is missing or loading fails', async ({ page }) => {
