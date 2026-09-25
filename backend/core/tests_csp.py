@@ -67,6 +67,17 @@ class FrontendContentSecurityPolicyTests(SimpleTestCase):
         for origin in ("https://api.stripe.com", "https://maps.googleapis.com", "https://maps.gstatic.com", "https://places.googleapis.com"):
             self.assertIn(origin, directives["connect-src"])
 
+    def test_coverage_map_allows_only_documented_additional_tile_and_worker_resources(self):
+        template = get_template("index.html")
+        directives = self._directives(Path(template.origin.name).read_text(encoding="utf-8"))
+
+        tile_origin = "https://mapsresources-pa.googleapis.com"
+        self.assertIn(tile_origin, directives["connect-src"])
+        self.assertIn(tile_origin, directives["img-src"])
+        self.assertIn("blob:", directives["worker-src"])
+        self.assertNotIn("https:", directives["script-src"])
+        self.assertNotIn("*", directives["script-src"])
+
     def test_both_spa_templates_keep_the_same_policy(self):
         root = Path(settings.BASE_DIR).parent
         copies = [root / "templates" / "index.html", Path(settings.BASE_DIR) / "templates" / "index.html"]

@@ -41,14 +41,14 @@
       style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com;
       style-src-attr 'unsafe-inline';
       font-src 'self' https://fonts.gstatic.com data:;
-      img-src 'self' data: https://*.stripe.com https://maps.googleapis.com https://maps.gstatic.com;
-      connect-src 'self' ws: wss: https://api.stripe.com https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com;
+      img-src 'self' data: https://*.stripe.com https://maps.googleapis.com https://mapsresources-pa.googleapis.com https://maps.gstatic.com;
+      connect-src 'self' ws: wss: https://api.stripe.com https://maps.googleapis.com https://mapsresources-pa.googleapis.com https://maps.gstatic.com https://places.googleapis.com;
       frame-src 'self' blob: https://connect-js.stripe.com https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com;
       child-src 'self' blob:;
       object-src 'none';
       base-uri 'self';
       form-action 'self';
-      worker-src 'self';
+      worker-src 'self' blob:;
       manifest-src 'self';
     " />
     {% if google_maps_api_key %}

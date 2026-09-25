@@ -76,7 +76,58 @@ const directoryRows = [
   },
 ];
 
-async function installMarketplaceMocks(page, { includeLegacyMissingLocation = false } = {}) {
+async function installMarketplaceMocks(page, {
+  includeLegacyMissingLocation = false,
+  mapMode = 'ready',
+} = {}) {
+  await page.addInitScript(({ mode }) => {
+    window.__MHB_ADMIN_MAP_CONFIG__ = mode === 'missing'
+      ? { apiKey: '', mapId: '' }
+      : { apiKey: 'fake-browser-key', mapId: 'fake-admin-map-id' };
+    window.__MHB_ADMIN_MAP_METRICS__ = {
+      initializations: 0,
+      updates: 0,
+      markers: [],
+      mapIds: [],
+    };
+    window.__MHB_ADMIN_MAP_ADAPTER__ = {
+      async createCoverageMap({ config, points, onSelect, onViewportChange }) {
+        if (mode === 'failure') throw new Error('Mock provider failure');
+        window.__MHB_ADMIN_MAP_METRICS__.initializations += 1;
+        window.__MHB_ADMIN_MAP_METRICS__.mapIds.push(config.mapId);
+        window.__MHB_ADMIN_MAP_METRICS__.markers = points.map((point) => point.id);
+        const host = document.querySelector('[data-testid="admin-marketplace-google-map"] > div');
+        if (host) {
+          host.innerHTML = '';
+          points.forEach((point) => {
+            const marker = document.createElement('button');
+            marker.type = 'button';
+            marker.textContent = String(point.total);
+            marker.setAttribute('aria-label', `${point.state} aggregate marker`);
+            marker.addEventListener('click', () => onSelect(point));
+            host.appendChild(marker);
+          });
+        }
+        return {
+          update(nextPoints) {
+            window.__MHB_ADMIN_MAP_METRICS__.updates += 1;
+            window.__MHB_ADMIN_MAP_METRICS__.markers = nextPoints.map((point) => point.id);
+          },
+          reset() {},
+          focus(point) {
+            onViewportChange({
+              zoom: point.aggregation_level === 'state' ? 6 : 10,
+              south: 20,
+              west: -130,
+              north: 50,
+              east: -60,
+            });
+          },
+          destroy() {},
+        };
+      },
+    };
+  }, { mode: mapMode });
   let austinEnabled = false;
   let requestRouted = false;
   let routeCalls = 0;
@@ -474,23 +525,65 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
       return;
     }
     if (method === 'GET' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/coverage/')) {
+      const zoom = Number(requestUrl.searchParams.get('zoom') || 4);
+      const state = requestUrl.searchParams.get('state') || '';
+      const city = requestUrl.searchParams.get('city') || '';
+      const aggregationLevel = zoom >= 9 ? 'zip' : zoom >= 5 ? 'city' : 'state';
+      const point = {
+        id: aggregationLevel === 'state' ? 'TX||' : aggregationLevel === 'city' ? 'TX|Austin|' : 'TX|Austin|78701',
+        aggregation_level: aggregationLevel,
+        city: aggregationLevel === 'state' ? '' : 'Austin',
+        state: 'TX',
+        zip: aggregationLevel === 'zip' ? '78701' : '',
+        latitude: aggregationLevel === 'state' ? 31.0545 : 30.2672,
+        longitude: aggregationLevel === 'state' ? -97.5635 : -97.7431,
+        coordinate_source: aggregationLevel === 'state' ? 'public_state_center' : 'directory_business_centroid',
+        counts: {
+          active_demand: 3,
+          unanswered_demand: 2,
+          responded_demand: 1,
+          eligible_claimed_supply: 1,
+          directory_prospects: 2,
+          contact_ready_prospects: 1,
+        },
+        coverage_classification: 'limited_supply',
+        trade_mix: [{ trade: 'roofing', demand: 2, claimed_supply: 1, directory_prospects: 1 }],
+        oldest_active_demand_age_days: 21,
+        newest_active_demand_age_days: 2,
+        total: 6,
+      };
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          clusters: [{
-            id: 'Austin|TX|78701',
-            city: 'Austin',
-            state: 'TX',
-            zip: '78701',
-            latitude: 30.2672,
-            longitude: -97.7431,
-            coordinate_source: 'contractor_business_centroid',
-            counts: { requests: 1, directory_prospects: 1, claimed_contractors: 1 },
-            total: 3,
-          }],
-          unlocated: { requests: Number(includeLegacyMissingLocation), directory_prospects: 0, claimed_contractors: 0, total: Number(includeLegacyMissingLocation) },
-          privacy: 'Customer and request coordinates are never exposed.',
+          applied_filters: { aggregation_level: aggregationLevel, state, city },
+          aggregation_level: aggregationLevel,
+          points: [point],
+          clusters: [point],
+          summary: {
+            active_demand: 3,
+            eligible_claimed_supply: 1,
+            directory_prospects: 2,
+            area_count: 1,
+            returned_area_count: 1,
+            coverage_classifications: { limited_supply: 1 },
+          },
+          facets: {
+            trades: ['roofing', 'plumbing'],
+            states: ['TX'],
+            cities: [{ state: 'TX', city: 'Austin' }, { state: 'TX', city: 'Dallas' }],
+            zips: [{ state: 'TX', city: 'Austin', zip: '78701' }],
+            coverage_classifications: ['critical_gap', 'limited_supply', 'covered', 'supply_only'],
+          },
+          location_needed: {
+            active_demand: Number(includeLegacyMissingLocation),
+            directory_prospects: 0,
+            eligible_claimed_supply: 0,
+            total: Number(includeLegacyMissingLocation),
+          },
+          limited: false,
+          instruction: '',
+          privacy: 'Request and homeowner coordinates are never read or serialized.',
         }),
       });
       return;
@@ -915,7 +1008,7 @@ test('legacy saved request shows missing location, stays unroutable, and opens r
   await expect(page.getByRole('dialog', { name: 'Request REQ-502' })).toBeVisible();
 });
 
-test('admin marketplace has one compact navigation and geographic coverage cards', async ({ page }) => {
+test('admin marketplace has one compact navigation and mocked national coverage map', async ({ page }) => {
   await installMarketplaceMocks(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
@@ -925,29 +1018,139 @@ test('admin marketplace has one compact navigation and geographic coverage cards
   await expect(navigation.getByRole('button', { name: 'Coverage Overview' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByText('Map & Coverage')).toHaveCount(0);
   await expect(page.getByText('Directory Console')).toHaveCount(0);
-  await expect(page.getByTestId('admin-marketplace-coverage-overview')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Aggregated geographic coverage visualization' })).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701')).toContainText('Austin, TX');
-  await expect(page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701')).toContainText('3');
-  await page.getByTestId('admin-marketplace-coverage-area-Austin|TX|78701').click();
-  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX');
+  await expect(page.getByTestId('admin-marketplace-coverage-workspace')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'National marketplace coverage map' })).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toContainText('TX');
+  await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toHaveCount(1);
+  await page.getByTestId('admin-marketplace-coverage-area-TX||').click();
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('TX');
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Limited supply');
+  await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__)).toMatchObject({
+    initializations: 1,
+    mapIds: ['fake-admin-map-id'],
+    markers: ['TX||'],
+  });
   await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toHaveCount(0);
   const coverageTop = await page.getByTestId('admin-marketplace-coverage-overview-section').evaluate((element) => element.getBoundingClientRect().top);
   expect(coverageTop).toBeLessThan(230);
-  await page.screenshot({ path: 'test-results/marketplace-operations-desktop.png', fullPage: true });
+  await page.screenshot({ path: 'test-results/coverage-map-national-desktop.png', fullPage: true });
+
+  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await expect(page.getByTestId('admin-marketplace-coverage-area-TX|Austin|')).toBeVisible();
+  await page.screenshot({ path: 'test-results/coverage-map-state-drilldown.png', fullPage: true });
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|').click();
+  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await expect(page.getByTestId('admin-marketplace-coverage-area-TX|Austin|78701')).toBeVisible();
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|78701').click();
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX, 78701');
+  await page.screenshot({ path: 'test-results/coverage-map-selected-zip-details.png', fullPage: true });
+
+  await page.getByLabel('Filter coverage classification').selectOption('limited_supply');
+  await page.screenshot({ path: 'test-results/coverage-map-gap-layer.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toBeVisible();
+  await page.getByTestId('admin-marketplace-coverage-fallback').scrollIntoViewIfNeeded();
+  const actionsBottom = await page.getByTestId('global-header-actions').evaluate((element) => element.getBoundingClientRect().bottom);
+  expect(actionsBottom).toBeLessThan(0);
+  await page.screenshot({ path: 'test-results/coverage-map-mobile-fallback.png', fullPage: true });
 
   await navigation.getByRole('button', { name: 'Requests', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/admin\/marketplace\/requests/);
   await expect(page.getByTestId('admin-marketplace-request-queue')).toContainText('Luxury Vinyl Plank Flooring');
   await expect(page.getByLabel('Select request 501')).toBeDisabled();
-  await page.setViewportSize({ width: 390, height: 844 });
   const mobileNavigation = page.getByTestId('admin-marketplace-tabs');
   await expect(mobileNavigation).toHaveCount(1);
   expect(await mobileNavigation.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
   await expect(mobileNavigation.getByRole('button', { name: 'Requests', exact: true })).toHaveAttribute('aria-current', 'page');
   const filtersTop = await page.getByTestId('admin-marketplace-request-filters').evaluate((element) => element.getBoundingClientRect().top);
   expect(filtersTop).toBeLessThan(250);
-  await page.screenshot({ path: 'test-results/marketplace-operations-mobile.png', fullPage: true });
+});
+
+test('coverage map initializes only on Coverage Overview and only once across filter rerenders', async ({ page }) => {
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace/requests', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('admin-marketplace-request-queue')).toBeVisible();
+  expect(await page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.initializations)).toBe(0);
+
+  await page.getByRole('button', { name: 'Coverage Overview' }).click();
+  await expect(page.getByTestId('admin-marketplace-coverage-workspace')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.initializations)).toBe(1);
+  await page.getByLabel('Filter demand date range').selectOption('30d');
+  await page.getByLabel('Filter map trade').selectOption('roofing');
+  await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.updates)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.initializations)).toBe(1);
+});
+
+test('coverage filters restore from URL, cascade, and respond to browser history', async ({ page }) => {
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace?state=TX&city=Austin&zip=78701&date_range=30d&classification=limited_supply', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByLabel('Filter map state')).toHaveValue('TX');
+  await expect(page.getByLabel('Filter map city')).toHaveValue('Austin');
+  await expect(page.getByLabel('Filter map ZIP')).toHaveValue('78701');
+  await expect(page.getByLabel('Filter demand date range')).toHaveValue('30d');
+  await expect(page.getByLabel('Filter coverage classification')).toHaveValue('limited_supply');
+
+  await page.getByLabel('Filter map state').selectOption('');
+  await expect(page).not.toHaveURL(/city=Austin/);
+  await expect(page).not.toHaveURL(/zip=78701/);
+  await page.goBack();
+  await expect(page.getByLabel('Filter map state')).toHaveValue('TX');
+  await expect(page.getByLabel('Filter map city')).toHaveValue('Austin');
+  await expect(page.getByLabel('Filter map ZIP')).toHaveValue('78701');
+});
+
+test('coverage layer filters can all be switched off and restored from the URL', async ({ page }) => {
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  for (const name of ['Active demand', 'Claimed supply', 'Directory prospects', 'Coverage gaps']) {
+    await page.getByRole('checkbox', { name }).click();
+    await expect(page.getByRole('checkbox', { name })).not.toBeChecked();
+  }
+  await expect(page).toHaveURL(/layers=/);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  for (const name of ['Active demand', 'Claimed supply', 'Directory prospects', 'Coverage gaps']) {
+    await expect(page.getByRole('checkbox', { name })).not.toBeChecked();
+  }
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  for (const name of ['Active demand', 'Claimed supply', 'Directory prospects', 'Coverage gaps']) {
+    await expect(page.getByRole('checkbox', { name })).toBeChecked();
+  }
+});
+
+test('coverage details hand off state, city, and ZIP to the existing request queue', async ({ page }) => {
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace?state=TX&city=Austin&zip=78701', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-coverage-area-TX||').click();
+  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|').click();
+  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|78701').click();
+  await page.getByRole('button', { name: 'View requests' }).click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/requests/);
+  await expect(page.getByLabel('Filter request state')).toHaveValue('TX');
+  await expect(page.getByLabel('Filter request city')).toHaveValue('Austin');
+  await expect(page.getByLabel('Filter request ZIP')).toHaveValue('78701');
+  await expect(page).toHaveURL(/zip=78701/);
+});
+
+test('coverage remains usable when Google configuration is missing or loading fails', async ({ page }) => {
+  await installMarketplaceMocks(page, { mapMode: 'missing' });
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Google Maps is not configured for this environment.')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('TX');
+  expect(await page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.initializations)).toBe(0);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toBeVisible();
+});
+
+test('coverage provider failure shows retry and keeps the aggregate fallback', async ({ page }) => {
+  await installMarketplaceMocks(page, { mapMode: 'failure' });
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('The map could not be loaded. Coverage data remains available below.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry map' })).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('Limited supply');
 });
 
 test('admin marketplace listing detail is a readiness view with Directory handoff', async ({ page }) => {

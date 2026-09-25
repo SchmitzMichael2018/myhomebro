@@ -11,6 +11,22 @@ import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  if (mode === "production") {
+    // PythonAnywhere keeps these two public browser values in the repository
+    // root .env; Vite otherwise reads only frontend/.env* during its build.
+    // Preserve explicit process/frontend overrides and never import backend
+    // credentials into the client build.
+    const rootGoogleEnv = loadEnv(
+      mode,
+      fileURLToPath(new URL("../", import.meta.url)),
+      "VITE_GOOGLE_MAPS_",
+    );
+    for (const key of ["VITE_GOOGLE_MAPS_API_KEY", "VITE_GOOGLE_MAPS_MAP_ID"]) {
+      if (!process.env[key] && !env[key] && rootGoogleEnv[key]) {
+        process.env[key] = rootGoogleEnv[key];
+      }
+    }
+  }
   const pwaEnabled = String(env.VITE_PWA_ENABLED || "").toLowerCase() === "true";
   return {
   plugins: [

@@ -32,6 +32,7 @@ from projects.services.marketplace_request_lifecycle import (
     meaningful_response_intake_ids,
     restore_request,
 )
+from projects.services.marketplace_coverage_map import build_marketplace_coverage_map
 from projects.services.workflow_notifications import notify_contractor_verification_status
 from projects.services.contractor_reviews import contractor_performance_summary
 from projects.services.contractor_discovery import build_contractor_recommendations
@@ -575,81 +576,6 @@ def _marketplace_overview_requests_payload(*, result_limit: int = 25) -> dict[st
     }
 
 
-def _coverage_clusters() -> dict[str, Any]:
-    clusters: dict[tuple[str, str, str], dict[str, Any]] = {}
-
-    def bucket(city, state, zip_code):
-        key = (
-            normalize_location_value(city),
-            normalize_location_value(state),
-            normalize_location_value(zip_code),
-        )
-        if not key[0] or not key[1]:
-            return None
-        return clusters.setdefault(
-            key,
-            {
-                "id": "|".join(key),
-                "city": key[0],
-                "state": key[1],
-                "zip": key[2],
-                "latitude": None,
-                "longitude": None,
-                "coordinate_source": None,
-                "counts": {
-                    "requests": 0,
-                    "directory_prospects": 0,
-                    "claimed_contractors": 0,
-                },
-                "_latitudes": [],
-                "_longitudes": [],
-            },
-        )
-
-    unlocated = {"requests": 0, "directory_prospects": 0, "claimed_contractors": 0}
-    for intake in _marketplace_request_queryset().select_related(None).only(
-        "project_city", "project_state", "project_postal_code",
-        "customer_city", "customer_state", "customer_postal_code", "same_as_customer_address",
-    ):
-        city, state, zip_code = intake_marketplace_location(intake)
-        row = bucket(city, state, zip_code)
-        if row:
-            row["counts"]["requests"] += 1
-        else:
-            unlocated["requests"] += 1
-
-    entries = ContractorDirectoryListing.objects.only(
-        "city", "state", "zip_code", "latitude", "longitude", "claimed_profile",
-    )
-    for entry in entries.iterator():
-        row = bucket(entry.city, entry.state, entry.zip_code)
-        key = "claimed_contractors" if entry.claimed_profile else "directory_prospects"
-        if row:
-            row["counts"][key] += 1
-            if entry.latitude is not None and entry.longitude is not None:
-                row["_latitudes"].append(float(entry.latitude))
-                row["_longitudes"].append(float(entry.longitude))
-        else:
-            unlocated[key] += 1
-
-    results = []
-    for row in clusters.values():
-        if row["_latitudes"] and row["_longitudes"]:
-            row["latitude"] = round(sum(row["_latitudes"]) / len(row["_latitudes"]), 6)
-            row["longitude"] = round(sum(row["_longitudes"]) / len(row["_longitudes"]), 6)
-            row["coordinate_source"] = "contractor_business_centroid"
-        row["total"] = sum(row["counts"].values())
-        row.pop("_latitudes")
-        row.pop("_longitudes")
-        results.append(row)
-    results.sort(key=lambda row: (-row["total"], row["state"], row["city"], row["zip"]))
-    return {
-        "clusters": results,
-        "unlocated": {**unlocated, "total": sum(unlocated.values())},
-        "privacy": "Customer and request coordinates are never exposed. Request demand is aggregated into city/ZIP clusters positioned only when stored contractor business coordinates provide a centroid.",
-    }
-
-
 def _contractor_stripe_ready(contractor: Contractor) -> bool:
     return bool(contractor.charges_enabled and contractor.payouts_enabled and not contractor.stripe_deauthorized_at)
 
@@ -1176,7 +1102,10 @@ class AdminMarketplaceCoverage(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserRole]
 
     def get(self, request):
-        return Response(_coverage_clusters(), status=status.HTTP_200_OK)
+        return Response(
+            build_marketplace_coverage_map(request.query_params),
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminMarketplaceLocationStatus(APIView):

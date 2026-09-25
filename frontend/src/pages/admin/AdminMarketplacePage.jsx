@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
 import Modal from "../../components/Modal.jsx";
+import AdminMarketplaceCoverageMap from "../../components/admin/AdminMarketplaceCoverageMap.jsx";
 import { useWhoAmI } from "../../hooks/useWhoAmI";
 
 const DIRECTORY_BASE = "/projects/admin/contractor-directory";
@@ -28,6 +29,7 @@ function requestFiltersFromSearch(search) {
     q: params.get("q") || "",
     city: params.get("city") || "",
     state: params.get("state") || "",
+    zip: params.get("zip") || "",
     trade: params.get("trade") || "",
     marketplace_status: params.get("marketplace_status") || "",
     lifecycle_status: params.get("lifecycle_status") || "operational",
@@ -256,67 +258,6 @@ function routeButtonCopy(row) {
   return "Not routable";
 }
 
-function CoverageOverview({ data, onSelect, selectedId, entityType }) {
-  const clusters = (data?.clusters || []).filter((row) => (
-    !entityType || Number(row.counts?.[entityType] || 0) > 0
-  ));
-
-  return (
-    <div
-      className="rounded-2xl border border-sky-200/20 bg-[linear-gradient(145deg,#061a39,#0b3154)] p-3 sm:p-4"
-      role="region"
-      aria-label="Aggregated geographic coverage visualization"
-      data-testid="admin-marketplace-coverage-overview"
-    >
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="font-black text-white">Geographic coverage areas</h3>
-          <p className="mt-1 text-xs text-sky-100/65">Select an aggregated city and ZIP area to compare demand and supply.</p>
-        </div>
-        <Badge>{clusters.length} area{clusters.length === 1 ? "" : "s"}</Badge>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {clusters.map((row) => (
-          <button
-            key={row.id}
-            type="button"
-            onClick={() => onSelect(row)}
-            aria-label={`${row.city}, ${row.state}: ${row.total} marketplace records`}
-            aria-pressed={selectedId === row.id}
-            data-testid={`admin-marketplace-coverage-area-${row.id}`}
-            className={`rounded-xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-white ${
-              selectedId === row.id
-                ? "border-emerald-200/70 bg-emerald-300/20"
-                : "border-white/15 bg-white/[0.07] hover:border-sky-200/50 hover:bg-white/[0.11]"
-            }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-black text-white">{row.city}, {row.state}</div>
-                <div className="mt-0.5 text-xs text-sky-100/60">{row.zip || "City-level aggregate"}</div>
-              </div>
-              <span className="rounded-full bg-sky-300/15 px-2.5 py-1 text-xs font-black text-sky-100">{row.total}</span>
-            </div>
-            <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Requests</dt><dd className="mt-1 font-black text-white">{row.counts?.requests || 0}</dd></div>
-              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Prospects</dt><dd className="mt-1 font-black text-white">{row.counts?.directory_prospects || 0}</dd></div>
-              <div><dt className="text-[10px] uppercase tracking-wide text-sky-100/55">Claimed</dt><dd className="mt-1 font-black text-white">{row.counts?.claimed_contractors || 0}</dd></div>
-            </dl>
-          </button>
-        ))}
-      </div>
-      {!clusters.length ? (
-        <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.04] p-8 text-center text-sm text-sky-100/75">
-          No aggregated coverage areas match these filters. Records without a usable location remain in the Location needed queue.
-        </div>
-      ) : null}
-      <p className="mt-3 text-xs text-sky-100/65">
-        Areas use city, state, and ZIP aggregates. Residential request coordinates are never exposed.
-      </p>
-    </div>
-  );
-}
-
 function joinInviteSummary(row) {
   return row?.marketplace_join_invite || null;
 }
@@ -356,9 +297,6 @@ export default function AdminMarketplacePage() {
   const [requestLifecycleAction, setRequestLifecycleAction] = useState(null);
   const [requestLifecycleBusy, setRequestLifecycleBusy] = useState(false);
   const [requestLifecycleError, setRequestLifecycleError] = useState("");
-  const [coverageMap, setCoverageMap] = useState({ clusters: [], unlocated: {}, privacy: "" });
-  const [selectedCluster, setSelectedCluster] = useState(null);
-  const [coverageEntityType, setCoverageEntityType] = useState("");
   const [routingIds, setRoutingIds] = useState({});
   const [verificationRows, setVerificationRows] = useState([]);
   const [verificationSummary, setVerificationSummary] = useState({});
@@ -383,12 +321,6 @@ export default function AdminMarketplacePage() {
           if (active) {
             setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
             setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
-          }
-          try {
-            const coverage = await api.get("/projects/admin/marketplace/coverage/");
-            if (active) setCoverageMap(coverage?.data || { clusters: [], unlocated: {}, privacy: "" });
-          } catch {
-            if (active) setCoverageMap({ clusters: [], unlocated: {}, privacy: "" });
           }
         } catch {
           if (active) {
@@ -983,6 +915,7 @@ export default function AdminMarketplacePage() {
                 <input className={inputClass} aria-label="Search requests" placeholder="Search requests" value={requestFilters.q} onChange={(event) => setRequestFilters((prev) => ({ ...prev, q: event.target.value }))} />
                 <input className={inputClass} aria-label="Filter request city" placeholder="City" value={requestFilters.city} onChange={(event) => setRequestFilters((prev) => ({ ...prev, city: event.target.value }))} />
                 <input className={inputClass} aria-label="Filter request state" placeholder="State" value={requestFilters.state} onChange={(event) => setRequestFilters((prev) => ({ ...prev, state: event.target.value }))} />
+                <input className={inputClass} aria-label="Filter request ZIP" placeholder="ZIP" value={requestFilters.zip} onChange={(event) => setRequestFilters((prev) => ({ ...prev, zip: event.target.value }))} />
                 <input className={inputClass} aria-label="Filter request trade" placeholder="Trade" value={requestFilters.trade} onChange={(event) => setRequestFilters((prev) => ({ ...prev, trade: event.target.value }))} />
                 <select className={inputClass} aria-label="Filter marketplace status" value={requestFilters.marketplace_status} onChange={(event) => setRequestFilters((prev) => ({ ...prev, marketplace_status: event.target.value }))}>
                   <option value="">All readiness states</option>
@@ -1159,40 +1092,27 @@ export default function AdminMarketplacePage() {
               sub="Aggregated geographic coverage visualization for comparing marketplace demand and contractor supply. Exact homeowner coordinates are never exposed."
               testId="admin-marketplace-coverage-overview-section"
             >
-              <div className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                <select className={inputClass} aria-label="Filter coverage entity type" value={coverageEntityType} onChange={(event) => setCoverageEntityType(event.target.value)}>
-                  <option value="">All coverage records</option>
-                  <option value="requests">Marketplace requests</option>
-                  <option value="directory_prospects">Directory prospects</option>
-                  <option value="claimed_contractors">Claimed contractors</option>
-                </select>
-                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-100/75">
-                  Location needed: <strong className="text-white">{coverageMap.unlocated?.total || 0}</strong>
-                </div>
-                <button type="button" onClick={() => go("requests")} className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900">Open request queue</button>
-              </div>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <CoverageOverview data={coverageMap} entityType={coverageEntityType} selectedId={selectedCluster?.id} onSelect={setSelectedCluster} />
-                <aside className={panelClass} aria-live="polite" data-testid="admin-marketplace-coverage-detail">
-                  {selectedCluster ? (
-                    <>
-                      <h3 className="text-lg font-black text-white">{selectedCluster.city}, {selectedCluster.state}</h3>
-                      <p className="mt-1 text-sm text-sky-100/65">{selectedCluster.zip || "City-level aggregate"}</p>
-                      <dl className="mt-4 grid gap-3 text-sm">
-                        <div><dt className="text-sky-100/55">Requests</dt><dd className="text-xl font-black text-white">{selectedCluster.counts?.requests || 0}</dd></div>
-                        <div><dt className="text-sky-100/55">Directory prospects</dt><dd className="text-xl font-black text-white">{selectedCluster.counts?.directory_prospects || 0}</dd></div>
-                        <div><dt className="text-sky-100/55">Claimed contractors</dt><dd className="text-xl font-black text-white">{selectedCluster.counts?.claimed_contractors || 0}</dd></div>
-                      </dl>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button type="button" onClick={() => { setRequestFilters((prev) => ({ ...prev, city: selectedCluster.city, state: selectedCluster.state })); go("requests"); }} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">View requests</button>
-                        <button type="button" onClick={() => openDirectoryFilters({ city: selectedCluster.city, state: selectedCluster.state })} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-extrabold text-white">View contractors</button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-sm text-sky-100/70">Select a cluster to inspect demand and contractor supply.</div>
-                  )}
-                </aside>
-              </div>
+              <AdminMarketplaceCoverageMap
+                onOpenRequests={(filters) => {
+                  setRequestFilters((previous) => ({
+                    ...previous,
+                    q: "",
+                    state: filters.state || "",
+                    city: filters.city || "",
+                    zip: filters.zip || "",
+                  }));
+                  const search = new URLSearchParams();
+                  Object.entries(filters).forEach(([key, value]) => {
+                    if (value) search.set(key, value);
+                  });
+                  navigate(`/app/admin/marketplace/requests?${search.toString()}`);
+                }}
+                onOpenDirectory={(filters) => openDirectoryFilters({
+                  state: filters.state,
+                  city: filters.city,
+                  zip: filters.zip,
+                })}
+              />
             </Section>
             <section data-testid="admin-marketplace-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
               <MetricCard testId="admin-marketplace-metric-total" label="Total Directory Listings" value={health.total} sub="Contractor records in Directory" onClick={() => openDirectoryFilters()} />
