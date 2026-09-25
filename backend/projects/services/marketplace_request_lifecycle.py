@@ -358,12 +358,12 @@ def lifecycle_state(intake: ProjectIntake, *, now=None, has_meaningful_response=
         code = LIFECYCLE_OPEN
     elif age >= timedelta(days=policy["archive_days"]):
         code = LIFECYCLE_ARCHIVE_DUE
-    elif (
-        not intake.final_marketplace_reminder_sent_at
-        and age >= timedelta(days=policy["final_reminder_days"])
-    ) or (
-        not intake.first_marketplace_reminder_sent_at
-        and age >= timedelta(days=policy["first_reminder_days"])
+    elif not intake.final_marketplace_reminder_sent_at and (
+        age >= timedelta(days=policy["final_reminder_days"])
+        or (
+            not intake.first_marketplace_reminder_sent_at
+            and age >= timedelta(days=policy["first_reminder_days"])
+        )
     ):
         code = LIFECYCLE_REMINDER_DUE
     else:

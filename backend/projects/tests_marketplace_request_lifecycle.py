@@ -311,6 +311,21 @@ class MarketplaceRequestLifecycleTests(TestCase):
         self.assertEqual(second.first_reminders, 0)
         self.assertIsNotNone(intake.first_marketplace_reminder_sent_at)
 
+    def test_final_reminder_supersedes_unsent_first_reminder(self):
+        intake = self.make_intake(age_days=6)
+        before = process_marketplace_request_lifecycle(limit=10, dry_run=True)
+        sent = process_marketplace_request_lifecycle(limit=10)
+        intake.refresh_from_db()
+        after = process_marketplace_request_lifecycle(limit=10, dry_run=True)
+
+        self.assertEqual(before.final_reminders, 1)
+        self.assertEqual(sent.final_reminders, 1)
+        self.assertIsNone(intake.first_marketplace_reminder_sent_at)
+        self.assertIsNotNone(intake.final_marketplace_reminder_sent_at)
+        self.assertEqual(after.first_reminders, 0)
+        self.assertEqual(after.final_reminders, 0)
+        self.assertEqual(lifecycle_state(intake)["code"], LIFECYCLE_OPEN)
+
     def test_command_reports_bounded_counts(self):
         self.make_intake(age_days=2)
         output = StringIO()
