@@ -2514,6 +2514,8 @@ class Notification(models.Model):
     EVENT_BID_AWARDED = "bid_awarded"
     EVENT_BID_NOT_SELECTED = "bid_not_selected"
     EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED = "contractor_opportunity_received"
+    EVENT_MARKETPLACE_FIRST_REMINDER = "marketplace_first_reminder"
+    EVENT_MARKETPLACE_FINAL_REMINDER = "marketplace_final_reminder"
     EVENT_MARKETPLACE_VERIFICATION_APPROVED = "marketplace_verification_approved"
     EVENT_MARKETPLACE_VERIFICATION_REJECTED = "marketplace_verification_rejected"
     EVENT_MARKETPLACE_VERIFICATION_SUSPENDED = "marketplace_verification_suspended"
@@ -2555,6 +2557,8 @@ class Notification(models.Model):
         (EVENT_BID_AWARDED, "Bid Awarded"),
         (EVENT_BID_NOT_SELECTED, "Bid Not Selected"),
         (EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED, "Contractor Opportunity Received"),
+        (EVENT_MARKETPLACE_FIRST_REMINDER, "Marketplace First Reminder"),
+        (EVENT_MARKETPLACE_FINAL_REMINDER, "Marketplace Final Reminder"),
         (EVENT_MARKETPLACE_VERIFICATION_APPROVED, "Marketplace Verification Approved"),
         (EVENT_MARKETPLACE_VERIFICATION_REJECTED, "Marketplace Verification Rejected"),
         (EVENT_MARKETPLACE_VERIFICATION_SUSPENDED, "Marketplace Verification Suspended"),

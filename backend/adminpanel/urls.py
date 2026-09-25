@@ -30,6 +30,7 @@ from .views_marketplace import (
     AdminMarketplaceLocationStatus,
     AdminMarketplaceOverview,
     AdminMarketplaceRequests,
+    AdminMarketplaceRequestLifecycle,
     AdminMarketplaceRouteIntake,
     AdminMarketplaceVerification,
 )
@@ -87,6 +88,7 @@ urlpatterns = [
     path("marketplace/analytics/", AdminMarketplaceAnalytics.as_view(), name="admin-marketplace-analytics"),
     path("marketplace/coverage/", AdminMarketplaceCoverage.as_view(), name="admin-marketplace-coverage"),
     path("marketplace/requests/", AdminMarketplaceRequests.as_view(), name="admin-marketplace-requests"),
+    path("marketplace/requests/<int:request_id>/lifecycle/", AdminMarketplaceRequestLifecycle.as_view(), name="admin-marketplace-request-lifecycle"),
     path("marketplace/locations/", AdminMarketplaceLocationStatus.as_view(), name="admin-marketplace-location-status"),
     path("marketplace/route-intake/", AdminMarketplaceRouteIntake.as_view(), name="admin-marketplace-route-intake"),
     path("marketplace/verification/", AdminMarketplaceVerification.as_view(), name="admin-marketplace-verification"),

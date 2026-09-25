@@ -23,6 +23,15 @@ from projects.models import Contractor, ContractorPublicProfile, PublicContracto
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_request_trade_signature, normalize_location_value
+from projects.services.marketplace_request_lifecycle import (
+    LIFECYCLE_ARCHIVED,
+    LIFECYCLE_PURGE_DUE,
+    LIFECYCLE_RETENTION_PROTECTED,
+    archive_request,
+    lifecycle_state,
+    meaningful_response_intake_ids,
+    restore_request,
+)
 from projects.services.workflow_notifications import notify_contractor_verification_status
 from projects.services.contractor_reviews import contractor_performance_summary
 from projects.services.contractor_discovery import build_contractor_recommendations
@@ -265,6 +274,14 @@ def _saved_marketplace_request_row(
         "customer_email": _safe_text(intake.customer_email) or _safe_text(getattr(intake.homeowner, "email", "")) or _safe_text(getattr(intake.public_lead, "email", "")),
         "customer_phone": _safe_text(intake.customer_phone) or _safe_text(getattr(intake.homeowner, "phone_number", "")) or _safe_text(getattr(intake.public_lead, "phone", "")),
         "submitted_at": _safe_dt(getattr(intake, "post_submit_flow_selected_at", None) or getattr(intake, "submitted_at", None) or getattr(intake, "created_at", None)),
+        "lifecycle_status": evaluation["lifecycle_status"],
+        "request_age_days": evaluation["request_age_days"],
+        "last_meaningful_activity_at": evaluation["last_meaningful_activity_at"],
+        "archived_at": _safe_dt(intake.marketplace_archived_at),
+        "archive_reason": intake.marketplace_archive_reason,
+        "restored_at": _safe_dt(intake.marketplace_restored_at),
+        "purge_eligible_at": evaluation["purge_eligible_at"],
+        "protection_reason": evaluation["protection_reason"],
         "marketplace_status": operational_status,
         "marketplace_status_label": operational_label,
         "marketplace_status_reason": operational_reason,
@@ -281,7 +298,7 @@ def _saved_marketplace_request_row(
         "can_auto_route": readiness.get("can_auto_route", enabled),
         "saved_for_future_matching": not already_routed and not enabled,
         "routed_status": "at_cap" if at_cap else "partially_routed" if already_routed else "not_routed",
-        "routable_now": routable_now,
+        "routable_now": routable_now and not intake.marketplace_archived_at,
         "already_routed": already_routed,
         "at_cap": at_cap,
         "eligible_contractors": eligible_count,
@@ -354,21 +371,39 @@ def _marketplace_request_evaluations(qs, *, status_filter: str = "", chunk_size:
     readiness_cache: dict[tuple[str, str], dict[str, Any]] = {}
     eligible_count_cache: dict[tuple[Any, ...], int] = {}
     evaluations = []
+    candidate_ids = list(qs.values_list("id", flat=True))
+    responded_ids = meaningful_response_intake_ids(candidate_ids)
     candidate_fields = (
         "id",
         "project_city", "project_state", "project_postal_code",
         "customer_city", "customer_state", "customer_postal_code", "same_as_customer_address",
         "ai_project_type", "ai_project_subtype", "ai_project_title",
         "accomplishment_text", "ai_description",
+        "status", "traffic_classification", "agreement_id", "converted_at",
+        "submitted_at", "post_submit_flow_selected_at", "created_at", "analyzed_at",
+        "first_marketplace_reminder_sent_at", "final_marketplace_reminder_sent_at",
+        "marketplace_archived_at", "marketplace_archive_reason",
+        "marketplace_restored_at", "marketplace_hold_reason",
     )
     # Operational status depends on the authoritative Python readiness and
     # eligibility services, so evaluate compact candidates in database chunks.
-    for intake in qs.select_related(None).only(*candidate_fields).iterator(chunk_size=chunk_size):
+    for intake in qs.filter(id__in=candidate_ids).select_related(None).only(*candidate_fields).iterator(chunk_size=chunk_size):
         evaluation = _marketplace_request_evaluation(
             intake,
             readiness_cache=readiness_cache,
             eligible_count_cache=eligible_count_cache,
         )
+        lifecycle = lifecycle_state(
+            intake,
+            has_meaningful_response=intake.id in responded_ids,
+        )
+        evaluation.update({
+            "lifecycle_status": lifecycle["code"],
+            "request_age_days": lifecycle["request_age_days"],
+            "last_meaningful_activity_at": _safe_dt(lifecycle["last_meaningful_activity_at"]),
+            "purge_eligible_at": _safe_dt(lifecycle["purge_eligible_at"]),
+            "protection_reason": lifecycle["protection_reason"],
+        })
         if not status_filter or evaluation["operational_status"] == status_filter:
             evaluations.append(evaluation)
     return evaluations
@@ -467,10 +502,28 @@ def _saved_marketplace_requests_payload(params=None) -> dict[str, Any]:
         *_marketplace_request_ordering(params)
     )
     status_filter = _safe_text(params.get("marketplace_status"))
-    evaluations = _marketplace_request_evaluations(qs, status_filter=status_filter)
+    all_evaluations = _marketplace_request_evaluations(qs, status_filter=status_filter)
+    lifecycle_counts = defaultdict(int)
+    for evaluation in all_evaluations:
+        lifecycle_counts[evaluation["lifecycle_status"]] += 1
+    lifecycle_filter = _safe_text(params.get("lifecycle_status")).lower() or "operational"
+    if lifecycle_filter == "all":
+        evaluations = all_evaluations
+    elif lifecycle_filter == "operational":
+        evaluations = [
+            row for row in all_evaluations
+            if row["lifecycle_status"] not in {
+                LIFECYCLE_ARCHIVED,
+                LIFECYCLE_PURGE_DUE,
+                LIFECYCLE_RETENTION_PROTECTED,
+            }
+        ]
+    else:
+        evaluations = [row for row in all_evaluations if row["lifecycle_status"] == lifecycle_filter]
     total_count = len(evaluations)
     counts_by_id = _marketplace_request_counts_by_id([evaluation["id"] for evaluation in evaluations])
     summary, by_location = _marketplace_request_aggregates(evaluations, counts_by_id)
+    summary["lifecycle_statuses"] = dict(lifecycle_counts)
     page_size = max(1, min(_safe_int(params.get("page_size"), 25), 100))
     total_pages = max(1, math.ceil(total_count / page_size))
     page = min(max(1, _safe_int(params.get("page"), 1)), total_pages)
@@ -493,7 +546,15 @@ def _saved_marketplace_requests_payload(params=None) -> dict[str, Any]:
 
 def _marketplace_overview_requests_payload(*, result_limit: int = 25) -> dict[str, Any]:
     qs = _marketplace_request_queryset().order_by(*_marketplace_request_ordering({}))
-    evaluations = _marketplace_request_evaluations(qs)
+    evaluations = [
+        row
+        for row in _marketplace_request_evaluations(qs)
+        if row["lifecycle_status"] not in {
+            LIFECYCLE_ARCHIVED,
+            LIFECYCLE_PURGE_DUE,
+            LIFECYCLE_RETENTION_PROTECTED,
+        }
+    ]
     counts_by_id = _marketplace_request_counts_by_id([evaluation["id"] for evaluation in evaluations])
     summary, by_location = _marketplace_request_aggregates(evaluations, counts_by_id)
     return {
@@ -1081,6 +1142,33 @@ class AdminMarketplaceRequests(APIView):
         return Response(_saved_marketplace_requests_payload(request.query_params), status=status.HTTP_200_OK)
 
 
+class AdminMarketplaceRequestLifecycle(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def post(self, request, request_id):
+        if not (request.user.is_superuser or request.user.has_perm("projects.change_projectintake")):
+            return Response({"detail": "You do not have permission to change request lifecycle state."}, status=403)
+        if request.data.get("confirmed") is not True:
+            return Response({"detail": "Explicit confirmation is required."}, status=400)
+        intake = ProjectIntake.objects.filter(pk=request_id).first()
+        if intake is None:
+            return Response({"detail": "Marketplace request not found."}, status=404)
+        action = _safe_text(request.data.get("action")).lower()
+        if action == "archive":
+            changed = archive_request(intake, reason="admin_archived")
+        elif action == "restore":
+            changed = restore_request(intake)
+        else:
+            return Response({"detail": "Action must be archive or restore."}, status=400)
+        intake.refresh_from_db()
+        return Response({
+            "changed": changed,
+            "lifecycle_status": lifecycle_state(intake)["code"],
+            "archived_at": _safe_dt(intake.marketplace_archived_at),
+            "restored_at": _safe_dt(intake.marketplace_restored_at),
+        })
+
+
 class AdminMarketplaceCoverage(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserRole]
 
@@ -1132,8 +1220,14 @@ class AdminMarketplaceRouteIntake(APIView):
         intake_id = _safe_int(request.data.get("intake_id"), 0)
         if not intake_id:
             return Response({"detail": "intake_id is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not ProjectIntake.objects.filter(pk=intake_id).exists():
+        intake = ProjectIntake.objects.filter(pk=intake_id).first()
+        if intake is None:
             return Response({"detail": "Project intake not found."}, status=status.HTTP_404_NOT_FOUND)
+        if intake.marketplace_archived_at:
+            return Response(
+                {"detail": "Archived marketplace requests must be restored and reviewed before routing."},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         result = create_marketplace_invites_for_intake(intake_id)
         response_status = status.HTTP_200_OK if result.get("marketplace", {}).get("can_auto_route") else status.HTTP_202_ACCEPTED

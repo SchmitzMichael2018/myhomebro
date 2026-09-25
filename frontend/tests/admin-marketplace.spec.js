@@ -80,6 +80,7 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
   let austinEnabled = false;
   let requestRouted = false;
   let routeCalls = 0;
+  let lifecycleStatus = 'open';
   let verificationRows = [
     {
       id: 11,
@@ -183,6 +184,13 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
       customer_name: 'Home Owner',
       customer_email: 'homeowner@example.com',
       submitted_at: '2026-05-18T14:00:00Z',
+      lifecycle_status: lifecycleStatus,
+      request_age_days: 7,
+      last_meaningful_activity_at: '2026-05-18T14:00:00Z',
+      archived_at: lifecycleStatus === 'archived' ? '2026-05-25T14:00:00Z' : null,
+      archive_reason: lifecycleStatus === 'archived' ? 'admin_archived' : '',
+      purge_eligible_at: lifecycleStatus === 'archived' ? '2026-08-23T14:00:00Z' : null,
+      protection_reason: lifecycleStatus === 'retention_protected' ? 'Customer request history' : '',
       marketplace_status: austinEnabled ? 'enabled' : 'ready',
       marketplace_enabled: austinEnabled,
       routed_status: requestRouted ? 'at_cap' : 'not_routed',
@@ -488,6 +496,9 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
       return;
     }
     if (method === 'GET' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/requests/')) {
+      if (requestUrl.searchParams.get('lifecycle_status') === 'retention_protected') {
+        lifecycleStatus = 'retention_protected';
+      }
       const payload = overviewPayload().saved_marketplace_requests;
       await route.fulfill({
         status: 200,
@@ -496,6 +507,16 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
           ...payload,
           pagination: { page: 1, page_size: 25, total: payload.results.length, total_pages: 1, has_previous: false, has_next: false },
         }),
+      });
+      return;
+    }
+    if (method === 'POST' && /\/api\/projects\/admin\/marketplace\/requests\/\d+\/lifecycle\/$/.test(requestUrl.pathname)) {
+      const body = route.request().postDataJSON();
+      lifecycleStatus = body.action === 'restore' ? 'open' : 'archived';
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ changed: true, lifecycle_status: lifecycleStatus }),
       });
       return;
     }
@@ -795,6 +816,61 @@ test('admin marketplace routes saved requests after location enablement without 
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toContainText('At cap');
   expect(routeRequests).toEqual([{ intake_id: 501 }]);
+});
+
+test('admin request lifecycle uses URL filters and confirmed archive and restore dialogs', async ({ page }) => {
+  test.slow();
+  await installMarketplaceMocks(page);
+  const lifecycleRequests = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/lifecycle/')) {
+      lifecycleRequests.push(request.postDataJSON());
+    }
+  });
+
+  await page.goto('/app/admin/marketplace/requests?lifecycle_status=operational', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('admin-marketplace-request-row-501')).toBeVisible({ timeout: 30000 });
+  await expect(page.getByLabel('Filter lifecycle status')).toHaveValue('operational');
+  await expect(page).toHaveURL(/lifecycle_status=operational/);
+  await page.getByTestId('admin-marketplace-request-queue').screenshot({
+    path: 'test-results/marketplace-lifecycle-operational-queue.png',
+  });
+
+  await page.getByRole('button', { name: 'Archive' }).click();
+  await expect(page.getByTestId('admin-marketplace-request-lifecycle-dialog')).toBeVisible();
+  await page.getByTestId('admin-marketplace-request-lifecycle-dialog').screenshot({
+    path: 'test-results/marketplace-lifecycle-archive-dialog.png',
+  });
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  expect(lifecycleRequests).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Archive' }).click();
+  await page.getByRole('button', { name: 'Archive request' }).click();
+  await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
+  await page.getByTestId('admin-marketplace-request-queue').screenshot({
+    path: 'test-results/marketplace-lifecycle-archived-filter.png',
+  });
+  expect(lifecycleRequests).toEqual([{ action: 'archive', confirmed: true }]);
+
+  await page.getByRole('button', { name: 'Restore' }).click();
+  await expect(page.getByTestId('admin-marketplace-request-lifecycle-dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'Restore request' }).click();
+  expect(lifecycleRequests).toEqual([
+    { action: 'archive', confirmed: true },
+    { action: 'restore', confirmed: true },
+  ]);
+
+  await page.getByLabel('Filter lifecycle status').selectOption('retention_protected');
+  await page.getByRole('button', { name: 'Apply filters' }).click();
+  await expect(page.getByTestId('admin-marketplace-request-row-501')).toContainText('Customer request history');
+  await page.getByTestId('admin-marketplace-request-queue').screenshot({
+    path: 'test-results/marketplace-lifecycle-retention-protected.png',
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId('admin-marketplace-request-queue').screenshot({
+    path: 'test-results/marketplace-lifecycle-mobile-archived.png',
+  });
 });
 
 test('legacy saved request shows missing location, stays unroutable, and opens request review on mobile', async ({ page }) => {

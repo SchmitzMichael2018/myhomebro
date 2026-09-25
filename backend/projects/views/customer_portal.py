@@ -2692,6 +2692,15 @@ def _request_lifecycle_payload(request_row, *, source_intake=None, linked_agreem
         return {"state": "agreement_created", "label": "Agreement Created", "next_action": "Open the linked project or agreement."}
     if matching_counts and matching_counts.get("total", 0) > 0:
         return {"state": "sent_to_contractors", "label": "Sent to Contractors", "next_action": "Watch for contractor responses."}
+    if source_intake is not None and source_intake.marketplace_archived_at:
+        return {
+            "state": "closed",
+            "label": "Closed and Archived",
+            "next_action": (
+                "No contractor response was received during the response window. "
+                "Review this request in your history or submit a new request if work is still needed."
+            ),
+        }
     if source_intake is not None:
         return {"state": "reviewing", "label": "Reviewing Request", "next_action": "Find or select contractors when ready."}
     if request_row.status == CustomerRequest.STATUS_CANCELLED:
