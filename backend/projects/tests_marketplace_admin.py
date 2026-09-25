@@ -102,6 +102,25 @@ class AdminMarketplaceTests(TestCase):
             {"include_readiness": "false"},
         ).json()
         self.assertEqual(lightweight["coverage"]["automatic_matching_readiness"], [])
+        self.assertEqual(lightweight["coverage"]["location_readiness"], [])
+
+    def test_lightweight_overview_query_count_is_not_per_location(self):
+        with CaptureQueriesContext(connection) as small:
+            self.client.get("/api/projects/admin/marketplace/", {"include_readiness": "false"})
+        for index in range(20):
+            ContractorDirectoryListing.objects.create(
+                source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+                google_place_id=f"overview-query-place-{index}",
+                business_name=f"Overview business {index}",
+                city=f"Overview City {index}",
+                state="TX",
+                primary_trade="roofing",
+            )
+        with CaptureQueriesContext(connection) as large:
+            response = self.client.get("/api/projects/admin/marketplace/", {"include_readiness": "false"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["coverage"]["location_readiness"], [])
+        self.assertLessEqual(len(large), len(small) + 2)
 
     def test_legacy_saved_request_without_location_is_not_nearing_ready_or_routable(self):
         ContractorDirectoryListing.objects.create(
@@ -465,6 +484,14 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(zip_level["points"][0]["zip"], "78701")
         self.assertEqual(city["points"][0]["coordinate_source"], "public_directory_business_centroid")
         self.assertEqual(zip_level["points"][0]["coordinate_source"], "public_directory_business_centroid")
+        for payload in (national, city, zip_level):
+            row = payload["coverage_areas"]["results"][0]
+            marker = payload["points"][0]
+            self.assertTrue(row["has_marker"])
+            self.assertEqual(
+                (row["latitude"], row["longitude"], row["coordinate_source"]),
+                (marker["latitude"], marker["longitude"], marker["coordinate_source"]),
+            )
         self.assertNotEqual((city["points"][0]["latitude"], city["points"][0]["longitude"]), (30.2672, -97.7431))
         self.assertEqual(city["points"][0]["coverage_classification"], "covered")
 

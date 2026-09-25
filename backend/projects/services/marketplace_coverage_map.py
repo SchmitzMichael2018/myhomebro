@@ -620,21 +620,22 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
             "oldest_active_demand_age_days": max((now - value).days for value in dates) if dates else None,
             "newest_active_demand_age_days": min((now - value).days for value in dates) if dates else None,
         }
+        if representative is not None:
+            latitude, longitude, coordinate_source = representative
+            area.update({
+                "latitude": latitude,
+                "longitude": longitude,
+                "coordinate_source": coordinate_source,
+            })
         coverage_areas.append(area)
         if representative is None:
             location_needed_ids["active_demand"].update(group["request_ids"])
             location_needed_ids["eligible_claimed_supply"].update(group["claimed_ids"])
             location_needed_ids["directory_prospects"].update(group["prospect_ids"])
             continue
-        latitude, longitude, coordinate_source = representative
         if not _matches_bounds(latitude, longitude, params):
             continue
-        points.append({
-            **area,
-            "latitude": latitude,
-            "longitude": longitude,
-            "coordinate_source": coordinate_source,
-        })
+        points.append(area)
 
     points.sort(key=lambda row: (-row["total"], row["state"], row["city"], row["zip"]))
     limited = len(points) > POINT_LIMIT
@@ -642,6 +643,9 @@ def build_marketplace_coverage_map(params) -> dict[str, Any]:
     coverage_sort = _text(params.get("coverage_sort"))
     if coverage_sort not in COVERAGE_SORTS:
         coverage_sort = DEFAULT_COVERAGE_SORT
+    # Full aggregation precedes slicing: map totals, facets, and marker limits
+    # describe the filtered population, while only this table page is returned.
+    # Work remains linear in eligible requests/listings and grouped areas.
     coverage_areas.sort(key=_coverage_sort_key(coverage_sort))
     coverage_pagination = _coverage_pagination(params, len(coverage_areas))
     coverage_start = (

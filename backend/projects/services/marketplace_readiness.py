@@ -396,7 +396,12 @@ def automatic_matching_readiness_rows(
 def automatic_matching_readiness_rows_for_locations(
     location_keys: list[tuple[str, str]],
 ) -> list[dict[str, Any]]:
-    """Build readiness rows with a fixed query count across all locations."""
+    """Build all readiness rows before slicing so filtered totals stay authoritative.
+
+    Query count is fixed, but CPU and memory still scale with the full listing,
+    entry, location, and approval populations. Reassess this batch aggregation
+    against production volume before substantially expanding the directory.
+    """
     normalized_locations = {
         automatic_matching_location_keys(city, state): (city, state)
         for city, state in location_keys

@@ -80,6 +80,7 @@ async function installMarketplaceMocks(page, {
   includeLegacyMissingLocation = false,
   emptyReadiness = false,
   extraReadinessRows = 0,
+  extraCoverageRows = 0,
   mapMode = 'ready',
   nearbyStatePoints = false,
 } = {}) {
@@ -94,6 +95,7 @@ async function installMarketplaceMocks(page, {
       markers: [],
       mapIds: [],
       colorSchemes: [],
+      lastPanTo: null,
     };
     const metrics = window.__MHB_ADMIN_MAP_METRICS__;
     const syncMarkers = (host) => {
@@ -136,7 +138,7 @@ async function installMarketplaceMocks(page, {
         getZoom() { return this.zoom; }
         setCenter() { this.emit('idle'); }
         setZoom(zoom) { this.zoom = zoom; this.emit('idle'); }
-        panTo() { this.emit('idle'); }
+        panTo(position) { metrics.lastPanTo = position; this.emit('idle'); }
       },
       AdvancedMarkerElement: class FakeMarker {
         constructor({ map, title, collisionBehavior, zIndex }) {
@@ -654,7 +656,22 @@ async function installMarketplaceMocks(page, {
           coverage_status: 'location_needed',
           coverage_status_label: 'Map location unavailable',
         }] : []),
+        ...Array.from({ length: extraCoverageRows }, (_, index) => ({
+          ...point,
+          id: `TX|Coverage City ${String(index + 1).padStart(2, '0')}|`,
+          city: `Coverage City ${String(index + 1).padStart(2, '0')}`,
+          latitude: undefined,
+          longitude: undefined,
+          has_marker: false,
+          coverage_status: 'location_needed',
+          coverage_status_label: 'Map location unavailable',
+        })),
       ];
+      const requestedPage = Math.max(Number.parseInt(requestUrl.searchParams.get('coverage_page') || '1', 10) || 1, 1);
+      const requestedPageSize = Number.parseInt(requestUrl.searchParams.get('coverage_page_size') || '25', 10);
+      const pageSize = [25, 50, 100].includes(requestedPageSize) ? requestedPageSize : 25;
+      const totalPages = Math.max(Math.ceil(coverageRows.length / pageSize), 1);
+      const currentPage = Math.min(requestedPage, totalPages);
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -672,14 +689,14 @@ async function installMarketplaceMocks(page, {
             coverage_classifications: { limited_supply: 1 },
           },
           coverage_areas: {
-            results: coverageRows,
+            results: coverageRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
             pagination: {
-              page: 1,
-              page_size: 25,
+              page: currentPage,
+              page_size: pageSize,
               total: coverageRows.length,
-              total_pages: 1,
-              has_previous: false,
-              has_next: false,
+              total_pages: totalPages,
+              has_previous: currentPage > 1,
+              has_next: currentPage < totalPages,
             },
             sort: requestUrl.searchParams.get('coverage_sort') || 'largest_coverage_gap',
           },
@@ -1256,10 +1273,13 @@ test('automatic matching readiness pages beyond the former 30-row cutoff', async
 });
 
 test('coverage and readiness pagination keep independent URL state', async ({ page }) => {
-  await installMarketplaceMocks(page, { extraReadinessRows: 31 });
+  await installMarketplaceMocks(page, { extraReadinessRows: 31, extraCoverageRows: 30 });
   await page.goto('/app/admin/marketplace?coverage_page=2&readiness_page=2', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByLabel('Sort Coverage Areas')).toHaveValue('largest_coverage_gap');
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('Page 2 of 2');
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('Coverage City 30');
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).not.toContainText('Coverage City 01');
   await expect(page.getByTestId('admin-marketplace-readiness-pagination')).toContainText('Page 2 of 2');
   await page.getByTestId('admin-marketplace-coverage-fallback').screenshot({
     path: 'test-results/admin-marketplace-desktop-coverage-pagination.png',
@@ -1280,6 +1300,9 @@ test('coverage and readiness pagination keep independent URL state', async ({ pa
   await page.goBack();
   await expect(page).toHaveURL(/readiness_page=2/);
   await expect(page.getByTestId('admin-marketplace-readiness-pagination')).toContainText('Page 2 of 2');
+  await page.goBack();
+  await expect(page).toHaveURL(/coverage_page=2/);
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('Page 2 of 2');
 });
 
 test('unmapped coverage card opens details without focusing the map', async ({ page }) => {
@@ -1310,6 +1333,8 @@ test('mapped coverage row selects details without changing aggregation', async (
   await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('[data-coverage-area="TX||"] .mhb-coverage-marker--selected')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toBeVisible();
+  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.lastPanTo)).toEqual({ lat: 31.0545, lng: -97.5635 });
 });
 
 test('coverage layer filters can all be switched off and restored from the URL', async ({ page }) => {

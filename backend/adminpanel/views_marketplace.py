@@ -1137,7 +1137,8 @@ class AdminMarketplaceOverview(APIView):
         claimed_count = listings.filter(claimed_profile=True).count()
         unclaimed_count = listings.filter(claimed_profile=False).count()
         opted_out_count = listings.filter(Q(sms_opt_out=True) | Q(email_opt_out=True)).count()
-        location_keys = _marketplace_location_keys()
+        include_readiness = _safe_bool(request.query_params.get("include_readiness", True))
+        location_keys = _marketplace_location_keys() if include_readiness else []
         saved_marketplace_requests = _marketplace_overview_requests_payload()
         location_rows = [
             location_readiness(city, state)
@@ -1146,7 +1147,7 @@ class AdminMarketplaceOverview(APIView):
         ]
         automatic_matching_rows = (
             automatic_matching_readiness_rows_for_locations(location_keys)
-            if _safe_bool(request.query_params.get("include_readiness", True))
+            if include_readiness
             else []
         )
         automatic_matching_rows.sort(
