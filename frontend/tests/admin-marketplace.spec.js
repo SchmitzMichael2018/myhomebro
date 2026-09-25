@@ -79,6 +79,7 @@ const directoryRows = [
 async function installMarketplaceMocks(page, {
   includeLegacyMissingLocation = false,
   emptyReadiness = false,
+  extraReadinessRows = 0,
   mapMode = 'ready',
   nearbyStatePoints = false,
 } = {}) {
@@ -368,6 +369,16 @@ async function installMarketplaceMocks(page, {
               at_cap: 0,
             },
           },
+          ...Array.from({ length: extraReadinessRows }, (_, index) => ({
+            city: `Coverage City ${index + 1}`,
+            state: 'TX',
+            trade: 'flooring',
+            status: index === 30 ? 'location_review_needed' : 'building_coverage',
+            enabled: false,
+            manual_enabled: false,
+            counts: { claimed_contractors: 0, verified_contractors: 0, stripe_ready_contractors: 0 },
+            coverage_gaps: ['claimed_contractors'],
+          })),
         ],
       },
       saved_marketplace_requests: {
@@ -1162,6 +1173,15 @@ test('empty automatic matching readiness preserves search and direct invitations
   const readiness = page.getByTestId('admin-marketplace-location-readiness');
   await expect(readiness).toContainText('No location-and-service combinations are currently ready');
   await expect(readiness).toContainText('Customers may still search for and directly invite eligible contractors.');
+});
+
+test('automatic matching readiness displays rows beyond the former 30-row cutoff', async ({ page }) => {
+  await installMarketplaceMocks(page, { extraReadinessRows: 31 });
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  const reviewRow = page.getByTestId('admin-marketplace-location-Coverage City 31-TX-flooring');
+  await expect(reviewRow).toBeVisible();
+  await expect(reviewRow).toContainText('Duplicate legacy locations — admin review required');
+  await expect(reviewRow.getByRole('button', { name: 'Approve matching' })).toBeDisabled();
 });
 
 test('coverage layer filters can all be switched off and restored from the URL', async ({ page }) => {

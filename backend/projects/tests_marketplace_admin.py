@@ -5,7 +5,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 
 from projects.models import Agreement, Contractor, ContractorPublicProfile, Homeowner, Notification, Project, ProjectStatus, PublicContractorLead
 from projects.models_customer_portal import CustomerRequest, SmartNotification, SmartNotificationEvent
-from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
+from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_discovery import create_discovery_invites
 from projects.services.marketplace_readiness import automatic_matching_readiness, create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness, marketplace_enabled_for_intake
@@ -169,6 +169,35 @@ class AdminMarketplaceTests(TestCase):
         route = self.client.post("/api/projects/admin/marketplace/route-intake/", {"intake_id": intake.id}, format="json")
         self.assertEqual(route.status_code, 202)
         self.assertEqual(route.json()["marketplace"]["status"], "location_needed")
+
+    def test_overview_does_not_truncate_automatic_matching_rows(self):
+        rows = [
+            {"city": "Austin", "state": "TX", "trade": f"trade-{index}"}
+            for index in range(101)
+        ]
+        with patch("adminpanel.views_marketplace.automatic_matching_readiness_rows") as mocked_rows:
+            mocked_rows.side_effect = lambda city, state: rows if city == "Austin" else []
+            response = self.client.get("/api/projects/admin/marketplace/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.json()["coverage"]["automatic_matching_readiness"]), 101)
+
+    def test_approval_only_location_is_visible_without_duplicate_case_variant_rows(self):
+        MarketplaceAutomaticMatchingApproval.objects.create(
+            city_key="San Antonio", state_key="tx", trade="roofing", is_approved=False,
+        )
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_MYHOMEBRO,
+            business_name="Unclaimed San Antonio Listing",
+            city="SAN ANTONIO", state="TX", primary_trade="roofing",
+        )
+        response = self.client.get("/api/projects/admin/marketplace/")
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = [
+            row for row in response.json()["coverage"]["automatic_matching_readiness"]
+            if row["city"].casefold() == "san antonio" and row["trade"] == "roofing"
+        ]
+        self.assertEqual(len(rows), 1)
+        self.assertFalse(rows[0]["can_auto_route"])
 
     @override_settings(
         MYHOMEBRO_MARKETPLACE_MIN_CLAIMED_CONTRACTORS=1,
@@ -895,8 +924,10 @@ class AdminMarketplaceTests(TestCase):
         self.assertTrue(payload["enabled"])
         self.assertEqual(payload["max_bids_per_request"], 5)
         location = MarketplaceLocation.objects.get(city="Austin", state="TX")
-        self.assertTrue(location.is_enabled)
-        self.assertEqual(location.approved_trades, ["roofing"])
+        self.assertFalse(location.is_enabled)
+        self.assertTrue(MarketplaceAutomaticMatchingApproval.objects.get(
+            city_key="austin", state_key="TX", trade="roofing",
+        ).is_approved)
         self.assertEqual(location.max_bids_per_request, 5)
 
     def test_admin_verification_actions_update_contractor_trust_state(self):
@@ -973,6 +1004,142 @@ class AdminMarketplaceTests(TestCase):
 
 
 class MarketplaceGatingTests(TestCase):
+    def _approve(self, trade="flooring", city="Austin", state="TX"):
+        return MarketplaceAutomaticMatchingApproval.objects.create(
+            city_key=city, state_key=state, trade=trade, is_approved=True,
+            updated_by=self.admin_user,
+        )
+
+    def test_legacy_city_enabled_and_sufficient_supply_still_requires_trade_approval(self):
+        MarketplaceLocation.objects.create(
+            city="Austin", state="TX", is_enabled=True,
+            min_claimed_contractors=1, min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+        )
+        intake = self._intake()
+        self.assertEqual(automatic_matching_readiness("Austin", "TX", "flooring")["status"], "awaiting_approval")
+        self.assertFalse(marketplace_enabled_for_intake(intake)["can_auto_route"])
+        self.assertEqual(create_marketplace_invites_for_intake(intake.id)["created_count"], 0)
+
+    def test_approval_normalizes_location_and_rejects_case_variant_duplicate(self):
+        self._approve("Flooring", "  AUSTIN  ", "tx")
+        self.assertTrue(MarketplaceAutomaticMatchingApproval.objects.filter(
+            city_key="austin", state_key="TX", trade="flooring", is_approved=True,
+        ).exists())
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._approve("flooring", "Austin", "TX")
+
+    def test_supply_counts_normalized_legacy_directory_location(self):
+        MarketplaceLocation.objects.create(
+            city="Austin", state="TX", is_enabled=False,
+            min_claimed_contractors=7, min_verified_contractors=7,
+            min_stripe_ready_contractors=7,
+        )
+        self._approve()
+        contractor = Contractor.objects.create(
+            user=get_user_model().objects.create_user(email="padded-city@example.com", password="testpass123"),
+            business_name="Padded City Pro", city="Austin", state="TX",
+            charges_enabled=True, payouts_enabled=True,
+            marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
+        )
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_MYHOMEBRO,
+            business_name="Padded City Pro", city="  AUSTIN  ", state=" tx ",
+            primary_trade="flooring", trade_categories=["flooring"],
+            claimed_profile=True, claimed_contractor=contractor, manually_reviewed=True,
+        )
+        readiness = automatic_matching_readiness(" austin ", "Tx", "flooring")
+        self.assertEqual(readiness["counts"]["claimed_contractors"], 7)
+        self.assertEqual(readiness["counts"]["verified_contractors"], 7)
+        self.assertEqual(readiness["counts"]["stripe_ready_contractors"], 7)
+        self.assertEqual(readiness["status"], "active")
+
+    def test_padded_legacy_thresholds_apply_and_duplicate_locations_fail_closed(self):
+        MarketplaceLocation.objects.create(
+            city="  AUSTIN  ", state=" tx ", is_enabled=True,
+            min_claimed_contractors=7, min_verified_contractors=7,
+            min_stripe_ready_contractors=7,
+        )
+        self._approve()
+        self.assertEqual(automatic_matching_readiness("Austin", "TX", "flooring")["status"], "building_coverage")
+        MarketplaceLocation.objects.create(city="Austin", state="TX", is_enabled=True)
+        self.assertEqual(automatic_matching_readiness("Austin", "TX", "flooring")["status"], "location_review_needed")
+        self.assertFalse(marketplace_enabled_for_intake(self._intake())["can_auto_route"])
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            "/api/projects/admin/marketplace/locations/",
+            {"city": "Austin", "state": "TX", "trade": "flooring", "enabled": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409, response.data)
+
+    def test_admin_trade_toggle_only_changes_that_trade(self):
+        location = MarketplaceLocation.objects.create(
+            city="Austin", state="TX", is_enabled=True,
+            min_claimed_contractors=1, min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+        )
+        original_location_updated_at = location.updated_at
+        self._approve("flooring")
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            "/api/projects/admin/marketplace/locations/",
+            {"city": " AUSTIN ", "state": "tx", "trade": "plumbing", "enabled": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(MarketplaceAutomaticMatchingApproval.objects.get(trade="flooring").is_approved)
+        self.assertTrue(MarketplaceAutomaticMatchingApproval.objects.get(trade="plumbing").is_approved)
+        response = self.client.post(
+            "/api/projects/admin/marketplace/locations/",
+            {"city": "Austin", "state": "TX", "trade": "plumbing", "enabled": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(MarketplaceAutomaticMatchingApproval.objects.get(trade="flooring").is_approved)
+        self.assertFalse(MarketplaceAutomaticMatchingApproval.objects.get(trade="plumbing").is_approved)
+        location.refresh_from_db()
+        self.assertTrue(location.is_enabled)
+        self.assertEqual(location.updated_at, original_location_updated_at)
+
+    def test_blank_unknown_and_ambiguous_trade_fail_closed(self):
+        MarketplaceLocation.objects.create(
+            city="Austin", state="TX", is_enabled=True,
+            min_claimed_contractors=1, min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+        )
+        self._approve()
+        for trade in ("", "not-a-trade", "flooring plumbing"):
+            self.assertFalse(automatic_matching_readiness("Austin", "TX", trade)["can_auto_route"])
+        self.client.force_authenticate(user=self.admin_user)
+        for trade in ("", "not-a-trade", "flooring plumbing"):
+            response = self.client.post(
+                "/api/projects/admin/marketplace/locations/",
+                {"city": "Austin", "state": "TX", "trade": trade, "enabled": True},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400, response.data)
+
+    def test_narrative_trade_without_authoritative_classification_cannot_route(self):
+        MarketplaceLocation.objects.create(
+            city="Austin", state="TX", is_enabled=True,
+            min_claimed_contractors=1, min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+        )
+        self._approve()
+        intake = self._intake()
+        intake.ai_project_type = "General project"
+        intake.ai_project_subtype = ""
+        intake.ai_project_title = "Flooring installation"
+        intake.save(update_fields=["ai_project_type", "ai_project_subtype", "ai_project_title"])
+        self.assertEqual(marketplace_enabled_for_intake(intake)["status"], "service_needed")
+        self.assertEqual(create_marketplace_invites_for_intake(intake.id)["created_count"], 0)
+
+        intake.ai_project_type = "Flooring and plumbing"
+        intake.save(update_fields=["ai_project_type"])
+        self.assertEqual(marketplace_enabled_for_intake(intake)["status"], "service_needed")
+        self.assertEqual(create_marketplace_invites_for_intake(intake.id)["created_count"], 0)
+
     def setUp(self):
         self.client = APIClient()
         user_model = get_user_model()
@@ -1145,10 +1312,10 @@ class MarketplaceGatingTests(TestCase):
     def test_trade_approval_and_supply_are_independent_in_one_city(self):
         location = MarketplaceLocation.objects.create(
             city="Austin", state="TX", is_enabled=True,
-            approved_trades=["flooring"],
             min_claimed_contractors=1, min_verified_contractors=1,
             min_stripe_ready_contractors=1,
         )
+        self._approve()
         floor = self._intake()
         self.assertTrue(marketplace_enabled_for_intake(floor)["can_auto_route"])
 
@@ -1172,8 +1339,7 @@ class MarketplaceGatingTests(TestCase):
         )
         self.assertEqual(automatic_matching_readiness("Austin", "TX", "plumbing")["status"], "awaiting_approval")
         self.assertEqual(create_marketplace_invites_for_intake(plumbing.id)["created_count"], 0)
-        location.approved_trades = ["flooring", "plumbing"]
-        location.save(update_fields=["approved_trades"])
+        self._approve("plumbing")
         self.assertEqual(automatic_matching_readiness("Austin", "TX", "plumbing")["status"], "active")
         self.assertEqual(create_marketplace_invites_for_intake(plumbing.id)["created_count"], 1)
         self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=plumbing).exclude(contractor=plumber).count(), 0)
@@ -1181,10 +1347,10 @@ class MarketplaceGatingTests(TestCase):
     def test_approval_without_eligible_supply_never_routes(self):
         MarketplaceLocation.objects.create(
             city="Austin", state="TX", is_enabled=True,
-            approved_trades=["plumbing"],
             min_claimed_contractors=1, min_verified_contractors=1,
             min_stripe_ready_contractors=1,
         )
+        self._approve("plumbing")
         intake = self._intake()
         intake.ai_project_type = "Plumbing"
         intake.save(update_fields=["ai_project_type"])
@@ -1194,10 +1360,10 @@ class MarketplaceGatingTests(TestCase):
     def test_unclaimed_or_payment_ineligible_listing_does_not_count_as_supply(self):
         location = MarketplaceLocation.objects.create(
             city="Austin", state="TX", is_enabled=True,
-            approved_trades=["flooring"],
             min_claimed_contractors=6, min_verified_contractors=6,
             min_stripe_ready_contractors=6,
         )
+        self._approve()
         self.assertEqual(automatic_matching_readiness("Austin", "TX", "flooring")["counts"]["claimed_contractors"], 6)
         self.contractors[0].payouts_enabled = False
         self.contractors[0].save(update_fields=["payouts_enabled"])
@@ -1228,13 +1394,13 @@ class MarketplaceGatingTests(TestCase):
             city="Austin",
             state="TX",
             is_enabled=True,
-            approved_trades=["flooring"],
             min_claimed_contractors=1,
             min_verified_contractors=1,
             min_stripe_ready_contractors=1,
             min_trade_categories=1,
             max_bids_per_request=5,
         )
+        self._approve()
         intake = self._intake()
 
         response = self.client.patch(
@@ -1283,13 +1449,13 @@ class MarketplaceGatingTests(TestCase):
             city="Austin",
             state="TX",
             is_enabled=True,
-            approved_trades=["flooring"],
             min_claimed_contractors=1,
             min_verified_contractors=1,
             min_stripe_ready_contractors=1,
             min_trade_categories=1,
             max_bids_per_request=5,
         )
+        self._approve()
         intake = self._intake()
 
         response = self.client.patch(
@@ -1311,13 +1477,13 @@ class MarketplaceGatingTests(TestCase):
             city="Austin",
             state="TX",
             is_enabled=True,
-            approved_trades=["flooring"],
             min_claimed_contractors=1,
             min_verified_contractors=1,
             min_stripe_ready_contractors=1,
             min_trade_categories=1,
             max_bids_per_request=5,
         )
+        self._approve()
         intake = self._intake()
         create_marketplace_invites_for_intake(intake.id)
         opportunity = ContractorOpportunity.objects.get(
@@ -1361,13 +1527,13 @@ class MarketplaceGatingTests(TestCase):
             city="Austin",
             state="TX",
             is_enabled=True,
-            approved_trades=["flooring"],
             min_claimed_contractors=1,
             min_verified_contractors=1,
             min_stripe_ready_contractors=1,
             min_trade_categories=1,
             max_bids_per_request=5,
         )
+        self._approve()
 
         self.client.force_authenticate(user=self.admin_user)
         route_response = self.client.post(
@@ -1398,13 +1564,13 @@ class MarketplaceGatingTests(TestCase):
             city="Austin",
             state="TX",
             is_enabled=True,
-            approved_trades=["flooring"],
             min_claimed_contractors=1,
             min_verified_contractors=1,
             min_stripe_ready_contractors=1,
             min_trade_categories=1,
             max_bids_per_request=5,
         )
+        self._approve()
         intake = self._intake()
 
         result = create_marketplace_invites_for_intake(intake.id)

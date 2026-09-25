@@ -10,7 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from projects.models import Contractor, PublicContractorLead
-from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
+from projects.models_contractor_discovery import AUTOMATIC_MATCHING_TRADES, ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.customer_lifecycle import upsert_customer_for_public_lead
@@ -26,21 +26,7 @@ DEFAULT_MIN_TRADE_CATEGORIES = 6
 DEFAULT_MAX_BIDS_PER_REQUEST = 5
 LOCATION_MISSING_STATUS = "location_needed"
 
-CORE_TRADE_CATEGORIES = {
-    "carpentry",
-    "concrete",
-    "drywall",
-    "electrical",
-    "flooring",
-    "gutters",
-    "hvac",
-    "painting",
-    "plumbing",
-    "remodeling",
-    "roofing",
-    "siding",
-    "windows",
-}
+CORE_TRADE_CATEGORIES = set(AUTOMATIC_MATCHING_TRADES)
 
 
 @dataclass(frozen=True)
@@ -76,6 +62,10 @@ def _with_marketplace_capabilities(readiness: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_location_value(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
+
+
+def automatic_matching_location_keys(city: Any, state: Any) -> tuple[str, str]:
+    return normalize_location_value(city).casefold(), normalize_location_value(state).upper()
 
 
 def intake_marketplace_location(intake: ProjectIntake) -> tuple[str, str, str]:
@@ -147,26 +137,53 @@ def marketplace_thresholds(location: MarketplaceLocation | None = None) -> Marke
     )
 
 
+def matching_marketplace_locations(city: str, state: str) -> list[MarketplaceLocation]:
+    city_key, state_key = automatic_matching_location_keys(city, state)
+    if not city_key or not state_key:
+        return []
+    candidates = MarketplaceLocation.objects.filter(
+        city__icontains=city_key.split()[0], state__icontains=state_key,
+    ).order_by("id")
+    return [
+        row for row in candidates
+        if automatic_matching_location_keys(row.city, row.state) == (city_key, state_key)
+    ]
+
+
 def get_marketplace_location(city: str, state: str) -> MarketplaceLocation | None:
-    city = normalize_location_value(city)
-    state = normalize_location_value(state)
-    if not city or not state:
-        return None
-    return MarketplaceLocation.objects.filter(city__iexact=city, state__iexact=state).first()
+    return next(iter(matching_marketplace_locations(city, state)), None)
 
 
-def _location_listing_qs(city: str, state: str):
-    city = normalize_location_value(city)
-    state = normalize_location_value(state)
-    return ContractorDirectoryListing.objects.select_related("claimed_contractor").filter(city__iexact=city, state__iexact=state)
-
-
-def _location_entry_qs(city: str, state: str):
-    city = normalize_location_value(city)
-    state = normalize_location_value(state)
-    return ContractorDirectoryEntry.objects.select_related("claimed_by_contractor").filter(
-        Q(city__iexact=city, state__iexact=state) | Q(service_city__iexact=city, service_state__iexact=state)
+def _location_listings(city: str, state: str):
+    city_key, state_key = automatic_matching_location_keys(city, state)
+    if not city_key or not state_key:
+        return []
+    # Directory imports can retain whitespace and casing from their source.
+    # Narrow in SQL, then apply the same authoritative key as approvals.
+    candidates = ContractorDirectoryListing.objects.select_related("claimed_contractor").filter(
+        city__icontains=city_key.split()[0], state__icontains=state_key,
     )
+    return [
+        row for row in candidates
+        if automatic_matching_location_keys(row.city, row.state) == (city_key, state_key)
+    ]
+
+
+def _location_entries(city: str, state: str):
+    city_key, state_key = automatic_matching_location_keys(city, state)
+    if not city_key or not state_key:
+        return []
+    candidates = ContractorDirectoryEntry.objects.select_related("claimed_by_contractor").filter(
+        Q(city__icontains=city_key.split()[0], state__icontains=state_key)
+        | Q(service_city__icontains=city_key.split()[0], service_state__icontains=state_key)
+    )
+    return [
+        row for row in candidates
+        if (city_key, state_key) in {
+            automatic_matching_location_keys(row.city, row.state),
+            automatic_matching_location_keys(row.service_city, row.service_state),
+        }
+    ]
 
 
 def _listing_trades(listing: ContractorDirectoryListing) -> set[str]:
@@ -241,19 +258,10 @@ def _request_trades(intake: ProjectIntake) -> set[str]:
             trades.add("remodeling")
         return {normalize_trade(trade) for trade in trades if normalize_trade(trade)}
 
-    # The classified service is authoritative when present. Narrative copy can
-    # mention adjacent trades without authorizing an unrelated automatic match.
-    classified = from_text(str(intake.ai_project_type or ""))
-    if classified:
-        return classified
+    # Only classified fields may authorize an automatic match. A title or
+    # description mentioning a trade is not an authoritative classification.
     return from_text(" ".join(
-        str(value or "")
-        for value in [
-            intake.ai_project_subtype,
-            intake.ai_project_title,
-            intake.accomplishment_text,
-            intake.ai_description,
-        ]
+        str(value or "") for value in (intake.ai_project_type, intake.ai_project_subtype)
     ))
 
 
@@ -268,14 +276,15 @@ def automatic_matching_readiness(
     city = normalize_location_value(city)
     state = normalize_location_value(state)
     trade = normalize_trade(trade)
-    location = get_marketplace_location(city, state) if city and state else None
+    location_matches = matching_marketplace_locations(city, state)
+    location = location_matches[0] if len(location_matches) == 1 else None
     thresholds = marketplace_thresholds(location)
     claimed_ids: set[int] = set()
     verified_ids: set[int] = set()
     payment_ready_ids: set[int] = set()
     if city and state and trade in CORE_TRADE_CATEGORIES:
         if listings is None:
-            listings = list(_location_listing_qs(city, state))
+            listings = _location_listings(city, state)
         for listing in listings:
             if not (listing.claimed_profile and listing.claimed_contractor_id and listing.manually_reviewed):
                 continue
@@ -295,11 +304,19 @@ def automatic_matching_readiness(
         "stripe_ready_contractors": len(payment_ready_ids) >= thresholds.min_stripe_ready_contractors,
     }
     supply_ready = bool(payment_ready_ids) and all(checks.values())
-    approved = bool(location and trade in (location.approved_trades or []))
-    paused = bool(location and trade in (location.paused_trades or []))
+    approval = None
+    if city and state and trade in CORE_TRADE_CATEGORIES:
+        city_key, state_key = automatic_matching_location_keys(city, state)
+        approval = MarketplaceAutomaticMatchingApproval.objects.filter(
+            city_key=city_key, state_key=state_key, trade=trade,
+        ).first()
+    approved = bool(approval and approval.is_approved)
+    paused = bool(approval and not approval.is_approved)
     if not city or not state or trade not in CORE_TRADE_CATEGORIES:
         status = LOCATION_MISSING_STATUS if not city or not state else "service_needed"
-    elif paused or (approved and not location.is_enabled):
+    elif len(location_matches) > 1:
+        status = "location_review_needed"
+    elif paused:
         status = "paused"
     elif not supply_ready:
         status = "building_coverage"
@@ -321,18 +338,20 @@ def automatic_matching_readiness(
         "coverage_gaps": [name for name, passed in checks.items() if not passed],
         "max_bids_per_request": thresholds.max_bids_per_request,
         "location_id": location.id if location else None,
-        "routing_paused_at": location.disabled_at.isoformat() if location and location.disabled_at else None,
+        "routing_paused_at": approval.updated_at.isoformat() if paused else None,
     })
 
 
 def automatic_matching_readiness_rows(city: str, state: str) -> list[dict[str, Any]]:
     """Show services represented by supply or explicitly reviewed by admins."""
-    location = get_marketplace_location(city, state)
-    trades = set(location.approved_trades or []) | set(location.paused_trades or []) if location else set()
-    listings = list(_location_listing_qs(city, state))
+    city_key, state_key = automatic_matching_location_keys(city, state)
+    trades = set(MarketplaceAutomaticMatchingApproval.objects.filter(
+        city_key=city_key, state_key=state_key,
+    ).values_list("trade", flat=True))
+    listings = _location_listings(city, state)
     for listing in listings:
         trades.update(_listing_trades(listing))
-    for entry in _location_entry_qs(city, state):
+    for entry in _location_entries(city, state):
         trades.update(_entry_trades(entry))
     return [
         automatic_matching_readiness(city, state, trade, listings=listings)
@@ -367,8 +386,8 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
         })
     location = get_marketplace_location(city, state)
     thresholds = marketplace_thresholds(location)
-    listings = list(_location_listing_qs(city, state))
-    entries = list(_location_entry_qs(city, state))
+    listings = _location_listings(city, state)
+    entries = _location_entries(city, state)
     discovered_count = len(listings) + len(entries)
     claimed = [row for row in listings if row.claimed_profile and row.claimed_contractor_id]
     claimed_entries = [row for row in entries if row.claimed and row.claimed_by_contractor_id]
@@ -466,9 +485,11 @@ def eligible_marketplace_listings(intake: ProjectIntake):
     request_trades = _request_trades(intake)
     if len(request_trades) != 1:
         return []
-    qs = _location_listing_qs(city, state).filter(claimed_profile=True, claimed_contractor__isnull=False, manually_reviewed=True)
+    listings = _location_listings(city, state)
     rows = []
-    for listing in qs:
+    for listing in listings:
+        if not (listing.claimed_profile and listing.claimed_contractor_id and listing.manually_reviewed):
+            continue
         contractor = listing.claimed_contractor
         if contractor_marketplace_action_block_reason(contractor) or not _listing_verified(listing) or not _contractor_stripe_ready(contractor):
             continue

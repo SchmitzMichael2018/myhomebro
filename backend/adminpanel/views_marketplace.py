@@ -20,9 +20,9 @@ from .permissions import IsAdminUserRole
 from .utils import safe_get
 from .marketplace_analytics import build_marketplace_analytics
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
-from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
+from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import CORE_TRADE_CATEGORIES, automatic_matching_readiness, automatic_matching_readiness_rows, create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_enabled_for_intake, marketplace_request_trade_signature, normalize_location_value, normalize_trade
+from projects.services.marketplace_readiness import CORE_TRADE_CATEGORIES, automatic_matching_location_keys, automatic_matching_readiness, automatic_matching_readiness_rows, create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_enabled_for_intake, marketplace_request_trade_signature, matching_marketplace_locations, normalize_location_value, normalize_trade
 from projects.services.marketplace_request_lifecycle import (
     LIFECYCLE_ARCHIVED,
     LIFECYCLE_PURGE_DUE,
@@ -990,6 +990,13 @@ class AdminMarketplaceOverview(APIView):
                 for city, state in ContractorDirectoryEntry.objects.exclude(service_city="", service_state="").values_list("service_city", "service_state")
             }
         )
+        normalized_locations = {}
+        for city, state in sorted(location_keys):
+            if city and state:
+                normalized_locations.setdefault(automatic_matching_location_keys(city, state), (city, state))
+        for city_key, state_key in MarketplaceAutomaticMatchingApproval.objects.values_list("city_key", "state_key").distinct():
+            normalized_locations.setdefault((city_key, state_key), (city_key.title(), state_key))
+        location_keys = normalized_locations.values()
         saved_marketplace_requests = _marketplace_overview_requests_payload()
         location_rows = [
             location_readiness(city, state)
@@ -1078,7 +1085,7 @@ class AdminMarketplaceOverview(APIView):
                     ],
                     "gaps": gaps[:10],
                     "location_readiness": location_rows[:50],
-                    "automatic_matching_readiness": automatic_matching_rows[:100],
+                    "automatic_matching_readiness": automatic_matching_rows,
                 },
                 "invite_analytics": invite_analytics,
                 "saved_marketplace_requests": saved_marketplace_requests,
@@ -1141,6 +1148,7 @@ class AdminMarketplaceCoverage(APIView):
 class AdminMarketplaceLocationStatus(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserRole]
 
+    @transaction.atomic
     def post(self, request):
         city = normalize_location_value(request.data.get("city"))
         state = normalize_location_value(request.data.get("state"))
@@ -1149,32 +1157,32 @@ class AdminMarketplaceLocationStatus(APIView):
 
         enabled = _safe_bool(request.data.get("enabled"))
         trade = normalize_trade(request.data.get("trade"))
-        if trade and trade not in CORE_TRADE_CATEGORIES:
+        if "trade" in request.data and trade not in CORE_TRADE_CATEGORIES:
             return Response({"detail": "A supported service/trade is required."}, status=status.HTTP_400_BAD_REQUEST)
-        location, _created = MarketplaceLocation.objects.get_or_create(
-            city=city,
-            state=state,
-            defaults={"updated_by": request.user},
-        )
+        matching_locations = matching_marketplace_locations(city, state)
+        if len(matching_locations) > 1:
+            return Response(
+                {"detail": "Multiple legacy location records share this normalized city and state; review them before changing automatic matching."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        location = matching_locations[0] if matching_locations else None
+        if location is None:
+            location = MarketplaceLocation.objects.create(city=city, state=state, updated_by=request.user)
+        location_changed = not trade
         if trade:
-            approved = set(location.approved_trades or [])
-            paused = set(location.paused_trades or [])
-            if enabled:
-                approved.add(trade)
-                paused.discard(trade)
-                location.is_enabled = True
-            else:
-                approved.discard(trade)
-                paused.add(trade)
-            location.approved_trades = sorted(approved)
-            location.paused_trades = sorted(paused)
+            city_key, state_key = automatic_matching_location_keys(city, state)
+            MarketplaceAutomaticMatchingApproval.objects.update_or_create(
+                city_key=city_key, state_key=state_key, trade=trade,
+                defaults={"is_approved": enabled, "updated_by": request.user},
+            )
         else:
-            # Retain the legacy whole-location pause as a kill switch only;
-            # it never approves an individual trade.
+            # Preserve the legacy city setting for historical compatibility only.
+            # It cannot authorize or pause any per-trade automatic match.
             location.is_enabled = enabled
-        location.updated_by = request.user
-        location.admin_notes = _safe_text(request.data.get("admin_notes")) or location.admin_notes
-        if enabled:
+        if "admin_notes" in request.data and _safe_text(request.data.get("admin_notes")):
+            location.admin_notes = _safe_text(request.data.get("admin_notes"))
+            location_changed = True
+        if enabled and not trade:
             location.enabled_at = timezone.now()
             location.disabled_at = None
         elif not trade:
@@ -1189,7 +1197,10 @@ class AdminMarketplaceLocationStatus(APIView):
             if field in request.data:
                 value = _safe_int(request.data.get(field), 0)
                 setattr(location, field, value or None if field != "max_bids_per_request" else max(1, min(value or 5, 5)))
-        location.save()
+                location_changed = True
+        if location_changed:
+            location.updated_by = request.user
+            location.save()
         return Response(
             automatic_matching_readiness(city, state, trade) if trade else location_readiness(city, state),
             status=status.HTTP_200_OK,

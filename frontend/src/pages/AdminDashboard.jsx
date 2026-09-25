@@ -1376,7 +1376,7 @@ export default function AdminDashboard() {
                   <OpsQueue
                     testId="admin-ops-routing-queue"
                     title="Marketplace Routing Queue"
-                    subtitle={`${fmtNumber(opsMarketplace.kpis?.enabled_cities || 0)} enabled city/cities | Avg ${opsMarketplace.health?.average_bids_per_request || 0} bids/request`}
+                    subtitle={`${fmtNumber(opsMarketplace.kpis?.enabled_cities || 0)} legacy city switches (not trade approvals) | Avg ${opsMarketplace.health?.average_bids_per_request || 0} bids/request`}
                     rows={opsMarketplace.routing_queue || []}
                     empty="No saved marketplace requests are waiting for routing."
                     onViewAll={() => navigate("/app/admin/marketplace")}

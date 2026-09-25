@@ -1147,7 +1147,7 @@ export default function AdminMarketplacePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {readinessRows.length ? readinessRows.slice(0, 30).map((row) => (
+                    {readinessRows.length ? readinessRows.map((row) => (
                       <tr key={`${row.city}-${row.state}-${row.trade}`} data-testid={`admin-marketplace-location-${row.city}-${row.state}-${row.trade}`} className="hover:bg-white/5">
                         <td className={tableCellClass}>
                           <div className="font-extrabold text-white">{row.city}, {row.state}</div>
@@ -1155,7 +1155,7 @@ export default function AdminMarketplacePage() {
                         <td className={tableCellClass}><span className="font-bold capitalize text-white">{row.trade}</span></td>
                         <td className={tableCellClass}>
                           <Badge tone={row.status === "active" ? "emerald" : row.status === "awaiting_approval" ? "sky" : row.status === "paused" ? "rose" : "amber"}>
-                            {{ active: "Automatic matching active", awaiting_approval: "Threshold met — awaiting admin approval", paused: "Paused", building_coverage: "Building coverage — manual selection required", location_needed: "Location data needed", service_needed: "Service data needed" }[row.status] || "Building coverage — manual selection required"}
+                            {{ active: "Automatic matching active", awaiting_approval: "Threshold met — awaiting admin approval", paused: "Paused", building_coverage: "Building coverage — manual selection required", location_needed: "Location data needed", location_review_needed: "Duplicate legacy locations — admin review required", service_needed: "Service data needed" }[row.status] || "Building coverage — manual selection required"}
                           </Badge>
                         </td>
                         <td className={tableCellClass}>
@@ -1174,7 +1174,7 @@ export default function AdminMarketplacePage() {
                               type="button"
                               data-testid={`admin-marketplace-location-enable-${row.city}-${row.state}-${row.trade}`}
                               onClick={() => setLocationEnabled(row, true)}
-                              disabled={row.status === "active" || row.status === "building_coverage"}
+                              disabled={row.status === "active" || row.status === "building_coverage" || row.status === "location_review_needed"}
                               className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Approve matching
