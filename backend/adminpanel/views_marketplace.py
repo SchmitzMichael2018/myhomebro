@@ -279,6 +279,8 @@ def _saved_marketplace_request_row(
         "last_meaningful_activity_at": evaluation["last_meaningful_activity_at"],
         "archived_at": _safe_dt(intake.marketplace_archived_at),
         "archive_reason": intake.marketplace_archive_reason,
+        "last_archived_at": _safe_dt(intake.marketplace_last_archived_at),
+        "last_archive_reason": intake.marketplace_last_archive_reason,
         "restored_at": _safe_dt(intake.marketplace_restored_at),
         "purge_eligible_at": evaluation["purge_eligible_at"],
         "protection_reason": evaluation["protection_reason"],
@@ -383,6 +385,7 @@ def _marketplace_request_evaluations(qs, *, status_filter: str = "", chunk_size:
         "submitted_at", "post_submit_flow_selected_at", "created_at", "analyzed_at",
         "first_marketplace_reminder_sent_at", "final_marketplace_reminder_sent_at",
         "marketplace_archived_at", "marketplace_archive_reason",
+        "marketplace_last_archived_at", "marketplace_last_archive_reason",
         "marketplace_restored_at", "marketplace_hold_reason",
     )
     # Operational status depends on the authoritative Python readiness and

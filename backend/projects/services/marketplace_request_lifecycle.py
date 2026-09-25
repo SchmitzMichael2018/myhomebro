@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from projects.models import ContractorInvite, Notification, PublicContractorLead
@@ -13,11 +13,13 @@ from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDiscoveryInvite,
     ContractorOpportunity,
+    OpportunityEstimateAppointment,
 )
 from projects.models_project_intake import ProjectIntake
+from projects.models_proposals import Proposal
 from projects.services.notification_center import create_notification
 from projects.services.smart_notifications import create_smart_notification
-from projects.models_customer_portal import SmartNotificationEvent
+from projects.models_customer_portal import CustomerRequest, SmartNotification, SmartNotificationEvent
 
 
 ARCHIVE_REASON_UNANSWERED = "unanswered_timeout"
@@ -59,7 +61,25 @@ def lifecycle_policy() -> dict[str, int]:
 
 
 def request_started_at(intake: ProjectIntake):
-    return intake.submitted_at or intake.post_submit_flow_selected_at or intake.created_at
+    original = intake.submitted_at or intake.post_submit_flow_selected_at or intake.created_at
+    # Restoring an old request starts a new review window without erasing its
+    # original submission or reminder history.
+    if intake.marketplace_restored_at and intake.marketplace_restored_at > original:
+        return intake.marketplace_restored_at
+    return original
+
+
+def _proposals_for_intake(intake: ProjectIntake):
+    opportunity_ids = ContractorOpportunity.objects.filter(intake_request=intake).values_list("id", flat=True)
+    lead_ids = PublicContractorLead.objects.filter(
+        ai_analysis__source_intake_id=intake.id
+    ).values_list("id", flat=True)
+    return Proposal.objects.filter(
+        Q(source_type=Proposal.SOURCE_INTAKE, source_id=intake.id)
+        | Q(contractor_opportunity__intake_request=intake)
+        | Q(source_type=Proposal.SOURCE_OPPORTUNITY, source_id__in=opportunity_ids)
+        | Q(source_type=Proposal.SOURCE_LEAD, source_id__in=lead_ids)
+    )
 
 
 def meaningful_contractor_response(intake: ProjectIntake) -> bool:
@@ -67,9 +87,7 @@ def meaningful_contractor_response(intake: ProjectIntake) -> bool:
         return True
     if ContractorInvite.objects.filter(
         source_intake=intake,
-        accepted_at__isnull=False,
-        accepted_by_contractor__isnull=False,
-    ).exists():
+    ).filter(Q(accepted_at__isnull=False) | Q(accepted_by_contractor__isnull=False)).exists():
         return True
     if ContractorDiscoveryInvite.objects.filter(public_intake=intake).filter(
         Q(status__in=(
@@ -77,6 +95,8 @@ def meaningful_contractor_response(intake: ProjectIntake) -> bool:
             ContractorDiscoveryInvite.STATUS_RESPONDED,
         ))
         | Q(agreement__isnull=False)
+        | Q(claimed_at__isnull=False)
+        | Q(response_at__isnull=False, status=ContractorDiscoveryInvite.STATUS_RESPONDED)
     ).exists():
         return True
     if ContractorOpportunity.objects.filter(intake_request=intake).filter(
@@ -88,15 +108,26 @@ def meaningful_contractor_response(intake: ProjectIntake) -> bool:
         | Q(project__isnull=False)
         | Q(property_work_order__isnull=False)
         | Q(converted_agreement__isnull=False)
+        | Q(accepted_by_contractor__isnull=False)
     ).exists():
+        return True
+    if OpportunityEstimateAppointment.objects.filter(
+        Q(project_intake=intake) | Q(contractor_opportunity__intake_request=intake)
+    ).exists():
+        return True
+    if _proposals_for_intake(intake).exists():
         return True
     return PublicContractorLead.objects.filter(
         ai_analysis__source_intake_id=intake.id,
-        status__in=(
+    ).filter(
+        Q(status__in=(
             PublicContractorLead.STATUS_ACCEPTED,
             PublicContractorLead.STATUS_CONTACTED,
             PublicContractorLead.STATUS_QUALIFIED,
-        ),
+        ))
+        | Q(accepted_at__isnull=False)
+        | Q(converted_at__isnull=False)
+        | Q(converted_agreement__isnull=False)
     ).exists()
 
 
@@ -112,9 +143,7 @@ def meaningful_response_intake_ids(intake_ids) -> set[int]:
     responded.update(
         ContractorInvite.objects.filter(
             source_intake_id__in=intake_ids,
-            accepted_at__isnull=False,
-            accepted_by_contractor__isnull=False,
-        ).values_list("source_intake_id", flat=True)
+        ).filter(Q(accepted_at__isnull=False) | Q(accepted_by_contractor__isnull=False)).values_list("source_intake_id", flat=True)
     )
     responded.update(
         ContractorDiscoveryInvite.objects.filter(public_intake_id__in=intake_ids).filter(
@@ -123,6 +152,8 @@ def meaningful_response_intake_ids(intake_ids) -> set[int]:
                 ContractorDiscoveryInvite.STATUS_RESPONDED,
             ))
             | Q(agreement__isnull=False)
+            | Q(claimed_at__isnull=False)
+            | Q(response_at__isnull=False, status=ContractorDiscoveryInvite.STATUS_RESPONDED)
         ).values_list("public_intake_id", flat=True)
     )
     responded.update(
@@ -135,34 +166,144 @@ def meaningful_response_intake_ids(intake_ids) -> set[int]:
             | Q(project__isnull=False)
             | Q(property_work_order__isnull=False)
             | Q(converted_agreement__isnull=False)
+            | Q(accepted_by_contractor__isnull=False)
         ).values_list("intake_request_id", flat=True)
+    )
+    responded.update(
+        OpportunityEstimateAppointment.objects.filter(
+            project_intake_id__in=intake_ids
+        ).values_list("project_intake_id", flat=True)
+    )
+    responded.update(
+        Proposal.objects.filter(
+            source_type=Proposal.SOURCE_INTAKE,
+            source_id__in=intake_ids,
+        ).values_list("source_id", flat=True)
+    )
+    responded.update(
+        int(value) for value in Proposal.objects.filter(
+            contractor_opportunity__intake_request_id__in=intake_ids,
+        ).values_list("contractor_opportunity__intake_request_id", flat=True)
+        if value is not None
+    )
+    proposal_opportunity_ids = Proposal.objects.filter(
+        source_type=Proposal.SOURCE_OPPORTUNITY,
+    ).values_list("source_id", flat=True)
+    responded.update(
+        ContractorOpportunity.objects.filter(
+            id__in=proposal_opportunity_ids,
+            intake_request_id__in=intake_ids,
+        ).values_list("intake_request_id", flat=True)
+    )
+    proposal_lead_ids = Proposal.objects.filter(
+        source_type=Proposal.SOURCE_LEAD,
+    ).values_list("source_id", flat=True)
+    responded.update(
+        int(value) for value in PublicContractorLead.objects.filter(
+            id__in=proposal_lead_ids,
+            ai_analysis__source_intake_id__in=intake_ids,
+        ).values_list("ai_analysis__source_intake_id", flat=True)
+        if value is not None
+    )
+    responded.update(
+        OpportunityEstimateAppointment.objects.filter(
+            contractor_opportunity__intake_request_id__in=intake_ids
+        ).values_list("contractor_opportunity__intake_request_id", flat=True)
     )
     responded.update(
         int(value)
         for value in PublicContractorLead.objects.filter(
             ai_analysis__source_intake_id__in=intake_ids,
-            status__in=(
+        ).filter(
+            Q(status__in=(
                 PublicContractorLead.STATUS_ACCEPTED,
                 PublicContractorLead.STATUS_CONTACTED,
                 PublicContractorLead.STATUS_QUALIFIED,
-            ),
+            ))
+            | Q(accepted_at__isnull=False)
+            | Q(converted_at__isnull=False)
+            | Q(converted_agreement__isnull=False)
         ).values_list("ai_analysis__source_intake_id", flat=True)
         if value is not None
     )
     return responded
 
 
+def _has_related_history(instance, *, ignored_models=()) -> bool:
+    """Fail closed before deleting a related object with downstream records.
+
+    This covers additions such as proposals or compliance records without
+    requiring the lifecycle job to know their contents or delete behavior.
+    """
+    for relation in instance._meta.related_objects:
+        if relation.related_model in ignored_models:
+            continue
+        if relation.related_model.objects.filter(**{relation.field.attname: instance.pk}).exists():
+            return True
+    return False
+
+
 def retention_protection_reason(intake: ProjectIntake) -> str:
     if intake.marketplace_hold_reason:
         return intake.marketplace_hold_reason
+    if intake.status == "draft":
+        return "Unsubmitted draft"
+    if intake.traffic_classification in {"test", "spam_fraud", "archived"}:
+        return "Non-operational traffic classification"
     if intake.agreement_id or intake.status == "converted" or intake.converted_at:
         return "Converted agreement history"
+    if intake.public_lead_id:
+        return "Public lead history"
     if meaningful_contractor_response(intake):
         return "Meaningful contractor response"
-    if intake.source_customer_requests.exists():
+    if CustomerRequest.objects.filter(source_intake=intake).exists():
         return "Customer request history"
     if intake.classification_events.exists():
         return "Administrative audit history"
+    if intake.clarification_photos.exists():
+        return "Customer-provided request attachment"
+    if _proposals_for_intake(intake).exists():
+        return "Contractor estimate history"
+    if intake.directory_discoveries.filter(selected_by_homeowner=True).exists():
+        return "Customer-selected contractor history"
+    if intake.estimate_appointments.exists() or OpportunityEstimateAppointment.objects.filter(
+        contractor_opportunity__intake_request=intake
+    ).exists():
+        return "Estimate appointment history"
+    if ContractorOpportunity.objects.filter(intake_request=intake).filter(
+        Q(converted_customer__isnull=False)
+        | Q(customer__isnull=False)
+        | Q(origin_capture__isnull=False)
+    ).exists():
+        return "Customer or capture history"
+    if PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).filter(
+        Q(converted_homeowner__isnull=False)
+        | Q(converted_agreement__isnull=False)
+        | Q(converted_at__isnull=False)
+        | Q(origin_capture__isnull=False)
+        | Q(qr_asset__isnull=False)
+        | Q(estimate_appointments__isnull=False)
+    ).exists():
+        return "Lead or appointment history"
+    for opportunity in ContractorOpportunity.objects.filter(intake_request=intake).only(
+        "id", "conversion_notes", "estimate_preference_notes"
+    ):
+        if (opportunity.conversion_notes or "").strip() or (opportunity.estimate_preference_notes or "").strip():
+            return "Opportunity review history"
+        if _has_related_history(opportunity):
+            return "Opportunity downstream history"
+    safe_lead_statuses = (
+        PublicContractorLead.STATUS_NEW,
+        PublicContractorLead.STATUS_REJECTED,
+        PublicContractorLead.STATUS_ARCHIVED,
+    )
+    for lead in PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).only(
+        "id", "status", "internal_notes"
+    ):
+        if (lead.internal_notes or "").strip():
+            return "Lead administrative history"
+        if lead.status not in safe_lead_statuses or _has_related_history(lead, ignored_models=(ProjectIntake,)):
+            return "Lead downstream history"
     if ContractorOpportunity.objects.filter(intake_request=intake).filter(
         Q(project__isnull=False)
         | Q(property_work_order__isnull=False)
@@ -198,13 +339,22 @@ def lifecycle_state(intake: ProjectIntake, *, now=None, has_meaningful_response=
             code = LIFECYCLE_PURGE_DUE
         else:
             code = LIFECYCLE_ARCHIVED
+    elif CustomerRequest.objects.filter(
+        source_intake=intake,
+        status=CustomerRequest.STATUS_CANCELLED,
+    ).exists():
+        code = LIFECYCLE_RETENTION_PROTECTED
+        protection_reason = "Cancelled customer request"
     elif (
         meaningful_contractor_response(intake)
         if has_meaningful_response is None
         else has_meaningful_response
     ):
         code = LIFECYCLE_RESPONDED
-    elif intake.status == "draft" or intake.traffic_classification in {"test", "spam_fraud", "archived"}:
+    elif intake.traffic_classification == "archived":
+        code = LIFECYCLE_RETENTION_PROTECTED
+        protection_reason = "Administrative traffic classification"
+    elif intake.status == "draft" or intake.traffic_classification in {"test", "spam_fraud"}:
         code = LIFECYCLE_OPEN
     elif age >= timedelta(days=policy["archive_days"]):
         code = LIFECYCLE_ARCHIVE_DUE
@@ -279,13 +429,20 @@ def _archive_customer_notice(intake: ProjectIntake) -> bool:
     if not email:
         return False
     before = intake.source_customer_requests.first()
+    dedupe_key = f"marketplace-request:{intake.id}:archived"
+    already_exists = SmartNotification.objects.filter(
+        event_type=SmartNotificationEvent.MARKETPLACE_REQUEST_ARCHIVED,
+        metadata__dedupe_key=dedupe_key,
+    ).exists()
+    if already_exists:
+        return False
     notification = create_smart_notification(
         event_type=SmartNotificationEvent.MARKETPLACE_REQUEST_ARCHIVED,
         recipient_email=email,
         homeowner=intake.homeowner,
         customer_request=before,
         action_url="/portal",
-        context={"dedupe_key": f"marketplace-request:{intake.id}:archived"},
+        context={"dedupe_key": dedupe_key},
         title_override="Your unanswered request was archived",
         message_override=(
             "No contractor response was received during the response window. "
@@ -309,6 +466,8 @@ def archive_request(intake: ProjectIntake, *, now=None, reason=ARCHIVE_REASON_AD
 def restore_request(intake: ProjectIntake, *, now=None) -> bool:
     now = now or timezone.now()
     updated = ProjectIntake.objects.filter(pk=intake.pk, marketplace_archived_at__isnull=False).update(
+        marketplace_last_archived_at=F("marketplace_archived_at"),
+        marketplace_last_archive_reason=F("marketplace_archive_reason"),
         marketplace_archived_at=None,
         marketplace_archive_reason="",
         marketplace_restored_at=now,
@@ -378,16 +537,29 @@ def process_marketplace_request_lifecycle(*, now=None, limit=500, dry_run=False)
                         counts.purged += 1
                     else:
                         fresh = ProjectIntake.objects.get(pk=intake.pk)
-                        protection = retention_protection_reason(fresh)
+                        refreshed_state = lifecycle_state(fresh, now=now)
+                        protection = refreshed_state["protection_reason"]
                         if protection:
                             ProjectIntake.objects.filter(pk=fresh.pk).update(
                                 marketplace_retention_protection_reason=protection,
                                 updated_at=now,
                             )
                             counts.retention_protected += 1
+                        elif refreshed_state["code"] == LIFECYCLE_PURGE_DUE:
+                            # Acquire SQLite's writer lock with a conditional
+                            # transition before any destructive child delete.
+                            claimed = ProjectIntake.objects.filter(
+                                pk=fresh.pk,
+                                marketplace_archived_at=fresh.marketplace_archived_at,
+                                marketplace_restored_at=fresh.marketplace_restored_at,
+                            ).update(updated_at=now)
+                            if claimed:
+                                _purge_request(fresh)
+                                counts.purged += 1
+                            else:
+                                counts.skipped += 1
                         else:
-                            _purge_request(fresh)
-                            counts.purged += 1
+                            counts.skipped += 1
                 elif code == LIFECYCLE_ARCHIVE_DUE:
                     if dry_run:
                         counts.archived += 1

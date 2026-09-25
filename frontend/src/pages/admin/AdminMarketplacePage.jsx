@@ -1018,7 +1018,36 @@ export default function AdminMarketplacePage() {
               <p className="mb-4 text-sm leading-6 text-sky-100/70">
                 Archived unanswered requests are removed from operational queues. Eligible unconverted requests are permanently removed after the retention period. Requests connected to project, financial, dispute, warranty, or other protected history are retained.
               </p>
-              <div className="overflow-x-auto">
+              <div className="space-y-3 md:hidden">
+                {(savedRequests.results || []).length ? savedRequests.results.map((row) => (
+                  <article key={row.id} data-testid={`admin-marketplace-request-mobile-${row.id}`} className="rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-sky-50">
+                    <div className="font-extrabold text-white">{row.request_title}</div>
+                    <div className="mt-1 text-xs text-sky-100/60">#{row.id} · {formatDate(row.submitted_at)}</div>
+                    <dl className="mt-3 grid gap-3 text-xs">
+                      <div><dt className="font-bold text-sky-100/60">Location / trade</dt><dd className="mt-1">{row.location_complete ? [row.city, row.state, row.zip].filter(Boolean).join(", ") : "Location needed"} · {row.project_subtype || row.project_type || "Trade pending"}</dd></div>
+                      <div><dt className="font-bold text-sky-100/60">Readiness</dt><dd className="mt-1">{row.marketplace_status_label || String(row.marketplace_status || "").replace(/_/g, " ")}</dd></div>
+                      <div><dt className="font-bold text-sky-100/60">Lifecycle</dt><dd className="mt-1">{String(row.lifecycle_status || "open").replace(/_/g, " ")} · {row.request_age_days || 0} days old</dd></div>
+                      {row.archived_at ? <div><dt className="font-bold text-sky-100/60">Archived</dt><dd className="mt-1">{formatDate(row.archived_at)} · {String(row.archive_reason || "archived").replace(/_/g, " ")}</dd></div> : null}
+                      {row.protection_reason ? <div><dt className="font-bold text-amber-200">Retention protection</dt><dd className="mt-1 text-amber-100">{row.protection_reason}</dd></div> : null}
+                      <div><dt className="font-bold text-sky-100/60">Supply</dt><dd className="mt-1">{row.eligible_contractors || 0} eligible · {row.counts?.invites || 0} invites · cap {row.cap || 5}</dd></div>
+                    </dl>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {row.archived_at ? (
+                        <>
+                          <button type="button" onClick={() => navigate(`/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">View request</button>
+                          <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "restore", row }); }} className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-extrabold text-emerald-950">Restore</button>
+                        </>
+                      ) : (
+                        <>
+                          {row.routable_now ? <button type="button" onClick={() => routeSavedRequest(row)} disabled={routingIds[row.id]} className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-extrabold text-emerald-950 disabled:opacity-50">{routingIds[row.id] ? "Routing..." : "Route request"}</button> : <button type="button" onClick={() => navigate(row.marketplace_action?.target || `/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">{row.marketplace_action?.label || "View request"}</button>}
+                          <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "archive", row }); }} className="rounded-lg border border-rose-300/50 px-3 py-2 text-xs font-extrabold text-rose-100">Archive</button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )) : <p className="text-sm text-sky-100/70">No marketplace requests match these filters.</p>}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full">
                   <thead>
                     <tr>
@@ -1065,19 +1094,22 @@ export default function AdminMarketplacePage() {
                           <div className="mt-1 text-xs text-sky-100/60">{row.counts?.invites || 0} invites · cap {row.cap || 5}</div>
                         </td>
                         <td className={tableCellClass}>
-                          {["archived", "purge_due", "retention_protected"].includes(row.lifecycle_status) ? (
-                            <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "restore", row }); }} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950">
-                              Restore
-                            </button>
-                          ) : row.routable_now ? (
-                            <button type="button" onClick={() => routeSavedRequest(row)} disabled={routingIds[row.id]} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950 disabled:opacity-50">
-                              {routingIds[row.id] ? "Routing..." : "Route request"}
-                            </button>
+                          {row.archived_at ? (
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" onClick={() => navigate(`/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">View request</button>
+                              <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "restore", row }); }} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950">Restore</button>
+                            </div>
                           ) : (
                             <div className="flex flex-wrap gap-2">
-                              <button type="button" onClick={() => navigate(row.marketplace_action?.target || `/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">
-                                {row.marketplace_action?.label || "View request"}
-                              </button>
+                              {row.routable_now ? (
+                                <button type="button" onClick={() => routeSavedRequest(row)} disabled={routingIds[row.id]} className="rounded-lg bg-emerald-300 px-3 py-1.5 text-xs font-extrabold text-emerald-950 disabled:opacity-50">
+                                  {routingIds[row.id] ? "Routing..." : "Route request"}
+                                </button>
+                              ) : (
+                                <button type="button" onClick={() => navigate(row.marketplace_action?.target || `/app/admin/requests?request=${row.id}`)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">
+                                  {row.marketplace_action?.label || "View request"}
+                                </button>
+                              )}
                               <button type="button" onClick={() => { setRequestLifecycleError(""); setRequestLifecycleAction({ action: "archive", row }); }} className="rounded-lg border border-rose-300/50 px-3 py-1.5 text-xs font-extrabold text-rose-100">
                                 Archive
                               </button>

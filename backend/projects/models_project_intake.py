@@ -244,6 +244,8 @@ class ProjectIntake(models.Model):
     final_marketplace_reminder_sent_at = models.DateTimeField(null=True, blank=True)
     marketplace_archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     marketplace_archive_reason = models.CharField(max_length=64, blank=True, default="")
+    marketplace_last_archived_at = models.DateTimeField(null=True, blank=True)
+    marketplace_last_archive_reason = models.CharField(max_length=64, blank=True, default="")
     marketplace_restored_at = models.DateTimeField(null=True, blank=True)
     marketplace_retention_protection_reason = models.CharField(max_length=255, blank=True, default="")
     marketplace_hold_reason = models.CharField(max_length=255, blank=True, default="")

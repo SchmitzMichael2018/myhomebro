@@ -37,6 +37,16 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name='projectintake',
+            name='marketplace_last_archived_at',
+            field=models.DateTimeField(blank=True, null=True),
+        ),
+        migrations.AddField(
+            model_name='projectintake',
+            name='marketplace_last_archive_reason',
+            field=models.CharField(blank=True, default='', max_length=64),
+        ),
+        migrations.AddField(
+            model_name='projectintake',
             name='marketplace_restored_at',
             field=models.DateTimeField(blank=True, null=True),
         ),

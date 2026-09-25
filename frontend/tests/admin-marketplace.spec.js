@@ -500,12 +500,20 @@ async function installMarketplaceMocks(page, { includeLegacyMissingLocation = fa
         lifecycleStatus = 'retention_protected';
       }
       const payload = overviewPayload().saved_marketplace_requests;
+      const selectedLifecycle = requestUrl.searchParams.get('lifecycle_status') || 'operational';
+      const results = payload.results.filter((row) => {
+        const rowLifecycle = row.lifecycle_status || 'open';
+        if (selectedLifecycle === 'all') return true;
+        if (selectedLifecycle === 'operational') return !['archived', 'purge_due', 'retention_protected'].includes(rowLifecycle);
+        return rowLifecycle === selectedLifecycle;
+      });
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           ...payload,
-          pagination: { page: 1, page_size: 25, total: payload.results.length, total_pages: 1, has_previous: false, has_next: false },
+          results,
+          pagination: { page: 1, page_size: 25, total: results.length, total_pages: 1, has_previous: false, has_next: false },
         }),
       });
       return;
@@ -846,6 +854,9 @@ test('admin request lifecycle uses URL filters and confirmed archive and restore
 
   await page.getByRole('button', { name: 'Archive' }).click();
   await page.getByRole('button', { name: 'Archive request' }).click();
+  await expect(page.getByTestId('admin-marketplace-request-row-501')).toHaveCount(0);
+  await page.getByLabel('Filter lifecycle status').selectOption('archived');
+  await page.getByRole('button', { name: 'Apply filters' }).click();
   await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
   await page.getByTestId('admin-marketplace-request-queue').screenshot({
     path: 'test-results/marketplace-lifecycle-archived-filter.png',
@@ -855,6 +866,7 @@ test('admin request lifecycle uses URL filters and confirmed archive and restore
   await page.getByRole('button', { name: 'Restore' }).click();
   await expect(page.getByTestId('admin-marketplace-request-lifecycle-dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Restore request' }).click();
+  await expect(page.getByTestId('admin-marketplace-request-row-501')).toHaveCount(0);
   expect(lifecycleRequests).toEqual([
     { action: 'archive', confirmed: true },
     { action: 'restore', confirmed: true },
@@ -868,6 +880,8 @@ test('admin request lifecycle uses URL filters and confirmed archive and restore
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('admin-marketplace-request-mobile-501')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-request-mobile-501')).toContainText('Retention protection');
   await page.getByTestId('admin-marketplace-request-queue').screenshot({
     path: 'test-results/marketplace-lifecycle-mobile-archived.png',
   });
