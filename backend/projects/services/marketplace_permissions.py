@@ -114,6 +114,12 @@ def contractor_marketplace_action_block_reason(contractor: Contractor | None) ->
     user = getattr(contractor, "user", None)
     if user and not getattr(user, "is_active", True):
         return "This contractor account is not active."
+    if user and getattr(user, "verification_state", "") == User.VerificationState.DISABLED:
+        return "This contractor account is disabled."
+    if user and getattr(user, "trust_classification", "") == User.TrustClassification.SPAM_FRAUD:
+        return "This contractor account is blocked."
+    if not getattr(contractor, "is_active", True):
+        return "This contractor profile is not active."
     if getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_SUSPENDED:
         return "This contractor is suspended from marketplace work."
     if getattr(contractor, "marketplace_verification_status", "") != Contractor.MARKETPLACE_VERIFIED:

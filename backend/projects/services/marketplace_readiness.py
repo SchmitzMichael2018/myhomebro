@@ -222,42 +222,126 @@ def _listing_verified(listing: ContractorDirectoryListing) -> bool:
 
 
 def _request_trades(intake: ProjectIntake) -> set[str]:
-    source_text = " ".join(
+    def from_text(source_text: str) -> set[str]:
+        source_text = source_text.lower()
+        trades = {trade for trade in CORE_TRADE_CATEGORIES if trade in source_text}
+        if "paint" in source_text:
+            trades.add("painting")
+        if "floor" in source_text:
+            trades.add("flooring")
+        if "roof" in source_text:
+            trades.add("roofing")
+        if "gutter" in source_text or "downspout" in source_text:
+            trades.add("gutters")
+        if "window" in source_text:
+            trades.add("windows")
+        if "carpenter" in source_text or "wood" in source_text or "trim" in source_text:
+            trades.add("carpentry")
+        if "remodel" in source_text or "renovation" in source_text:
+            trades.add("remodeling")
+        return {normalize_trade(trade) for trade in trades if normalize_trade(trade)}
+
+    # The classified service is authoritative when present. Narrative copy can
+    # mention adjacent trades without authorizing an unrelated automatic match.
+    classified = from_text(str(intake.ai_project_type or ""))
+    if classified:
+        return classified
+    return from_text(" ".join(
         str(value or "")
         for value in [
-            intake.ai_project_type,
             intake.ai_project_subtype,
             intake.ai_project_title,
             intake.accomplishment_text,
             intake.ai_description,
         ]
-    ).lower()
-    trades = set()
-    for trade in CORE_TRADE_CATEGORIES:
-        if trade in source_text:
-            trades.add(trade)
-    if "paint" in source_text:
-        trades.add("painting")
-    if "floor" in source_text:
-        trades.add("flooring")
-    if "roof" in source_text:
-        trades.add("roofing")
-    if "gutter" in source_text or "downspout" in source_text:
-        trades.add("gutters")
-    if "window" in source_text:
-        trades.add("windows")
-    if "carpenter" in source_text or "wood" in source_text or "trim" in source_text:
-        trades.add("carpentry")
-    if "remodel" in source_text or "renovation" in source_text:
-        trades.add("remodeling")
-    return {normalize_trade(trade) for trade in trades if normalize_trade(trade)}
+    ))
 
 
 def marketplace_request_trade_signature(intake: ProjectIntake) -> tuple[str, ...]:
     return tuple(sorted(_request_trades(intake)))
 
 
+def automatic_matching_readiness(
+    city: str, state: str, trade: str, *, listings: list[ContractorDirectoryListing] | None = None,
+) -> dict[str, Any]:
+    """Fail-closed location-and-trade gate backed only by routable supply."""
+    city = normalize_location_value(city)
+    state = normalize_location_value(state)
+    trade = normalize_trade(trade)
+    location = get_marketplace_location(city, state) if city and state else None
+    thresholds = marketplace_thresholds(location)
+    claimed_ids: set[int] = set()
+    verified_ids: set[int] = set()
+    payment_ready_ids: set[int] = set()
+    if city and state and trade in CORE_TRADE_CATEGORIES:
+        if listings is None:
+            listings = list(_location_listing_qs(city, state))
+        for listing in listings:
+            if not (listing.claimed_profile and listing.claimed_contractor_id and listing.manually_reviewed):
+                continue
+            if trade not in _listing_trades(listing):
+                continue
+            contractor = listing.claimed_contractor
+            if contractor_marketplace_action_block_reason(contractor):
+                continue
+            claimed_ids.add(contractor.id)
+            if _listing_verified(listing):
+                verified_ids.add(contractor.id)
+                if _contractor_stripe_ready(contractor):
+                    payment_ready_ids.add(contractor.id)
+    checks = {
+        "claimed_contractors": len(claimed_ids) >= thresholds.min_claimed_contractors,
+        "verified_contractors": len(verified_ids) >= thresholds.min_verified_contractors,
+        "stripe_ready_contractors": len(payment_ready_ids) >= thresholds.min_stripe_ready_contractors,
+    }
+    supply_ready = bool(payment_ready_ids) and all(checks.values())
+    approved = bool(location and trade in (location.approved_trades or []))
+    paused = bool(location and trade in (location.paused_trades or []))
+    if not city or not state or trade not in CORE_TRADE_CATEGORIES:
+        status = LOCATION_MISSING_STATUS if not city or not state else "service_needed"
+    elif paused or (approved and not location.is_enabled):
+        status = "paused"
+    elif not supply_ready:
+        status = "building_coverage"
+    elif not approved:
+        status = "awaiting_approval"
+    else:
+        status = "active"
+    return _with_marketplace_capabilities({
+        "city": city, "state": state, "trade": trade,
+        "status": status, "enabled": status == "active",
+        "manual_enabled": approved, "manual_approval_required": True,
+        "thresholds": thresholds.__dict__,
+        "counts": {
+            "claimed_contractors": len(claimed_ids),
+            "verified_contractors": len(verified_ids),
+            "stripe_ready_contractors": len(payment_ready_ids),
+        },
+        "checks": checks,
+        "coverage_gaps": [name for name, passed in checks.items() if not passed],
+        "max_bids_per_request": thresholds.max_bids_per_request,
+        "location_id": location.id if location else None,
+        "routing_paused_at": location.disabled_at.isoformat() if location and location.disabled_at else None,
+    })
+
+
+def automatic_matching_readiness_rows(city: str, state: str) -> list[dict[str, Any]]:
+    """Show services represented by supply or explicitly reviewed by admins."""
+    location = get_marketplace_location(city, state)
+    trades = set(location.approved_trades or []) | set(location.paused_trades or []) if location else set()
+    listings = list(_location_listing_qs(city, state))
+    for listing in listings:
+        trades.update(_listing_trades(listing))
+    for entry in _location_entry_qs(city, state):
+        trades.update(_entry_trades(entry))
+    return [
+        automatic_matching_readiness(city, state, trade, listings=listings)
+        for trade in sorted(trades & CORE_TRADE_CATEGORIES)
+    ]
+
+
 def location_readiness(city: str, state: str) -> dict[str, Any]:
+    """Legacy citywide coverage metrics; never an automatic-routing decision."""
     city = normalize_location_value(city)
     state = normalize_location_value(state)
     if not city or not state:
@@ -317,9 +401,7 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
         "manual_enabled": bool(location and location.is_enabled),
     }
     operationally_ready = all(checks[key] for key in ["claimed_contractors", "verified_contractors", "stripe_ready_contractors", "trade_categories"])
-    if operationally_ready and checks["manual_enabled"]:
-        status = MarketplaceLocation.STATUS_ENABLED
-    elif operationally_ready:
+    if operationally_ready:
         status = MarketplaceLocation.STATUS_READY
     elif (
         len(claimed) + len(claimed_entries) >= max(1, thresholds.min_claimed_contractors // 2)
@@ -334,7 +416,8 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
         "city": city,
         "state": state,
         "status": status,
-        "enabled": status == MarketplaceLocation.STATUS_ENABLED,
+        "enabled": False,
+        "legacy_city_switch_enabled": checks["manual_enabled"],
         "manual_enabled": checks["manual_enabled"],
         "manual_approval_required": True,
         "thresholds": thresholds.__dict__,
@@ -360,26 +443,18 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
 
 def marketplace_enabled_for_intake(intake: ProjectIntake) -> dict[str, Any]:
     city, state, _zip_code = intake_marketplace_location(intake)
-    if not city or not state:
-        return _with_marketplace_capabilities({
-            "city": normalize_location_value(city),
-            "state": normalize_location_value(state),
-            "status": LOCATION_MISSING_STATUS,
-            "enabled": False,
-            "message": "Your request has been saved. Add a project city and state for automatic matching; contractor search and direct invitations remain available.",
-            "coverage_message": "Building local coverage",
-            "automatic_matching_message": "Automatic matching needs a complete project city and state.",
-            "direct_invitation_message": "Direct contractor invitations are available.",
-        })
-    readiness = location_readiness(city, state)
+    signature = marketplace_request_trade_signature(intake)
+    # Multi-trade and unclassified requests require manual selection until an
+    # explicit service can be chosen. No city approval may override this.
+    readiness = automatic_matching_readiness(city, state, signature[0] if len(signature) == 1 else "")
     if readiness["can_auto_route"]:
-        readiness["message"] = f"Marketplace routing is enabled in {readiness['city']}, {readiness['state']}. We can invite up to {readiness['max_bids_per_request']} eligible contractors."
-        readiness["coverage_message"] = "Local coverage is ready"
-        readiness["automatic_matching_message"] = "Automatic matching is available in this area."
+        readiness["message"] = f"Automatic matching is available for {readiness['trade']} in {readiness['city']}, {readiness['state']}."
+        readiness["coverage_message"] = "Service coverage is ready"
+        readiness["automatic_matching_message"] = "Automatic matching is available for this service and location."
     else:
-        readiness["message"] = f"Your request has been saved for future matching in {readiness['city']}, {readiness['state']}. Automatic matching is not yet available in this area; contractor search and direct invitations remain available."
+        readiness["message"] = "Your request is saved. Automatic matching is not yet available for this service and location; contractor search and direct invitations remain available until eligible supply is sufficient and approved."
         readiness["coverage_message"] = "Building local coverage"
-        readiness["automatic_matching_message"] = "Automatic matching is not yet available in this area."
+        readiness["automatic_matching_message"] = "Automatic matching is not yet available for this service and location."
     readiness["direct_invitation_message"] = "Direct contractor invitations are available."
     return readiness
 
@@ -389,14 +464,16 @@ def eligible_marketplace_listings(intake: ProjectIntake):
     if not city or not state:
         return []
     request_trades = _request_trades(intake)
+    if len(request_trades) != 1:
+        return []
     qs = _location_listing_qs(city, state).filter(claimed_profile=True, claimed_contractor__isnull=False, manually_reviewed=True)
     rows = []
     for listing in qs:
         contractor = listing.claimed_contractor
-        if contractor_marketplace_action_block_reason(contractor):
+        if contractor_marketplace_action_block_reason(contractor) or not _listing_verified(listing) or not _contractor_stripe_ready(contractor):
             continue
         listing_trades = _listing_trades(listing)
-        if request_trades and listing_trades and not (request_trades & listing_trades):
+        if not (request_trades & listing_trades):
             continue
         rows.append(
             {

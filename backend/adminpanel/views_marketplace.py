@@ -20,9 +20,9 @@ from .permissions import IsAdminUserRole
 from .utils import safe_get
 from .marketplace_analytics import build_marketplace_analytics
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
-from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
+from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_request_trade_signature, normalize_location_value
+from projects.services.marketplace_readiness import CORE_TRADE_CATEGORIES, automatic_matching_readiness, automatic_matching_readiness_rows, create_marketplace_invites_for_intake, eligible_marketplace_listings, intake_marketplace_location, location_readiness, marketplace_enabled_for_intake, marketplace_request_trade_signature, normalize_location_value, normalize_trade
 from projects.services.marketplace_request_lifecycle import (
     LIFECYCLE_ARCHIVED,
     LIFECYCLE_PURGE_DUE,
@@ -147,6 +147,12 @@ def _marketplace_operational_status(
             "Location needed",
             "The request is saved for future matching. Add a complete project city and state to evaluate automatic routing.",
         )
+    if readiness.get("status") == "service_needed":
+        return (
+            "service_needed",
+            "Service needed",
+            "The request is saved. Identify one service/trade before evaluating automatic matching; customer-selected invitations remain available.",
+        )
     if readiness.get("can_auto_route"):
         if eligible_count:
             return (
@@ -159,19 +165,19 @@ def _marketplace_operational_status(
             "Supply needed",
             "Automatic routing is activated, but no eligible claimed contractors currently match this request.",
         )
-    if readiness.get("routing_paused_at"):
+    if readiness.get("status") == "paused":
         return (
             "routing_paused",
             "Routing paused",
             "Automatic routing was previously activated and is now paused. The request remains saved for future matching.",
         )
-    if readiness.get("status") == MarketplaceLocation.STATUS_READY:
+    if readiness.get("status") == "awaiting_approval":
         return (
             "coverage_not_activated",
             "Coverage not activated",
-            "Coverage thresholds are met, but an admin has not activated automatic routing for this location.",
+            "Eligible supply thresholds are met, but an admin has not approved automatic matching for this service and location.",
         )
-    if readiness.get("status") == MarketplaceLocation.STATUS_NEARING_READY:
+    if readiness.get("status") == "building_coverage":
         return (
             "building_coverage",
             "Building coverage",
@@ -191,9 +197,9 @@ def _marketplace_request_evaluation(
     eligible_count_cache: dict[tuple[Any, ...], int],
 ) -> dict[str, Any]:
     city, state, zip_code = intake_marketplace_location(intake)
-    location_key = (city.casefold(), state.casefold())
+    location_key = (city.casefold(), state.casefold(), *marketplace_request_trade_signature(intake))
     if location_key not in readiness_cache:
-        readiness_cache[location_key] = location_readiness(city, state)
+        readiness_cache[location_key] = marketplace_enabled_for_intake(intake)
     readiness = readiness_cache[location_key]
     eligibility_key = (
         *location_key,
@@ -291,6 +297,8 @@ def _saved_marketplace_request_row(
         "marketplace_action": (
             {"label": "Review request location", "target": f"/app/admin/requests?request={intake.id}"}
             if operational_status == "location_needed"
+            else {"label": "Review request service", "target": f"/app/admin/requests?request={intake.id}"}
+            if operational_status == "service_needed"
             else {"label": "Review coverage", "target": "/app/admin/marketplace"}
         ),
         "marketplace_enabled": enabled,
@@ -970,12 +978,33 @@ class AdminMarketplaceOverview(APIView):
                 for city, state in MarketplaceLocation.objects.values_list("city", "state")
             }
         )
+        location_keys.update(
+            {
+                (normalize_location_value(city), normalize_location_value(state))
+                for city, state in ContractorDirectoryEntry.objects.exclude(city="", state="").values_list("city", "state")
+            }
+        )
+        location_keys.update(
+            {
+                (normalize_location_value(city), normalize_location_value(state))
+                for city, state in ContractorDirectoryEntry.objects.exclude(service_city="", service_state="").values_list("service_city", "service_state")
+            }
+        )
         saved_marketplace_requests = _marketplace_overview_requests_payload()
         location_rows = [
             location_readiness(city, state)
             for city, state in location_keys
             if city and state
         ]
+        automatic_matching_rows = [
+            row
+            for city, state in location_keys
+            if city and state
+            for row in automatic_matching_readiness_rows(city, state)
+        ]
+        automatic_matching_rows.sort(
+            key=lambda row: (row["state"], row["city"], row["trade"])
+        )
         for row in location_rows:
             row["marketplace_backlog"] = saved_marketplace_requests["by_location"].get(
                 f"{row['city']}, {row['state']}",
@@ -1049,6 +1078,7 @@ class AdminMarketplaceOverview(APIView):
                     ],
                     "gaps": gaps[:10],
                     "location_readiness": location_rows[:50],
+                    "automatic_matching_readiness": automatic_matching_rows[:100],
                 },
                 "invite_analytics": invite_analytics,
                 "saved_marketplace_requests": saved_marketplace_requests,
@@ -1118,18 +1148,36 @@ class AdminMarketplaceLocationStatus(APIView):
             return Response({"detail": "City and state are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         enabled = _safe_bool(request.data.get("enabled"))
+        trade = normalize_trade(request.data.get("trade"))
+        if trade and trade not in CORE_TRADE_CATEGORIES:
+            return Response({"detail": "A supported service/trade is required."}, status=status.HTTP_400_BAD_REQUEST)
         location, _created = MarketplaceLocation.objects.get_or_create(
             city=city,
             state=state,
             defaults={"updated_by": request.user},
         )
-        location.is_enabled = enabled
+        if trade:
+            approved = set(location.approved_trades or [])
+            paused = set(location.paused_trades or [])
+            if enabled:
+                approved.add(trade)
+                paused.discard(trade)
+                location.is_enabled = True
+            else:
+                approved.discard(trade)
+                paused.add(trade)
+            location.approved_trades = sorted(approved)
+            location.paused_trades = sorted(paused)
+        else:
+            # Retain the legacy whole-location pause as a kill switch only;
+            # it never approves an individual trade.
+            location.is_enabled = enabled
         location.updated_by = request.user
         location.admin_notes = _safe_text(request.data.get("admin_notes")) or location.admin_notes
         if enabled:
             location.enabled_at = timezone.now()
             location.disabled_at = None
-        else:
+        elif not trade:
             location.disabled_at = timezone.now()
         for field in [
             "min_claimed_contractors",
@@ -1142,7 +1190,10 @@ class AdminMarketplaceLocationStatus(APIView):
                 value = _safe_int(request.data.get(field), 0)
                 setattr(location, field, value or None if field != "max_bids_per_request" else max(1, min(value or 5, 5)))
         location.save()
-        return Response(location_readiness(city, state), status=status.HTTP_200_OK)
+        return Response(
+            automatic_matching_readiness(city, state, trade) if trade else location_readiness(city, state),
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminMarketplaceRouteIntake(APIView):

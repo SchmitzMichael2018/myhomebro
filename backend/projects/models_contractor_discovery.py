@@ -1140,6 +1140,10 @@ class MarketplaceLocation(models.Model):
     city = models.CharField(max_length=120, db_index=True)
     state = models.CharField(max_length=60, db_index=True)
     is_enabled = models.BooleanField(default=False, db_index=True)
+    # Approval is scoped to a normalized trade. The legacy city switch alone
+    # must never authorize automatic invitations for every service.
+    approved_trades = models.JSONField(default=list, blank=True)
+    paused_trades = models.JSONField(default=list, blank=True)
     enabled_at = models.DateTimeField(null=True, blank=True)
     disabled_at = models.DateTimeField(null=True, blank=True)
     admin_notes = models.TextField(blank=True, default="")

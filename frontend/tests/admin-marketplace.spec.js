@@ -78,6 +78,7 @@ const directoryRows = [
 
 async function installMarketplaceMocks(page, {
   includeLegacyMissingLocation = false,
+  emptyReadiness = false,
   mapMode = 'ready',
   nearbyStatePoints = false,
 } = {}) {
@@ -312,11 +313,12 @@ async function installMarketplaceMocks(page, {
     };
     return {
       coverage: {
-        location_readiness: [
+        automatic_matching_readiness: emptyReadiness ? [] : [
           {
             city: 'Austin',
             state: 'TX',
-            status: austinEnabled ? 'enabled' : 'ready',
+            trade: 'flooring',
+            status: austinEnabled ? 'active' : 'awaiting_approval',
             enabled: austinEnabled,
             manual_enabled: austinEnabled,
             max_bids_per_request: 5,
@@ -343,7 +345,8 @@ async function installMarketplaceMocks(page, {
           {
             city: 'Dallas',
             state: 'TX',
-            status: 'not_ready',
+            trade: 'plumbing',
+            status: 'building_coverage',
             enabled: false,
             manual_enabled: false,
             counts: {
@@ -692,7 +695,8 @@ async function installMarketplaceMocks(page, {
         body: JSON.stringify({
           city: body.city,
           state: body.state,
-          status: body.enabled ? 'enabled' : 'ready',
+          trade: body.trade,
+          status: body.enabled ? 'active' : 'paused',
           enabled: Boolean(body.enabled),
           manual_enabled: Boolean(body.enabled),
           counts: {
@@ -795,7 +799,8 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByTestId('admin-marketplace-summary').getByText('Manual Review Needed')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-service-gaps').getByText('Plumbing')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-geo-gaps').getByText('Dallas, TX')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('City Readiness');
+  await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('Automatic Matching Readiness');
+  await expect(page.getByTestId('admin-marketplace-location-readiness')).not.toContainText('City Readiness');
   await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('Austin, TX');
   await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('20 claimed');
   await expect(page.getByTestId('admin-marketplace-metric-phone-ready')).toHaveClass(/cursor-pointer/);
@@ -937,8 +942,8 @@ test('admin marketplace routes saved requests after location enablement without 
     path: 'test-results/marketplace-location-admin-saved-not-routed.png',
   });
 
-  await page.getByTestId('admin-marketplace-location-enable-Austin-TX').click();
-  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Austin, TX activated for automatic routing');
+  await page.getByTestId('admin-marketplace-location-enable-Austin-TX-flooring').click();
+  await expect(page.getByTestId('admin-marketplace-status')).toContainText('flooring automatic matching approved in Austin, TX');
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeEnabled();
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Ready to route to eligible contractors.');
   await expect(page.getByTestId('admin-marketplace-backlog-routable')).toContainText('1');
@@ -1135,6 +1140,28 @@ test('coverage filters restore from URL, cascade, and respond to browser history
   await expect(page.getByLabel('Filter map state')).toHaveValue('TX');
   await expect(page.getByLabel('Filter map city')).toHaveValue('Austin');
   await expect(page.getByLabel('Filter map ZIP')).toHaveValue('78701');
+});
+
+test('automatic matching readiness preserves manual selection on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  const readiness = page.getByTestId('admin-marketplace-location-readiness');
+  await expect(readiness).toContainText('Automatic Matching Readiness');
+  await expect(readiness).not.toContainText('City Readiness');
+  await expect(readiness).toContainText('Customers can create requests, search, and directly invite');
+  await expect(readiness).toContainText('flooring');
+  await expect(readiness).toContainText('plumbing');
+  await expect(readiness).toContainText('Building coverage — manual selection required');
+  await expect(page.getByTestId('admin-marketplace-saved-requests')).toContainText('customer-selected contractor invitations');
+});
+
+test('empty automatic matching readiness preserves search and direct invitations', async ({ page }) => {
+  await installMarketplaceMocks(page, { emptyReadiness: true });
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  const readiness = page.getByTestId('admin-marketplace-location-readiness');
+  await expect(readiness).toContainText('No location-and-service combinations are currently ready');
+  await expect(readiness).toContainText('Customers may still search for and directly invite eligible contractors.');
 });
 
 test('coverage layer filters can all be switched off and restored from the URL', async ({ page }) => {
