@@ -56,9 +56,106 @@ def _with_marketplace_capabilities(readiness: dict[str, Any]) -> dict[str, Any]:
         **readiness,
         "capabilities": capabilities,
         **capabilities,
+        "can_save_request": True,
+        "can_search_contractors": capabilities["can_search"],
         "request_saved": True,
         "saved_for_future_matching": not capabilities["can_auto_route"],
         "automatic_matching_available": capabilities["can_auto_route"],
+    }
+
+
+def customer_safe_marketplace_capability(
+    readiness: dict[str, Any],
+    *,
+    automatic_routed_count: int = 0,
+    direct_invitation_count: int = 0,
+    archived: bool = False,
+) -> dict[str, Any]:
+    """Return the additive Marketplace contract safe for customer-facing APIs."""
+    automatic_routed_count = max(0, int(automatic_routed_count or 0))
+    direct_invitation_count = max(0, int(direct_invitation_count or 0))
+    automatic_matching_available = bool(readiness.get("can_auto_route"))
+    status = str(readiness.get("status") or "")
+
+    if archived:
+        reason_code = "request_archived"
+        status_label = "Request archived"
+        message = "This request is archived. Restore it before searching for or inviting a contractor."
+        routing_outcome = "not_routed"
+    elif automatic_routed_count:
+        reason_code = "automatically_routed"
+        status_label = "Sent for automatic matching"
+        message = (
+            "Your request was sent to eligible contractors for consideration. "
+            "You can also search for or invite a contractor directly."
+        )
+        routing_outcome = "automatic_routed"
+    elif direct_invitation_count:
+        reason_code = "contractor_invited"
+        status_label = "Contractor invited"
+        message = "A contractor was invited directly. Your request remains saved while you wait for a response."
+        routing_outcome = "direct_invited"
+    elif status == "active":
+        reason_code = "automatic_matching_available"
+        status_label = "Automatic matching available"
+        message = (
+            "Automatic matching is available, but this saved request has not been sent. "
+            "Search for or invite a contractor directly, or continue through the existing matching workflow."
+        )
+        routing_outcome = "not_routed"
+    elif status == "service_needed":
+        reason_code = "trade_classification_needed"
+        status_label = "Trade classification needed"
+        message = (
+            "Your request is saved, but MyHomeBro needs a clear service category before automatic matching "
+            "can be evaluated. You can still search for or invite a contractor directly."
+        )
+        routing_outcome = "not_routed"
+    elif status == "building_coverage" and readiness.get("manual_enabled"):
+        reason_code = "no_eligible_contractors"
+        status_label = "Manual contractor selection needed"
+        message = (
+            "Your request is saved. No eligible contractor is currently available for automatic matching, "
+            "so manual contractor selection is needed."
+        )
+        routing_outcome = "not_routed"
+    else:
+        reason_code = "building_local_coverage"
+        status_label = "Manual contractor selection needed"
+        message = (
+            "We're building contractor coverage for this service in your area. Your request is saved, but it "
+            "will not be automatically sent to contractors. Choose a contractor below or invite one you already know."
+        )
+        routing_outcome = "not_routed"
+
+    manual_selection_required = bool(
+        not archived
+        and not automatic_routed_count
+        and not direct_invitation_count
+        and not automatic_matching_available
+    )
+    can_search_contractors = not archived
+    can_direct_invite = not archived and not direct_invitation_count
+    next_actions = []
+    if can_search_contractors:
+        next_actions.append("search_contractors")
+    if can_direct_invite:
+        next_actions.append("direct_invite")
+
+    return {
+        "can_save_request": True,
+        "can_search_contractors": can_search_contractors,
+        "can_direct_invite": can_direct_invite,
+        "automatic_matching_available": automatic_matching_available,
+        "automatic_matching_status": reason_code,
+        "automatic_matching_status_label": status_label,
+        "manual_selection_required": manual_selection_required,
+        "routing_outcome": routing_outcome,
+        "automatic_routed_count": automatic_routed_count,
+        "direct_invitation_count": direct_invitation_count,
+        "customer_safe_reason_code": reason_code,
+        "customer_safe_message": message,
+        "customer_safe_next_actions": next_actions,
     }
 
 
@@ -572,6 +669,7 @@ def marketplace_enabled_for_intake(intake: ProjectIntake) -> dict[str, Any]:
         readiness["coverage_message"] = "Building local coverage"
         readiness["automatic_matching_message"] = "Automatic matching is not yet available for this service and location."
     readiness["direct_invitation_message"] = "Direct contractor invitations are available."
+    readiness.update(customer_safe_marketplace_capability(readiness))
     return readiness
 
 
@@ -785,14 +883,19 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     readiness = marketplace_enabled_for_intake(intake)
     max_bids = int(readiness.get("max_bids_per_request") or DEFAULT_MAX_BIDS_PER_REQUEST)
     if intake.marketplace_archived_at:
+        safe_capability = customer_safe_marketplace_capability(
+            readiness,
+            archived=True,
+        )
         return {
+            **safe_capability,
             "created": [],
             "created_count": 0,
             "skipped_count": 0,
             "cap": max_bids,
             "cap_reached": False,
             "archived": True,
-            "marketplace": {**readiness, "can_auto_route": False},
+            "marketplace": {**readiness, **safe_capability, "can_auto_route": False},
         }
     open_statuses = [
         ContractorDiscoveryInvite.STATUS_PENDING,
@@ -805,22 +908,32 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     existing_qs = ContractorDiscoveryInvite.objects.select_for_update().filter(public_intake=intake, status__in=open_statuses)
     existing_count = existing_qs.count()
     if not readiness.get("can_auto_route"):
+        safe_capability = customer_safe_marketplace_capability(
+            readiness,
+            automatic_routed_count=existing_count,
+        )
         return {
+            **safe_capability,
             "created": [],
             "created_count": 0,
             "skipped_count": 0,
             "cap": max_bids,
             "cap_reached": existing_count >= max_bids,
-            "marketplace": readiness,
+            "marketplace": {**readiness, **safe_capability},
         }
     if existing_count >= max_bids:
+        safe_capability = customer_safe_marketplace_capability(
+            readiness,
+            automatic_routed_count=existing_count,
+        )
         return {
+            **safe_capability,
             "created": [],
             "created_count": 0,
             "skipped_count": 0,
             "cap": max_bids,
             "cap_reached": True,
-            "marketplace": readiness,
+            "marketplace": {**readiness, **safe_capability},
         }
 
     existing_contractors = set(existing_qs.exclude(contractor__isnull=True).values_list("contractor_id", flat=True))
@@ -888,12 +1001,17 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     if routed_leads:
         notify_marketplace_request_routed(intake=intake, leads=routed_leads)
 
+    safe_capability = customer_safe_marketplace_capability(
+        readiness,
+        automatic_routed_count=len(created) + existing_count,
+    )
     return {
+        **safe_capability,
         "created": created,
         "created_count": len(created),
         "skipped_count": max(0, len(eligible_listings) - len(created) - existing_count),
         "cap": max_bids,
         "cap_reached": len(created) + existing_count >= max_bids,
-        "marketplace": readiness,
+        "marketplace": {**readiness, **safe_capability},
         "created_at": timezone.now().isoformat(),
     }

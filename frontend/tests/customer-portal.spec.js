@@ -4109,6 +4109,18 @@ test("customer portal is reachable from the landing page and loads secure record
                 edit_lock_reason: "Editing is locked after a request is sent to contractors or converted to an agreement.",
                 contractor_matching_started: true,
                 routed_contractor_count: 1,
+                marketplace: {
+                  ...request.marketplace,
+                  can_direct_invite: false,
+                  manual_selection_required: false,
+                  routing_outcome: "direct_invited",
+                  direct_invitation_count: 1,
+                  automatic_matching_status: "contractor_invited",
+                  automatic_matching_status_label: "Contractor invited",
+                  customer_safe_reason_code: "contractor_invited",
+                  customer_safe_message: "A contractor was invited directly. Your request remains saved while you wait for a response.",
+                  customer_safe_next_actions: ["search_contractors"],
+                },
                 routed_contractors: [
                   {
                     id: "opportunity-77",
@@ -4212,6 +4224,22 @@ test("customer portal is reachable from the landing page and loads secure record
             contractor_matching_started: false,
             routed_contractor_count: 0,
             routed_contractors: [],
+            marketplace: {
+              can_save_request: true,
+              can_search_contractors: true,
+              can_direct_invite: true,
+              automatic_matching_available: false,
+              automatic_matching_status: "building_local_coverage",
+              automatic_matching_status_label: "Manual contractor selection needed",
+              manual_selection_required: true,
+              routing_outcome: "not_routed",
+              automatic_routed_count: 0,
+              direct_invitation_count: 0,
+              customer_safe_reason_code: "building_local_coverage",
+              customer_safe_message:
+                "We're building contractor coverage for this service in your area. Your request is saved, but it will not be automatically sent to contractors. Choose a contractor below or invite one you already know.",
+              customer_safe_next_actions: ["search_contractors", "direct_invite"],
+            },
             request_type_label: "Maintenance",
             project_mode_label: "Full service",
             project_category: submittedRequestPayload.project_category || submittedRequestPayload.project_type,
@@ -5441,7 +5469,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-badges-customer-request-9")).toContainText("Editable until sent");
   await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("View Request");
   await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Edit Request");
-  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Find Contractor");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Search contractors");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Invite a contractor you know");
+  await expect(page.getByTestId("customer-request-marketplace-guidance-customer-request-9")).toContainText("Manual contractor selection needed");
+  await expect(page.getByTestId("customer-request-marketplace-guidance-customer-request-9")).toContainText("will not be automatically sent");
   await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Cancel Request");
   await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Delete Request");
   await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "HVAC" })).toHaveCount(0);
@@ -5463,6 +5494,12 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-delete-modal")).toBeVisible();
   await page.getByRole("button", { name: "Keep Request" }).click();
   await expect(page.getByTestId("customer-request-delete-modal")).toHaveCount(0);
+  await page.getByTestId("customer-request-invite-contractor-customer-request-9").click();
+  await expect(page.getByTestId("customer-request-manual-contractor-form")).toBeVisible();
+  await page.getByTestId("customer-request-manual-contractor-form").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByTestId("customer-request-manual-contractor-form")).toHaveCount(0);
+  expect(submittedContractorSelectionPayload).toBeNull();
+  await page.getByRole("button", { name: "Close" }).click();
   await page.getByTestId("customer-request-find-contractor-customer-request-9").click();
   await expect(page.getByTestId("customer-request-contractor-search-modal")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Find a Contractor" })).toBeVisible();

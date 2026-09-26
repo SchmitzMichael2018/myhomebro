@@ -16,7 +16,7 @@ from projects.models_customer_portal import CustomerRequest, SmartNotification, 
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_discovery import create_discovery_invites
-from projects.services.marketplace_readiness import automatic_matching_readiness, create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness, marketplace_enabled_for_intake
+from projects.services.marketplace_readiness import automatic_matching_readiness, create_marketplace_invites_for_intake, customer_safe_marketplace_capability, eligible_marketplace_listings, location_readiness, marketplace_enabled_for_intake
 from projects.services.marketplace_coverage_map import build_marketplace_coverage_map
 
 
@@ -1317,6 +1317,47 @@ class MarketplaceGatingTests(TestCase):
                 format="json",
             )
             self.assertEqual(response.status_code, 400, response.data)
+
+    def test_customer_safe_capability_distinguishes_manual_selection_reasons_and_outcomes(self):
+        building = customer_safe_marketplace_capability(
+            automatic_matching_readiness("Austin", "TX", "flooring")
+        )
+        self.assertEqual(building["customer_safe_reason_code"], "building_local_coverage")
+        self.assertEqual(building["routing_outcome"], "not_routed")
+        self.assertTrue(building["manual_selection_required"])
+        self.assertEqual(building["customer_safe_next_actions"], ["search_contractors", "direct_invite"])
+        self.assertNotIn("counts", building)
+        self.assertNotIn("thresholds", building)
+
+        MarketplaceLocation.objects.create(
+            city="Austin",
+            state="TX",
+            is_enabled=True,
+            min_claimed_contractors=20,
+            min_verified_contractors=10,
+            min_stripe_ready_contractors=5,
+        )
+        self._approve()
+        no_eligible = customer_safe_marketplace_capability(
+            automatic_matching_readiness("Austin", "TX", "flooring")
+        )
+        self.assertEqual(no_eligible["customer_safe_reason_code"], "no_eligible_contractors")
+        self.assertTrue(no_eligible["manual_selection_required"])
+
+        routed = customer_safe_marketplace_capability(
+            {"status": "active", "can_auto_route": True},
+            automatic_routed_count=2,
+        )
+        self.assertEqual(routed["routing_outcome"], "automatic_routed")
+        self.assertEqual(routed["automatic_matching_status_label"], "Sent for automatic matching")
+        self.assertFalse(routed["manual_selection_required"])
+
+        invited = customer_safe_marketplace_capability(
+            {"status": "building_coverage", "can_auto_route": False},
+            direct_invitation_count=1,
+        )
+        self.assertEqual(invited["routing_outcome"], "direct_invited")
+        self.assertFalse(invited["can_direct_invite"])
 
     def test_narrative_trade_without_authoritative_classification_cannot_route(self):
         MarketplaceLocation.objects.create(

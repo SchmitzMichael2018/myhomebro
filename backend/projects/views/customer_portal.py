@@ -118,7 +118,10 @@ from projects.services.bid_workflow import (
     project_class_label,
     promote_public_lead_to_agreement,
 )
-from projects.services.contractor_opportunities import create_property_work_order_agreement_draft
+from projects.services.contractor_opportunities import (
+    create_property_work_order_agreement_draft,
+    resolve_directory_entry_from_selection,
+)
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
 from projects.services.bid_notifications import create_bid_outcome_notifications
 from projects.services.escrow_reimbursements import (
@@ -133,7 +136,14 @@ from projects.services.contractor_reviews import review_eligibility, serialize_r
 from projects.services.smart_notifications import create_smart_notification
 from projects.services.notification_center import create_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
-from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
+from projects.services.marketplace_permissions import (
+    contractor_direct_invite_block_reason,
+    contractor_marketplace_action_block_reason,
+)
+from projects.services.marketplace_readiness import (
+    customer_safe_marketplace_capability,
+    marketplace_enabled_for_intake,
+)
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.property_intelligence import build_property_intelligence
 from projects.services.home_system_reminders import build_home_system_reminder
@@ -962,6 +972,18 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
     completion_attachments = [_property_work_order_attachment_payload(attachment) for attachment in row.attachments.all()]
     activities = [_property_work_order_activity_payload(activity) for activity in row.activities.all()]
     invitations = list(row.recipient_invitations.all()) if getattr(row, "pk", None) else []
+    capability_intake = ProjectIntake(
+        project_city=_safe_text(getattr(property_profile, "city", "")),
+        project_state=_safe_text(getattr(property_profile, "state", "")),
+        project_postal_code=_safe_text(getattr(property_profile, "postal_code", "")),
+        ai_project_type=_safe_text(row.get_category_display()),
+        ai_project_subtype="",
+    )
+    marketplace_capability = customer_safe_marketplace_capability(
+        marketplace_enabled_for_intake(capability_intake),
+        direct_invitation_count=len(invitations),
+        archived=row.status in {PropertyWorkOrder.STATUS_CLOSED, PropertyWorkOrder.STATUS_CANCELLED},
+    )
     return {
         "id": row.id,
         "work_order_number": _safe_text(row.work_order_number) or f"PWO-{row.id:06d}",
@@ -1000,6 +1022,7 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
         "marketplace_sent_at": _safe_dt(row.marketplace_sent_at),
         "marketplace_response_at": _safe_dt(row.marketplace_response_at),
         "marketplace_opportunity_count": row.contractor_opportunities.count() if getattr(row, "pk", None) else 0,
+        "marketplace": marketplace_capability,
         "recipient_invitations": [_property_work_order_invitation_payload(invitation) for invitation in invitations],
         "recipient_summary": _property_work_order_recipient_summary(row, invitations),
         "linked_project_id": getattr(linked_project, "id", None) or row.linked_project_id,
@@ -2765,6 +2788,19 @@ def _customer_request_rows(email: str) -> list[dict]:
         )
         can_edit = _customer_request_can_edit(request_row)
         matching_counts = _customer_request_matching_counts(request_row)
+        capability_intake = source_intake or ProjectIntake(
+            project_city=_safe_text(request_row.city) or _safe_text(getattr(property_profile, "city", "")),
+            project_state=_safe_text(request_row.state) or _safe_text(getattr(property_profile, "state", "")),
+            project_postal_code=_safe_text(request_row.postal_code) or _safe_text(getattr(property_profile, "postal_code", "")),
+            ai_project_type=project_type,
+            ai_project_subtype=project_subtype,
+        )
+        marketplace_capability = customer_safe_marketplace_capability(
+            marketplace_enabled_for_intake(capability_intake),
+            automatic_routed_count=matching_counts["invites"],
+            direct_invitation_count=max(0, matching_counts["opportunities"] - matching_counts["invites"]),
+            archived=bool(getattr(source_intake, "marketplace_archived_at", None)),
+        )
         can_cancel, cancel_lock_reason = _customer_request_cancel_state(request_row)
         can_delete = _customer_request_can_delete(request_row)
         linked_system = getattr(request_row, "linked_home_system", None)
@@ -2830,6 +2866,7 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "routed_contractor_count": matching_counts["total"],
                 "routed_contractors": routed_contractors,
                 "routed_at": _safe_dt(getattr(source_intake, "post_submit_flow_selected_at", None) or getattr(source_intake, "updated_at", None)) if matching_counts["total"] else "",
+                "marketplace": marketplace_capability,
                 "latest_activity": _safe_dt(request_row.updated_at or request_row.created_at),
                 "created_at": _safe_dt(request_row.created_at),
                 "updated_at": _safe_dt(request_row.updated_at),
@@ -6363,17 +6400,28 @@ class CustomerPortalRequestMatchingView(APIView):
             pk=request_id,
             customer_email__iexact=email.lower().strip(),
         )
+        if getattr(getattr(customer_request, "source_intake", None), "marketplace_archived_at", None):
+            return Response(
+                {"detail": "Restore this archived request before searching for contractors."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         source_intake = _sync_customer_request_source_intake(customer_request)
         if customer_request.status == CustomerRequest.STATUS_SUBMITTED:
             customer_request.status = CustomerRequest.STATUS_MARKETPLACE_READY
             customer_request.save(update_fields=["status", "updated_at"])
+        portal = _build_customer_portal_payload(email, request=request)
+        request_payload = next(
+            (row for row in portal["requests"] if row.get("source_kind") == "customer_request" and row.get("request_id") == customer_request.id),
+            {},
+        )
         return Response(
             {
                 "detail": "Contractor matching is ready.",
                 "request_id": customer_request.id,
                 "source_intake_id": source_intake.id,
                 "source_intake_token": source_intake.share_token,
-                "portal": _build_customer_portal_payload(email, request=request),
+                "marketplace": request_payload.get("marketplace", {}),
+                "portal": portal,
             },
             status=status.HTTP_200_OK,
         )
@@ -6382,6 +6430,7 @@ class CustomerPortalRequestMatchingView(APIView):
 class CustomerPortalRequestContractorSelectView(APIView):
     permission_classes = [AllowAny]
 
+    @transaction.atomic
     def post(self, request, token: str, request_id: int):
         try:
             email = _unsign_portal_token(token)
@@ -6395,6 +6444,11 @@ class CustomerPortalRequestContractorSelectView(APIView):
             pk=request_id,
             customer_email__iexact=email.lower().strip(),
         )
+        if getattr(getattr(customer_request, "source_intake", None), "marketplace_archived_at", None):
+            return Response(
+                {"detail": "Restore this archived request before inviting a contractor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         selected = request.data.get("selected_contractors") or request.data.get("selected") or []
         if isinstance(selected, str):
             try:
@@ -6403,9 +6457,33 @@ class CustomerPortalRequestContractorSelectView(APIView):
                 selected = json.loads(selected)
             except Exception:
                 selected = []
-        if not isinstance(selected, list) or not selected:
-            return Response({"detail": "Select at least one contractor."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(selected, list) or not 1 <= len(selected) <= 5:
+            return Response({"detail": "Select 1 to 5 contractors."}, status=status.HTTP_400_BAD_REQUEST)
         source_intake = _sync_customer_request_source_intake(customer_request)
+        resolved_selections = []
+        seen_entry_ids = set()
+        try:
+            for selection in selected:
+                if not isinstance(selection, dict):
+                    raise ValueError("Each selected contractor must be a valid contractor record.")
+                directory_entry = resolve_directory_entry_from_selection(selection)
+                if directory_entry is None:
+                    raise ValueError("Selected contractor could not be matched to a directory entry.")
+                contractor = getattr(directory_entry, "claimed_by_contractor", None)
+                if contractor is not None:
+                    block_reason = contractor_direct_invite_block_reason(contractor)
+                    if block_reason:
+                        raise ValueError("The selected contractor is not eligible to receive this request.")
+                if directory_entry.id in seen_entry_ids:
+                    continue
+                seen_entry_ids.add(directory_entry.id)
+                resolved_selections.append((selection, directory_entry))
+        except ValueError as exc:
+            transaction.set_rollback(True)
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if not resolved_selections:
+            transaction.set_rollback(True)
+            return Response({"detail": "Select at least one eligible contractor."}, status=status.HTTP_400_BAD_REQUEST)
         created = []
         payload = {
             "project_title": customer_request.title,
@@ -6422,23 +6500,24 @@ class CustomerPortalRequestContractorSelectView(APIView):
             "payment_preference": customer_request.payment_preference,
             "project_mode": customer_request.project_mode,
         }
-        for selection in selected[:5]:
-            if not isinstance(selection, dict):
-                continue
+        for selection, directory_entry in resolved_selections:
             try:
                 opportunity = create_or_update_opportunity_from_selection(
                     {
                         "intake_request": source_intake,
                         "selection": selection,
+                        "directory_entry": directory_entry,
                         "payload": payload,
                     }
                 )
             except ValueError as exc:
+                transaction.set_rollback(True)
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
             estimate_request = selection.get("estimate_request") if isinstance(selection.get("estimate_request"), dict) else None
             if estimate_request:
                 estimate_result, estimate_status = create_customer_estimate_request_for_opportunity(opportunity, estimate_request)
                 if estimate_status >= 400:
+                    transaction.set_rollback(True)
                     return Response(estimate_result, status=estimate_status)
             created_row = {"opportunity_id": opportunity.id, "status": opportunity.status}
             directory_entry = opportunity.directory_entry

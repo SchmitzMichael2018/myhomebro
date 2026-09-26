@@ -28006,6 +28006,14 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(request_row["workflow_status"], "reviewing_request")
         self.assertTrue(request_row["can_edit"])
         self.assertEqual(request_row["current_next_action"], "Edit the request or find contractors when you are ready.")
+        self.assertTrue(request_row["marketplace"]["can_save_request"])
+        self.assertTrue(request_row["marketplace"]["can_search_contractors"])
+        self.assertTrue(request_row["marketplace"]["can_direct_invite"])
+        self.assertFalse(request_row["marketplace"]["automatic_matching_available"])
+        self.assertEqual(request_row["marketplace"]["routing_outcome"], "not_routed")
+        self.assertTrue(request_row["marketplace"]["manual_selection_required"])
+        self.assertNotIn("counts", request_row["marketplace"])
+        self.assertNotIn("thresholds", request_row["marketplace"])
         self.assertEqual(request_row["activity_timeline"][0]["title"], "Request saved")
         self.assertTrue(request_row["created_at"])
         notification = SmartNotification.objects.get(customer_request=saved)
@@ -28166,6 +28174,8 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(matching_row["workflow_status"], "contractor_matching")
         self.assertTrue(matching_row["can_edit"])
         self.assertTrue(matching_row["contractor_matching_started"])
+        self.assertEqual(matching_row["marketplace"]["routing_outcome"], "not_routed")
+        self.assertTrue(matching_row["marketplace"]["can_search_contractors"])
 
         entry = ContractorDirectoryEntry.objects.create(
             business_name="Appliance Pros",
@@ -28221,6 +28231,91 @@ class CustomerPortalAccessTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(locked_edit.status_code, 400)
+
+    def test_customer_portal_contractor_selection_validates_whole_batch(self):
+        from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Batch validation request",
+            description="Validate every contractor before sending.",
+            project_type="Plumbing",
+            city="Austin",
+            state="TX",
+            status=CustomerRequest.STATUS_SUBMITTED,
+        )
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Eligible Plumbing",
+            normalized_name="eligible plumbing",
+            public_email="dispatch@eligible-plumbing.test",
+            city="Austin",
+            state="TX",
+            primary_service="Plumbing",
+            source="manual",
+            claimed=True,
+            claimed_by_contractor=self.contractor,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/contractors/select/",
+            {
+                "selected_contractors": [
+                    {"directory_entry_id": entry.id, "business_name": entry.business_name},
+                    {"source": "manual", "business_name": "Missing contact"},
+                ]
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        saved.refresh_from_db()
+        self.assertIsNone(saved.source_intake_id)
+        self.assertEqual(ContractorOpportunity.objects.count(), 0)
+
+        self.contractor.marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+        self.contractor.save(update_fields=["marketplace_verification_status", "updated_at"])
+        ineligible_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/contractors/select/",
+            {"selected_contractors": [{"directory_entry_id": entry.id, "business_name": entry.business_name}]},
+            content_type="application/json",
+        )
+        self.assertEqual(ineligible_response.status_code, 400, ineligible_response.data)
+        self.assertEqual(ContractorOpportunity.objects.count(), 0)
+
+    def test_customer_portal_archived_request_cannot_search_or_invite(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Archived request",
+            description="This request is archived.",
+            project_type="Plumbing",
+            city="Austin",
+            state="TX",
+            status=CustomerRequest.STATUS_MARKETPLACE_READY,
+        )
+        intake = _sync_customer_request_source_intake(saved)
+        intake.marketplace_archived_at = timezone.now()
+        intake.save(update_fields=["marketplace_archived_at", "updated_at"])
+
+        search_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/contractor-search/",
+            {},
+            content_type="application/json",
+        )
+        invite_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/contractors/select/",
+            {"selected_contractors": [{"source": "manual", "business_name": "Known Pro", "email": "known@example.com"}]},
+            content_type="application/json",
+        )
+
+        self.assertEqual(search_response.status_code, 400, search_response.data)
+        self.assertEqual(invite_response.status_code, 400, invite_response.data)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 0)
 
     def test_customer_portal_request_can_be_cancelled_before_routing(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
