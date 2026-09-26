@@ -11,6 +11,33 @@ from projects.models_contractor_discovery import (
 DIRECT_INVITE_UNAVAILABLE_DETAIL = (
     "This contractor is not currently available for a direct invitation."
 )
+CONTRACTOR_PARTICIPATION_UNAVAILABLE_DETAIL = "This workspace is unavailable."
+
+
+def contractor_participation_block_reason(contractor: Contractor | None) -> str:
+    """Return a generic-safe reason when a contractor may not participate."""
+    if contractor is None:
+        return CONTRACTOR_PARTICIPATION_UNAVAILABLE_DETAIL
+    user = getattr(contractor, "user", None)
+    if (
+        not user
+        or not getattr(user, "is_active", False)
+        or getattr(user, "verification_state", "") in {
+            User.VerificationState.DISABLED,
+            User.VerificationState.SUSPICIOUS,
+        }
+        or getattr(user, "trust_classification", "") in {
+            User.TrustClassification.SUSPICIOUS,
+            User.TrustClassification.SPAM_FRAUD,
+        }
+        or not getattr(contractor, "is_active", False)
+        or getattr(contractor, "marketplace_verification_status", "") in {
+            Contractor.MARKETPLACE_REJECTED,
+            Contractor.MARKETPLACE_SUSPENDED,
+        }
+    ):
+        return CONTRACTOR_PARTICIPATION_UNAVAILABLE_DETAIL
+    return ""
 
 
 def contractor_direct_invite_block_reason(contractor: Contractor | None) -> str:

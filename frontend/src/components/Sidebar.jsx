@@ -21,6 +21,7 @@ import {
   Gauge,
   HandCoins,
   LayoutDashboard,
+  MapPinned,
   Link as LinkIcon,
   MessageSquareWarning,
   LifeBuoy,
@@ -50,6 +51,7 @@ const NAV_HINTS = {
   "/app/milestones": "Track active work and what's ready to invoice",
   "/app/marketing": "Manage your public profile, gallery, reviews, leads, QR, and website readiness",
   "/app/opportunities": "Review new leads and active opportunities in one place",
+  "/app/service-area-opportunities": "Review privacy-safe demand trends across service areas and trades",
   "/app/payments": "Send payment requests and track approvals, disputes, and payouts",
   "/app/customers": "View and manage your clients and project history",
   "/app/calendar": "View upcoming work, deadlines, and project timelines",
@@ -353,6 +355,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} count={newOpportunitiesCount} countLabel="new opportunities" />
+        <Item to={`${APP_BASE}/service-area-opportunities`} label="Demand Trends" icon={MapPinned} />
         <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
         <Item to={`${APP_BASE}/warranties`} label="Warranties" icon={ShieldCheck} />
@@ -601,6 +604,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
             <NavGroup label="Operations" className="pt-1">
               <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} count={newOpportunitiesCount} countLabel="new opportunities" />
+              <Item to={`${APP_BASE}/service-area-opportunities`} label="Demand Trends" icon={MapPinned} />
               <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
               <Item to={`${APP_BASE}/warranties`} label="Warranties" icon={ShieldCheck} />

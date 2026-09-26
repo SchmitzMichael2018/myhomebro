@@ -129,6 +129,7 @@ from .views.project_intake import ProjectIntakeViewSet
 from .views.contractor_me import ContractorDeactivateView, ContractorMeView
 from .views.activity_feed import ContractorActivityEventStateView, ContractorActivityFeedView
 from .views.contractor_bids import ContractorBidsView, OpportunityEstimateAppointmentCreateView, OpportunityEstimateAppointmentTransitionView
+from .views.contractor_service_area_opportunities import ContractorServiceAreaOpportunitiesView
 from .views.estimate_availability import (
     EstimateAvailabilityWindowDetailView,
     EstimateAvailabilityWindowListView,
@@ -1067,6 +1068,7 @@ urlpatterns = [
     path("admin/contractor-directory/<int:entry_id>/", AdminContractorDirectoryView.as_view()),
     path("admin/contractor-opportunities/", AdminContractorOpportunityListView.as_view()),
     path("contractor-opportunities/", ContractorBidsView.as_view()),
+    path("contractor/service-area-opportunities/", ContractorServiceAreaOpportunitiesView.as_view()),
     path("contractor-opportunities/estimate-appointments/", OpportunityEstimateAppointmentCreateView.as_view()),
     path("contractor-opportunities/estimate-appointments/<int:appointment_id>/transition/", OpportunityEstimateAppointmentTransitionView.as_view()),
     path("estimate-availability/", EstimateAvailabilityWindowListView.as_view()),

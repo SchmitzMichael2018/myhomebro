@@ -47,6 +47,30 @@ class LifecycleCounts:
     failed: int = 0
 
 
+def qualifying_marketplace_requests():
+    """Return operational homeowner requests that still represent open demand."""
+    cancelled_ids = CustomerRequest.objects.filter(
+        status=CustomerRequest.STATUS_CANCELLED,
+        source_intake_id__isnull=False,
+    ).values("source_intake_id")
+    return (
+        ProjectIntake.objects.filter(
+            Q(post_submit_flow="multi_contractor")
+            | Q(
+                lead_source=PublicContractorLead.SOURCE_LANDING_PAGE,
+                status__in=("submitted", "analyzed"),
+                contractor__isnull=True,
+            ),
+            status__in=("submitted", "analyzed"),
+            agreement_id__isnull=True,
+            converted_at__isnull=True,
+            marketplace_archived_at__isnull=True,
+        )
+        .exclude(traffic_classification__in=("test", "spam_fraud", "archived"))
+        .exclude(pk__in=cancelled_ids)
+    )
+
+
 def _days(name: str, default: int) -> int:
     return max(0, int(getattr(settings, name, default)))
 
