@@ -13,6 +13,7 @@ from django.utils import timezone
 from projects.models import Contractor, PublicContractorLead
 from projects.models_contractor_discovery import AUTOMATIC_MATCHING_TRADES, ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
+from projects.models_customer_portal import CustomerRequest, PropertyWorkOrder
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.customer_lifecycle import upsert_customer_for_public_lead
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
@@ -56,9 +57,146 @@ def _with_marketplace_capabilities(readiness: dict[str, Any]) -> dict[str, Any]:
         **readiness,
         "capabilities": capabilities,
         **capabilities,
+        "can_save_request": True,
+        "can_search_contractors": capabilities["can_search"],
         "request_saved": True,
         "saved_for_future_matching": not capabilities["can_auto_route"],
         "automatic_matching_available": capabilities["can_auto_route"],
+    }
+
+
+def customer_safe_marketplace_capability(
+    readiness: dict[str, Any],
+    *,
+    automatic_routed_count: int = 0,
+    direct_invitation_count: int = 0,
+    archived: bool = False,
+    terminal_reason: str = "",
+) -> dict[str, Any]:
+    """Return the additive Marketplace contract safe for customer-facing APIs."""
+    automatic_routed_count = max(0, int(automatic_routed_count or 0))
+    direct_invitation_count = max(0, int(direct_invitation_count or 0))
+    automatic_matching_available = bool(readiness.get("can_auto_route")) and not archived and not terminal_reason
+    status = str(readiness.get("status") or "")
+
+    if archived or terminal_reason:
+        reason_code = terminal_reason or "request_archived"
+        status_label = "Request unavailable" if terminal_reason else "Request archived"
+        message = "This request is no longer available for contractor search or invitations."
+        routing_outcome = "archived" if reason_code == "request_archived" else "terminal"
+    elif automatic_routed_count:
+        reason_code = "automatically_routed"
+        status_label = "Sent for automatic matching"
+        message = (
+            "Your request was sent to eligible contractors for consideration. "
+            "You can also search for or invite a contractor directly."
+        )
+        routing_outcome = "automatic_routed"
+    elif direct_invitation_count:
+        reason_code = "contractor_invited"
+        status_label = "Contractor invited"
+        message = "A contractor was invited directly. Your request remains saved, and you can invite another eligible contractor."
+        routing_outcome = "direct_invited"
+    elif status == "active":
+        reason_code = "automatic_matching_available"
+        status_label = "Automatic matching available"
+        message = (
+            "Automatic matching is available, but this saved request has not been sent. "
+            "Search for or invite a contractor directly, or continue through the existing matching workflow."
+        )
+        routing_outcome = "not_routed"
+    elif status == "service_needed":
+        reason_code = "trade_classification_needed"
+        status_label = "Trade classification needed"
+        message = (
+            "Your request is saved, but MyHomeBro needs a clear service category before automatic matching "
+            "can be evaluated. You can still search for or invite a contractor directly."
+        )
+        routing_outcome = "not_routed"
+    elif status == "building_coverage" and readiness.get("manual_enabled"):
+        reason_code = "no_eligible_contractors"
+        status_label = "Manual contractor selection needed"
+        message = (
+            "Your request is saved. No eligible contractor is currently available for automatic matching, "
+            "so manual contractor selection is needed."
+        )
+        routing_outcome = "not_routed"
+    else:
+        reason_code = "building_local_coverage"
+        status_label = "Manual contractor selection needed"
+        message = (
+            "We're building contractor coverage for this service in your area. Your request is saved, but it "
+            "will not be automatically sent to contractors. Choose a contractor below or invite one you already know."
+        )
+        routing_outcome = "not_routed"
+
+    manual_selection_required = bool(
+        not archived and not terminal_reason
+        and not automatic_routed_count
+        and not direct_invitation_count
+        and not automatic_matching_available
+    )
+    can_search_contractors = not archived and not terminal_reason
+    can_direct_invite = not archived and not terminal_reason
+    next_actions = []
+    if can_search_contractors:
+        next_actions.append("search_contractors")
+    if can_direct_invite:
+        next_actions.append("direct_invite")
+
+    return {
+        "can_save_request": True,
+        "can_search_contractors": can_search_contractors,
+        "can_direct_invite": can_direct_invite,
+        "automatic_matching_available": automatic_matching_available,
+        "automatic_matching_status": reason_code,
+        "automatic_matching_status_label": status_label,
+        "manual_selection_required": manual_selection_required,
+        "routing_outcome": routing_outcome,
+        "automatic_routed_count": automatic_routed_count,
+        "direct_invitation_count": direct_invitation_count,
+        "customer_safe_reason_code": reason_code,
+        "customer_safe_message": message,
+        "customer_safe_next_actions": next_actions,
+    }
+
+
+def marketplace_request_action_block_reason(*, intake=None, customer_request=None, work_order=None) -> str:
+    """One fail-closed lifecycle rule for customer and PM marketplace actions."""
+    if customer_request is not None:
+        if customer_request.converted_project_id or customer_request.status in {
+            CustomerRequest.STATUS_CANCELLED, CustomerRequest.STATUS_CLOSED,
+            CustomerRequest.STATUS_CONVERTED_TO_PROJECT,
+        }:
+            return "request_closed"
+        intake = intake or getattr(customer_request, "source_intake", None)
+    if work_order is not None:
+        if work_order.status in {
+            PropertyWorkOrder.STATUS_COMPLETED, PropertyWorkOrder.STATUS_CLOSED,
+            PropertyWorkOrder.STATUS_CANCELLED,
+        } or work_order.linked_agreement_id or work_order.marketplace_status == PropertyWorkOrder.MARKETPLACE_ACCEPTED:
+            return "request_closed"
+    if intake is not None:
+        if intake.marketplace_archived_at or intake.traffic_classification == "archived":
+            return "request_archived"
+        if intake.traffic_classification == "spam_fraud":
+            return "request_closed"
+        if intake.status == "converted" or intake.converted_at or intake.agreement_id:
+            return "request_closed"
+        if CustomerRequest.objects.filter(source_intake=intake).filter(
+            Q(converted_project__isnull=False)
+            | Q(status__in=[CustomerRequest.STATUS_CANCELLED, CustomerRequest.STATUS_CLOSED, CustomerRequest.STATUS_CONVERTED_TO_PROJECT])
+        ).exists():
+            return "request_closed"
+    return ""
+
+
+def automatic_invite_ids_for_intake(intake: ProjectIntake) -> set[int]:
+    """Automatic invites are linked from their marketplace lead, not inferred from opportunities."""
+    return {
+        analysis["marketplace_invite_id"]
+        for analysis in PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).values_list("ai_analysis", flat=True)
+        if isinstance(analysis, dict) and analysis.get("marketplace_request") and isinstance(analysis.get("marketplace_invite_id"), int)
     }
 
 
@@ -572,6 +710,7 @@ def marketplace_enabled_for_intake(intake: ProjectIntake) -> dict[str, Any]:
         readiness["coverage_message"] = "Building local coverage"
         readiness["automatic_matching_message"] = "Automatic matching is not yet available for this service and location."
     readiness["direct_invitation_message"] = "Direct contractor invitations are available."
+    readiness.update(customer_safe_marketplace_capability(readiness))
     return readiness
 
 
@@ -784,15 +923,22 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     intake = ProjectIntake.objects.select_for_update().get(pk=intake_id)
     readiness = marketplace_enabled_for_intake(intake)
     max_bids = int(readiness.get("max_bids_per_request") or DEFAULT_MAX_BIDS_PER_REQUEST)
-    if intake.marketplace_archived_at:
+    block_reason = marketplace_request_action_block_reason(intake=intake)
+    if block_reason:
+        safe_capability = customer_safe_marketplace_capability(
+            readiness,
+            terminal_reason=block_reason,
+        )
         return {
+            **safe_capability,
             "created": [],
             "created_count": 0,
             "skipped_count": 0,
             "cap": max_bids,
             "cap_reached": False,
-            "archived": True,
-            "marketplace": {**readiness, "can_auto_route": False},
+            "archived": block_reason == "request_archived",
+            "terminal": block_reason != "request_archived",
+            "marketplace": {**readiness, **safe_capability, "can_auto_route": False},
         }
     open_statuses = [
         ContractorDiscoveryInvite.STATUS_PENDING,
@@ -802,28 +948,43 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
         ContractorDiscoveryInvite.STATUS_CLAIMED,
         ContractorDiscoveryInvite.STATUS_RESPONDED,
     ]
-    existing_qs = ContractorDiscoveryInvite.objects.select_for_update().filter(public_intake=intake, status__in=open_statuses)
+    existing_qs = ContractorDiscoveryInvite.objects.select_for_update().filter(
+        public_intake=intake, pk__in=automatic_invite_ids_for_intake(intake), status__in=open_statuses,
+    )
     existing_count = existing_qs.count()
     if not readiness.get("can_auto_route"):
+        safe_capability = customer_safe_marketplace_capability(
+            readiness,
+            automatic_routed_count=existing_count,
+        )
         return {
+            **safe_capability,
             "created": [],
             "created_count": 0,
             "skipped_count": 0,
             "cap": max_bids,
             "cap_reached": existing_count >= max_bids,
-            "marketplace": readiness,
+            "marketplace": {**readiness, **safe_capability},
         }
     if existing_count >= max_bids:
+        safe_capability = customer_safe_marketplace_capability(
+            readiness,
+            automatic_routed_count=existing_count,
+        )
         return {
+            **safe_capability,
             "created": [],
             "created_count": 0,
             "skipped_count": 0,
             "cap": max_bids,
             "cap_reached": True,
-            "marketplace": readiness,
+            "marketplace": {**readiness, **safe_capability},
         }
 
-    existing_contractors = set(existing_qs.exclude(contractor__isnull=True).values_list("contractor_id", flat=True))
+    existing_contractors = set(
+        ContractorDiscoveryInvite.objects.filter(public_intake=intake, status__in=open_statuses)
+        .exclude(contractor__isnull=True).values_list("contractor_id", flat=True)
+    )
     created = []
     routed_leads = []
     eligible_listings = eligible_marketplace_listings(intake)
@@ -872,7 +1033,11 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
             readiness=readiness,
         )
         routed_leads.append(lead)
-        notify_customer_bid_received(lead=lead)
+        lead_id = lead.id
+        transaction.on_commit(
+            lambda lead_id=lead_id: notify_customer_bid_received(lead=PublicContractorLead.objects.get(pk=lead_id)),
+            robust=True,
+        )
         created.append(
             {
                 "id": invite.id,
@@ -886,14 +1051,27 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
         existing_contractors.add(listing.claimed_contractor_id)
 
     if routed_leads:
-        notify_marketplace_request_routed(intake=intake, leads=routed_leads)
+        intake_id_for_notice = intake.id
+        lead_ids_for_notice = [lead.id for lead in routed_leads]
+        transaction.on_commit(
+            lambda: notify_marketplace_request_routed(
+                intake=ProjectIntake.objects.get(pk=intake_id_for_notice),
+                leads=list(PublicContractorLead.objects.filter(pk__in=lead_ids_for_notice)),
+            ),
+            robust=True,
+        )
 
+    safe_capability = customer_safe_marketplace_capability(
+        readiness,
+        automatic_routed_count=len(created) + existing_count,
+    )
     return {
+        **safe_capability,
         "created": created,
         "created_count": len(created),
         "skipped_count": max(0, len(eligible_listings) - len(created) - existing_count),
         "cap": max_bids,
         "cap_reached": len(created) + existing_count >= max_bids,
-        "marketplace": readiness,
+        "marketplace": {**readiness, **safe_capability},
         "created_at": timezone.now().isoformat(),
     }
