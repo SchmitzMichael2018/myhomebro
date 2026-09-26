@@ -4111,7 +4111,7 @@ test("customer portal is reachable from the landing page and loads secure record
                 routed_contractor_count: 1,
                 marketplace: {
                   ...request.marketplace,
-                  can_direct_invite: false,
+                  can_direct_invite: true,
                   manual_selection_required: false,
                   routing_outcome: "direct_invited",
                   direct_invitation_count: 1,
@@ -6909,6 +6909,184 @@ test("property manager portal presents a role-aware operations command center", 
   await page.getByTestId("property-management-account-section-vendors").click();
   await expect(page.getByTestId("pm-vendors-section")).toContainText("Preferred Plumbing");
   await expect(page.getByTestId("customer-profile-form")).not.toContainText("Account Type");
+});
+
+test("property manager explicitly opts into ready-market automatic matching", async ({ page }) => {
+  const makeWorkOrder = (id, automaticMatchingAvailable, status = "open") => ({
+    id,
+    property_profile_id: 1,
+    work_order_number: `PWO-${id}`,
+    title: `Mock plumbing work ${id}`,
+    description: "A privacy-safe maintenance request.",
+    category: "plumbing",
+    category_label: "Plumbing",
+    status,
+    status_label: status === "closed" ? "Closed" : "Open",
+    assignment_type: "marketplace_contractor",
+    assignment_type_label: "Marketplace Contractor",
+    marketplace_status: "not_sent",
+    marketplace: {
+      can_search_contractors: status === "open",
+      can_direct_invite: status === "open",
+      automatic_matching_available: automaticMatchingAvailable,
+    },
+    recipient_invitations: [],
+    activities: [],
+  });
+  let portal = clonePortal({
+    ...portalPayload,
+    customer: { ...portalPayload.customer, account_type: "property_management_company" },
+    account: { ...portalPayload.account, account_type: "property_management_company", is_property_management_company: true },
+    property_work_orders: [makeWorkOrder(81, true), makeWorkOrder(82, false), makeWorkOrder(83, false, "closed")],
+  });
+  const submissions = [];
+  await page.addInitScript(() => window.localStorage.setItem("access", "customer-portal-token"));
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const url = route.request().url();
+    if (route.request().method() === "POST" && url.includes("/work-orders/81/send-to-marketplace/")) {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      submissions.push(payload);
+      portal = { ...portal, property_work_orders: portal.property_work_orders.map((row) => row.id === 81 ? { ...row, marketplace_status: "sent" } : row) };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ portal, work_order: portal.property_work_orders[0] }) });
+      return;
+    }
+    if (route.request().method() === "GET" && /\/customer-portal\/customer-token\/$/.test(url)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(portal) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-maintenance").click();
+  await expect(page.getByTestId("property-work-order-search-contractors-81")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-invite-contractor-81")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-auto-match-81")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-actions-82")).toContainText("Automatic matching is not ready here");
+  await expect(page.getByTestId("property-work-order-auto-match-82")).toHaveCount(0);
+  await expect(page.getByTestId("property-work-order-search-contractors-83")).toHaveCount(0);
+  expect(submissions).toHaveLength(0);
+  await page.screenshot({ path: "test-results/pr22-pm-explicit-matching-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("property-work-order-auto-match-81")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-actions-82")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(2);
+  await page.screenshot({ path: "test-results/pr22-pm-explicit-matching-mobile.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByTestId("property-work-order-auto-match-81").focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => submissions.length).toBe(1);
+  expect(submissions[0]).toEqual({ mode: "automatic_matching" });
+});
+
+test("terminal customer request keeps history but offers no contractor actions", async ({ page }) => {
+  const terminalRequest = {
+    ...portalPayload.requests[0],
+    id: "customer-request-91",
+    request_id: 91,
+    source_kind: "customer_request",
+    project_title: "Closed mock request",
+    status: "cancelled",
+    status_label: "Cancelled",
+    workflow_status: "closed",
+    workflow_status_label: "Closed",
+    can_edit: false,
+    can_cancel: false,
+    can_delete: false,
+    marketplace: {
+      can_search_contractors: false,
+      can_direct_invite: false,
+      automatic_matching_available: false,
+      customer_safe_message: "This request is no longer available for contractor matching.",
+      customer_safe_next_actions: [],
+    },
+  };
+  const portal = clonePortal({ ...portalPayload, requests: [terminalRequest] });
+  await page.addInitScript(() => window.localStorage.setItem("access", "customer-portal-token"));
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    if (route.request().method() === "GET" && /\/customer-portal\/customer-token\/$/.test(route.request().url())) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(portal) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("customer-request-card-customer-request-91")).toContainText("Closed mock request");
+  await expect(page.getByTestId("customer-request-find-contractor-customer-request-91")).toHaveCount(0);
+  await expect(page.getByTestId("customer-request-invite-contractor-customer-request-91")).toHaveCount(0);
+  await page.getByTestId("customer-request-view-customer-request-91").click();
+  await expect(page.getByTestId("customer-request-detail-find-contractor")).toHaveCount(0);
+  await expect(page.getByTestId("customer-request-detail-invite-contractor")).toHaveCount(0);
+});
+
+test("customer can send a second distinct direct invitation after the first", async ({ page }) => {
+  const request = {
+    ...portalPayload.requests[0],
+    id: "customer-request-92",
+    request_id: 92,
+    source_kind: "customer_request",
+    project_title: "Mock plumbing request",
+    project_class_label: "Residential",
+    project_category: "Plumbing",
+    project_type: "Plumbing",
+    project_subtype: "Repair",
+    project_scope: "Repair a leaking sink.",
+    notes: "Repair a leaking sink.",
+    bids_count: 0,
+    current_next_action: "Wait for the invited contractor to respond.",
+    conversion_status: "",
+    selected_contractor: null,
+    linked_work: null,
+    source_intake_token: "",
+    workflow_status: "sent_to_contractors",
+    workflow_status_label: "Sent to 1 Contractor",
+    marketplace: {
+      ...portalPayload.requests[0].marketplace,
+      can_search_contractors: true,
+      can_direct_invite: true,
+      routing_outcome: "direct_invited",
+      direct_invitation_count: 1,
+    },
+  };
+  const portal = clonePortal({ ...portalPayload, requests: [request] });
+  const submissions = [];
+  await page.addInitScript(() => window.localStorage.setItem("access", "customer-portal-token"));
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const url = route.request().url();
+    if (route.request().method() === "GET" && /\/customer-portal\/customer-token\/$/.test(url)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(portal) });
+      return;
+    }
+    if (route.request().method() === "POST" && url.includes("/requests/92/contractor-search/")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ portal }) });
+      return;
+    }
+    if (route.request().method() === "POST" && url.includes("/requests/92/contractors/select/")) {
+      submissions.push(JSON.parse(route.request().postData() || "{}"));
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ portal, detail: "Request sent." }) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("customer-request-card-customer-request-92")).toContainText("Mock plumbing request");
+  await expect(page.getByTestId("customer-request-invite-contractor-customer-request-92")).toBeVisible();
+  await page.getByTestId("customer-request-card-customer-request-92").screenshot({ path: "test-results/pr22-customer-repeat-direct-invitation.png" });
+  await page.getByTestId("customer-request-invite-contractor-customer-request-92").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("customer-request-manual-contractor-form")).toBeVisible();
+  await page.getByTestId("customer-request-manual-contractor-name").fill("Second Mock Plumbing");
+  await page.getByTestId("customer-request-manual-contractor-email").fill("second-mock@example.com");
+  await page.getByTestId("customer-request-add-manual-contractor").click();
+  await page.getByTestId("customer-request-route-contractors").click();
+  await expect(page.getByTestId("customer-request-contractor-route-review")).toContainText("Second Mock Plumbing");
+  await page.getByTestId("customer-request-contractor-review-send").click();
+  await expect.poll(() => submissions.length).toBe(1);
+  expect(submissions[0].selected_contractors).toHaveLength(1);
+  expect(submissions[0].selected_contractors[0].business_name).toBe("Second Mock Plumbing");
 });
 
 test("tenant maintenance notification opens the Maintenance tab", async ({ page }) => {

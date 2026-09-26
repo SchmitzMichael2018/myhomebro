@@ -815,6 +815,16 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
     setWorkflowStep(2);
   };
 
+  const sendForAutomaticMatching = async (row) => {
+    if (!row?.id || !row.marketplace?.automatic_matching_available) return;
+    try {
+      setError("");
+      await onSendToMarketplace?.(row.property_profile_id || activePropertyId, row.id, { mode: "automatic_matching" });
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Automatic matching is not available. Search for or invite a contractor directly.");
+    }
+  };
+
   const withdrawMarketplace = async (row) => {
     if (!row?.id) return;
     try {
@@ -1051,7 +1061,7 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
                         Close Work
                       </button>
                     ) : null}
-                    {row.assignment_type === "marketplace_contractor" && (!row.marketplace_status || row.marketplace_status === "not_sent" || row.marketplace_status === "withdrawn" || row.marketplace_status === "declined") ? (
+                    {row.assignment_type === "marketplace_contractor" && row.marketplace?.can_search_contractors && (!row.marketplace_status || row.marketplace_status === "not_sent" || row.marketplace_status === "withdrawn" || row.marketplace_status === "declined") ? (
                       <>
                         <button type="button" data-testid={`property-work-order-search-contractors-${row.id}`} onClick={() => openMarketplaceSelection(row)} className="rounded-lg border border-amber-300/45 bg-amber-300/10 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-300/20">
                           Search contractors
@@ -1061,6 +1071,13 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
                             Invite a contractor you know
                           </button>
                         ) : null}
+                        {row.marketplace?.automatic_matching_available ? (
+                          <button type="button" data-testid={`property-work-order-auto-match-${row.id}`} disabled={saving} onClick={() => sendForAutomaticMatching(row)} className="rounded-lg border border-emerald-300/45 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-50">
+                            Send for automatic matching
+                          </button>
+                        ) : (
+                          <span className="text-xs text-amber-100">Automatic matching is not ready here. Search for or invite a contractor directly.</span>
+                        )}
                       </>
                     ) : null}
                     {row.assignment_type === "marketplace_contractor" && row.marketplace_status === "sent" ? (
@@ -2849,12 +2866,12 @@ I need help installing shelves and patching drywall.`}
                           Edit Request
                         </button>
                       ) : null}
-                      {(request.marketplace?.can_search_contractors ?? (request.can_edit || request.workflow_status === "contractor_matching")) && request.marketplace?.routing_outcome !== "automatic_routed" && request.marketplace?.routing_outcome !== "direct_invited" ? (
+                      {(request.marketplace?.can_search_contractors ?? (request.can_edit || request.workflow_status === "contractor_matching")) ? (
                         <button type="button" data-testid={`customer-request-find-contractor-${request.id}`} onClick={() => beginContractorSearch(request)} className="rounded-lg bg-sky-300 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-sky-200">
                           Search contractors
                         </button>
                       ) : null}
-                      {request.marketplace?.can_direct_invite && request.marketplace?.routing_outcome === "not_routed" ? (
+                      {request.marketplace?.can_direct_invite ? (
                         <button type="button" data-testid={`customer-request-invite-contractor-${request.id}`} onClick={() => beginContractorSearch(request, { inviteKnown: true })} className="rounded-lg border border-amber-300/50 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-300/10">
                           Invite a contractor you know
                         </button>
@@ -3040,12 +3057,12 @@ I need help installing shelves and patching drywall.`}
                       Edit Request
                     </button>
                   ) : null}
-                  {(selectedRequest.marketplace?.can_search_contractors ?? (selectedRequest.can_edit || selectedRequest.workflow_status === "contractor_matching")) && selectedRequest.marketplace?.routing_outcome !== "automatic_routed" && selectedRequest.marketplace?.routing_outcome !== "direct_invited" ? (
+                  {(selectedRequest.marketplace?.can_search_contractors ?? (selectedRequest.can_edit || selectedRequest.workflow_status === "contractor_matching")) ? (
                     <button type="button" data-testid="customer-request-detail-find-contractor" onClick={() => beginContractorSearch(selectedRequest)} className="rounded-xl bg-sky-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-sky-200">
                       Search contractors
                     </button>
                   ) : null}
-                  {selectedRequest.marketplace?.can_direct_invite && selectedRequest.marketplace?.routing_outcome === "not_routed" ? (
+                  {selectedRequest.marketplace?.can_direct_invite ? (
                     <button type="button" data-testid="customer-request-detail-invite-contractor" onClick={() => beginContractorSearch(selectedRequest, { inviteKnown: true })} className="rounded-xl border border-amber-300/50 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/10">
                       Invite a contractor you know
                     </button>

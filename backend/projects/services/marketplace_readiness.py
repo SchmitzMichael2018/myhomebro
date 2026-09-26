@@ -13,6 +13,7 @@ from django.utils import timezone
 from projects.models import Contractor, PublicContractorLead
 from projects.models_contractor_discovery import AUTOMATIC_MATCHING_TRADES, ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
+from projects.models_customer_portal import CustomerRequest, PropertyWorkOrder
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.customer_lifecycle import upsert_customer_for_public_lead
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
@@ -70,18 +71,19 @@ def customer_safe_marketplace_capability(
     automatic_routed_count: int = 0,
     direct_invitation_count: int = 0,
     archived: bool = False,
+    terminal_reason: str = "",
 ) -> dict[str, Any]:
     """Return the additive Marketplace contract safe for customer-facing APIs."""
     automatic_routed_count = max(0, int(automatic_routed_count or 0))
     direct_invitation_count = max(0, int(direct_invitation_count or 0))
-    automatic_matching_available = bool(readiness.get("can_auto_route"))
+    automatic_matching_available = bool(readiness.get("can_auto_route")) and not archived and not terminal_reason
     status = str(readiness.get("status") or "")
 
-    if archived:
-        reason_code = "request_archived"
-        status_label = "Request archived"
-        message = "This request is archived. Restore it before searching for or inviting a contractor."
-        routing_outcome = "not_routed"
+    if archived or terminal_reason:
+        reason_code = terminal_reason or "request_archived"
+        status_label = "Request unavailable" if terminal_reason else "Request archived"
+        message = "This request is no longer available for contractor search or invitations."
+        routing_outcome = "archived" if reason_code == "request_archived" else "terminal"
     elif automatic_routed_count:
         reason_code = "automatically_routed"
         status_label = "Sent for automatic matching"
@@ -93,7 +95,7 @@ def customer_safe_marketplace_capability(
     elif direct_invitation_count:
         reason_code = "contractor_invited"
         status_label = "Contractor invited"
-        message = "A contractor was invited directly. Your request remains saved while you wait for a response."
+        message = "A contractor was invited directly. Your request remains saved, and you can invite another eligible contractor."
         routing_outcome = "direct_invited"
     elif status == "active":
         reason_code = "automatic_matching_available"
@@ -129,13 +131,13 @@ def customer_safe_marketplace_capability(
         routing_outcome = "not_routed"
 
     manual_selection_required = bool(
-        not archived
+        not archived and not terminal_reason
         and not automatic_routed_count
         and not direct_invitation_count
         and not automatic_matching_available
     )
-    can_search_contractors = not archived
-    can_direct_invite = not archived and not direct_invitation_count
+    can_search_contractors = not archived and not terminal_reason
+    can_direct_invite = not archived and not terminal_reason
     next_actions = []
     if can_search_contractors:
         next_actions.append("search_contractors")
@@ -156,6 +158,45 @@ def customer_safe_marketplace_capability(
         "customer_safe_reason_code": reason_code,
         "customer_safe_message": message,
         "customer_safe_next_actions": next_actions,
+    }
+
+
+def marketplace_request_action_block_reason(*, intake=None, customer_request=None, work_order=None) -> str:
+    """One fail-closed lifecycle rule for customer and PM marketplace actions."""
+    if customer_request is not None:
+        if customer_request.converted_project_id or customer_request.status in {
+            CustomerRequest.STATUS_CANCELLED, CustomerRequest.STATUS_CLOSED,
+            CustomerRequest.STATUS_CONVERTED_TO_PROJECT,
+        }:
+            return "request_closed"
+        intake = intake or getattr(customer_request, "source_intake", None)
+    if work_order is not None:
+        if work_order.status in {
+            PropertyWorkOrder.STATUS_COMPLETED, PropertyWorkOrder.STATUS_CLOSED,
+            PropertyWorkOrder.STATUS_CANCELLED,
+        } or work_order.linked_agreement_id or work_order.marketplace_status == PropertyWorkOrder.MARKETPLACE_ACCEPTED:
+            return "request_closed"
+    if intake is not None:
+        if intake.marketplace_archived_at or intake.traffic_classification == "archived":
+            return "request_archived"
+        if intake.traffic_classification == "spam_fraud":
+            return "request_closed"
+        if intake.status == "converted" or intake.converted_at or intake.agreement_id:
+            return "request_closed"
+        if CustomerRequest.objects.filter(source_intake=intake).filter(
+            Q(converted_project__isnull=False)
+            | Q(status__in=[CustomerRequest.STATUS_CANCELLED, CustomerRequest.STATUS_CLOSED, CustomerRequest.STATUS_CONVERTED_TO_PROJECT])
+        ).exists():
+            return "request_closed"
+    return ""
+
+
+def automatic_invite_ids_for_intake(intake: ProjectIntake) -> set[int]:
+    """Automatic invites are linked from their marketplace lead, not inferred from opportunities."""
+    return {
+        analysis["marketplace_invite_id"]
+        for analysis in PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).values_list("ai_analysis", flat=True)
+        if isinstance(analysis, dict) and analysis.get("marketplace_request") and isinstance(analysis.get("marketplace_invite_id"), int)
     }
 
 
@@ -882,10 +923,11 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     intake = ProjectIntake.objects.select_for_update().get(pk=intake_id)
     readiness = marketplace_enabled_for_intake(intake)
     max_bids = int(readiness.get("max_bids_per_request") or DEFAULT_MAX_BIDS_PER_REQUEST)
-    if intake.marketplace_archived_at:
+    block_reason = marketplace_request_action_block_reason(intake=intake)
+    if block_reason:
         safe_capability = customer_safe_marketplace_capability(
             readiness,
-            archived=True,
+            terminal_reason=block_reason,
         )
         return {
             **safe_capability,
@@ -894,7 +936,8 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
             "skipped_count": 0,
             "cap": max_bids,
             "cap_reached": False,
-            "archived": True,
+            "archived": block_reason == "request_archived",
+            "terminal": block_reason != "request_archived",
             "marketplace": {**readiness, **safe_capability, "can_auto_route": False},
         }
     open_statuses = [
@@ -905,7 +948,9 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
         ContractorDiscoveryInvite.STATUS_CLAIMED,
         ContractorDiscoveryInvite.STATUS_RESPONDED,
     ]
-    existing_qs = ContractorDiscoveryInvite.objects.select_for_update().filter(public_intake=intake, status__in=open_statuses)
+    existing_qs = ContractorDiscoveryInvite.objects.select_for_update().filter(
+        public_intake=intake, pk__in=automatic_invite_ids_for_intake(intake), status__in=open_statuses,
+    )
     existing_count = existing_qs.count()
     if not readiness.get("can_auto_route"):
         safe_capability = customer_safe_marketplace_capability(
@@ -936,7 +981,10 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
             "marketplace": {**readiness, **safe_capability},
         }
 
-    existing_contractors = set(existing_qs.exclude(contractor__isnull=True).values_list("contractor_id", flat=True))
+    existing_contractors = set(
+        ContractorDiscoveryInvite.objects.filter(public_intake=intake, status__in=open_statuses)
+        .exclude(contractor__isnull=True).values_list("contractor_id", flat=True)
+    )
     created = []
     routed_leads = []
     eligible_listings = eligible_marketplace_listings(intake)
@@ -985,7 +1033,11 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
             readiness=readiness,
         )
         routed_leads.append(lead)
-        notify_customer_bid_received(lead=lead)
+        lead_id = lead.id
+        transaction.on_commit(
+            lambda lead_id=lead_id: notify_customer_bid_received(lead=PublicContractorLead.objects.get(pk=lead_id)),
+            robust=True,
+        )
         created.append(
             {
                 "id": invite.id,
@@ -999,7 +1051,15 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
         existing_contractors.add(listing.claimed_contractor_id)
 
     if routed_leads:
-        notify_marketplace_request_routed(intake=intake, leads=routed_leads)
+        intake_id_for_notice = intake.id
+        lead_ids_for_notice = [lead.id for lead in routed_leads]
+        transaction.on_commit(
+            lambda: notify_marketplace_request_routed(
+                intake=ProjectIntake.objects.get(pk=intake_id_for_notice),
+                leads=list(PublicContractorLead.objects.filter(pk__in=lead_ids_for_notice)),
+            ),
+            robust=True,
+        )
 
     safe_capability = customer_safe_marketplace_capability(
         readiness,

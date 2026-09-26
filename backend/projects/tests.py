@@ -19,6 +19,7 @@ from django.core.cache import cache
 from django.core.management import call_command
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import transaction
 from django.test import TestCase, RequestFactory, override_settings
 from django.urls import resolve
 from django.utils import timezone
@@ -24476,7 +24477,7 @@ class CustomerPortalAccessTests(TestCase):
     def _create_accepted_marketplace_work_order(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
-        contractor_user, contractor, _entry = self._create_marketplace_contractor_entry()
+        contractor_user, contractor, entry = self._create_marketplace_contractor_entry()
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
@@ -24490,7 +24491,7 @@ class CustomerPortalAccessTests(TestCase):
         )
         send_response = self.client.post(
             f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
-            {},
+            {"directory_entry_ids": [entry.id]},
             content_type="application/json",
         )
         self.assertEqual(send_response.status_code, 200, send_response.data)
@@ -24506,7 +24507,7 @@ class CustomerPortalAccessTests(TestCase):
     def _create_pending_marketplace_work_order(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
-        contractor_user, contractor, _entry = self._create_marketplace_contractor_entry()
+        contractor_user, contractor, entry = self._create_marketplace_contractor_entry()
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
@@ -24520,13 +24521,150 @@ class CustomerPortalAccessTests(TestCase):
         )
         send_response = self.client.post(
             f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
-            {},
+            {"directory_entry_ids": [entry.id]},
             content_type="application/json",
         )
         self.assertEqual(send_response.status_code, 200, send_response.data)
         opportunity = ContractorOpportunity.objects.get(property_work_order=row)
         row.refresh_from_db()
         return token, company, property_profile, unit, tenant, contractor_user, contractor, opportunity, row
+
+    def test_property_manager_missing_recipient_never_broadcasts(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        _user, _contractor, entry = self._create_marketplace_contractor_entry()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company, property_profile=property_profile,
+            unit=unit, tenant=tenant, title="Repair sink leak",
+            description="Inspect and repair the sink.", category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        url = f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/"
+        missing = self.client.post(url, {}, content_type="application/json")
+        self.assertEqual(missing.status_code, 400)
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row).exists())
+        self.assertFalse(PropertyWorkOrderRecipientInvitation.objects.filter(work_order=row).exists())
+        row.refresh_from_db()
+        self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_NOT_SENT)
+        invalid_batch = self.client.post(
+            url,
+            {"recipients": [
+                {"source": "myhomebro_contractor", "directory_entry_id": entry.id},
+                {"source": "preferred_vendor", "vendor_id": 999999},
+            ]},
+            content_type="application/json",
+        )
+        self.assertEqual(invalid_batch.status_code, 400)
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row).exists())
+        self.assertFalse(PropertyWorkOrderRecipientInvitation.objects.filter(work_order=row).exists())
+        no_contact_vendor = PropertyVendor.objects.create(
+            property_management_company=company, name="Mock No Contact Vendor", status=PropertyVendor.STATUS_ACTIVE,
+        )
+        no_contact_batch = self.client.post(
+            url,
+            {"recipients": [
+                {"source": "myhomebro_contractor", "directory_entry_id": entry.id},
+                {"source": "preferred_vendor", "vendor_id": no_contact_vendor.id},
+            ]},
+            content_type="application/json",
+        )
+        self.assertEqual(no_contact_batch.status_code, 400)
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row).exists())
+        self.assertFalse(PropertyWorkOrderRecipientInvitation.objects.filter(work_order=row).exists())
+        selected = self.client.post(url, {"directory_entry_ids": [entry.id]}, content_type="application/json")
+        self.assertEqual(selected.status_code, 200, selected.data)
+        self.assertEqual(ContractorOpportunity.objects.filter(property_work_order=row).count(), 1)
+
+    def test_property_manager_automatic_matching_requires_exact_approved_market(self):
+        from projects.models_contractor_discovery import MarketplaceAutomaticMatchingApproval
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        property_profile.city = "Austin"
+        property_profile.state = "TX"
+        property_profile.save(update_fields=["city", "state"])
+        _user, contractor, entry = self._create_marketplace_contractor_entry()
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_MYHOMEBRO, business_name=entry.business_name,
+            city="Austin", state="TX", primary_trade="plumbing", trade_categories=["plumbing"],
+            claimed_profile=True, claimed_contractor=contractor, manually_reviewed=True,
+        )
+        MarketplaceLocation.objects.create(
+            city="Austin", state="TX", is_enabled=True,
+            min_claimed_contractors=1, min_verified_contractors=1, min_stripe_ready_contractors=1,
+        )
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company, property_profile=property_profile, unit=unit, tenant=tenant,
+            title="Repair sink leak", description="Inspect and repair the sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        url = f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/"
+        unapproved = self.client.post(url, {"mode": "automatic_matching"}, content_type="application/json")
+        self.assertEqual(unapproved.status_code, 400)
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row).exists())
+
+        MarketplaceAutomaticMatchingApproval.objects.create(city_key="Austin", state_key="TX", trade="plumbing", is_approved=True)
+        row.category = PropertyWorkOrder.CATEGORY_OTHER
+        row.save(update_fields=["category"])
+        unknown_trade = self.client.post(url, {"mode": "automatic_matching"}, content_type="application/json")
+        self.assertEqual(unknown_trade.status_code, 400)
+        row.category = PropertyWorkOrder.CATEGORY_PLUMBING
+        row.save(update_fields=["category"])
+        contractor.marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+        contractor.save(update_fields=["marketplace_verification_status", "updated_at"])
+        insufficient_supply = self.client.post(url, {"mode": "automatic_matching"}, content_type="application/json")
+        self.assertEqual(insufficient_supply.status_code, 400)
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row).exists())
+        contractor.marketplace_verification_status = Contractor.MARKETPLACE_VERIFIED
+        contractor.save(update_fields=["marketplace_verification_status", "updated_at"])
+        approved = self.client.post(url, {"mode": "automatic_matching"}, content_type="application/json")
+        self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertEqual(ContractorOpportunity.objects.filter(property_work_order=row).count(), 1)
+        self.assertEqual(PropertyWorkOrderRecipientInvitation.objects.filter(work_order=row).count(), 1)
+        duplicate = self.client.post(url, {"mode": "automatic_matching"}, content_type="application/json")
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(ContractorOpportunity.objects.filter(property_work_order=row).count(), 1)
+
+        closed = PropertyWorkOrder.objects.create(
+            property_management_company=company, property_profile=property_profile, unit=unit, tenant=tenant,
+            title="Closed sink repair", description="Already resolved.", category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            status=PropertyWorkOrder.STATUS_CLOSED,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        closed_url = f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{closed.id}/send-to-marketplace/"
+        closed_response = self.client.post(closed_url, {"mode": "automatic_matching"}, content_type="application/json")
+        self.assertEqual(closed_response.status_code, 400)
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=closed).exists())
+
+    @patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent"))
+    def test_property_manager_external_invitation_waits_for_commit(self, mock_email):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company, property_profile=property_profile, unit=unit, tenant=tenant,
+            title="Repair sink leak", description="Inspect and repair the sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_VENDOR,
+        )
+        url = f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/"
+        payload = {"recipients": [{"source": "manual_vendor", "name": "Mock Plumbing", "email": "mock-vendor@example.com"}]}
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            with self.assertRaisesMessage(RuntimeError, "abort"):
+                with transaction.atomic():
+                    response = self.client.post(url, payload, content_type="application/json")
+                    self.assertEqual(response.status_code, 200, response.data)
+                    raise RuntimeError("abort")
+        self.assertEqual(callbacks, [])
+        mock_email.assert_not_called()
+        self.assertFalse(PropertyWorkOrderRecipientInvitation.objects.filter(work_order=row).exists())
+
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            response = self.client.post(url, payload, content_type="application/json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(callbacks), 1)
+        self.assertEqual(mock_email.call_count, 1)
+        self.assertEqual(PropertyWorkOrderRecipientInvitation.objects.filter(work_order=row).count(), 1)
 
     def test_contractor_bids_workspace_includes_pending_property_work_order_opportunities(self):
         _token, company, property_profile, unit, tenant, contractor_user, _contractor, opportunity, row = self._create_pending_marketplace_work_order()
@@ -24743,7 +24881,7 @@ class CustomerPortalAccessTests(TestCase):
         with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")), patch(
             "projects.views.customer_portal.send_twilio_sms",
             return_value=(True, "sent"),
-        ):
+        ), self.captureOnCommitCallbacks(execute=True):
             external_send_response = self.client.post(
                 f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{external_row.id}/send-to-marketplace/",
                 {
@@ -25075,7 +25213,7 @@ class CustomerPortalAccessTests(TestCase):
     def test_property_work_order_can_be_sent_to_marketplace_and_duplicate_is_blocked(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
-        self._create_marketplace_contractor_entry()
+        _user, _contractor, entry = self._create_marketplace_contractor_entry()
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
@@ -25090,12 +25228,12 @@ class CustomerPortalAccessTests(TestCase):
 
         response = self.client.post(
             f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
-            {},
+            {"directory_entry_ids": [entry.id]},
             content_type="application/json",
         )
         duplicate = self.client.post(
             f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
-            {},
+            {"directory_entry_ids": [entry.id]},
             content_type="application/json",
         )
 
@@ -25212,7 +25350,7 @@ class CustomerPortalAccessTests(TestCase):
         with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")) as email_mock, patch(
             "projects.views.customer_portal.send_twilio_sms",
             return_value=(True, "sent"),
-        ) as sms_mock:
+        ) as sms_mock, self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
                 {
@@ -25266,7 +25404,7 @@ class CustomerPortalAccessTests(TestCase):
         with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")) as email_mock, patch(
             "projects.views.customer_portal.send_twilio_sms",
             return_value=(True, "sent"),
-        ) as sms_mock:
+        ) as sms_mock, self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
                 {
@@ -25357,7 +25495,7 @@ class CustomerPortalAccessTests(TestCase):
         with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")), patch(
             "projects.views.customer_portal.send_twilio_sms",
             return_value=(False, "no phone"),
-        ):
+        ), self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
                 {
@@ -25401,7 +25539,7 @@ class CustomerPortalAccessTests(TestCase):
         with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")), patch(
             "projects.views.customer_portal.send_twilio_sms",
             return_value=(False, "no phone"),
-        ):
+        ), self.captureOnCommitCallbacks(execute=True):
             send_response = self.client.post(
                 f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
                 {"recipients": [{"source": PropertyWorkOrderRecipientInvitation.TYPE_PREFERRED_VENDOR, "vendor_id": vendor.id}]},
@@ -25619,7 +25757,7 @@ class CustomerPortalAccessTests(TestCase):
     def test_property_work_order_marketplace_accept_assigns_contractor_without_agreement(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
-        contractor_user, contractor, _entry = self._create_marketplace_contractor_entry()
+        contractor_user, contractor, entry = self._create_marketplace_contractor_entry()
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
@@ -25632,7 +25770,7 @@ class CustomerPortalAccessTests(TestCase):
         )
         send_response = self.client.post(
             f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
-            {},
+            {"directory_entry_ids": [entry.id]},
             content_type="application/json",
         )
         self.assertEqual(send_response.status_code, 200, send_response.data)
@@ -25658,7 +25796,7 @@ class CustomerPortalAccessTests(TestCase):
     def test_property_work_order_marketplace_decline_and_withdraw_record_status(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
-        contractor_user, _contractor, _entry = self._create_marketplace_contractor_entry()
+        contractor_user, _contractor, entry = self._create_marketplace_contractor_entry()
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
@@ -25671,7 +25809,7 @@ class CustomerPortalAccessTests(TestCase):
         )
         send_response = self.client.post(
             f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
-            {},
+            {"directory_entry_ids": [entry.id]},
             content_type="application/json",
         )
         self.assertEqual(send_response.status_code, 200, send_response.data)
@@ -25701,7 +25839,7 @@ class CustomerPortalAccessTests(TestCase):
     def test_property_work_order_marketplace_enforces_pm_and_contractor_scoping(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
-        self._create_marketplace_contractor_entry(email="linked-contractor@example.com", business_name="Linked Plumbing")
+        _linked_user, _linked_contractor, linked_entry = self._create_marketplace_contractor_entry(email="linked-contractor@example.com", business_name="Linked Plumbing")
         other_user, _other_contractor, _other_entry = self._create_marketplace_contractor_entry(email="other-contractor@example.com", business_name="Other Plumbing")
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
@@ -25729,7 +25867,7 @@ class CustomerPortalAccessTests(TestCase):
 
         send_response = self.client.post(
             f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
-            {},
+            {"directory_entry_ids": [linked_entry.id]},
             content_type="application/json",
         )
         self.assertEqual(send_response.status_code, 200, send_response.data)
@@ -28565,7 +28703,7 @@ class CustomerPortalAccessTests(TestCase):
         )
 
     @patch("projects.services.contractor_discovery.send_postmark_email")
-    def test_local_business_listing_without_valid_email_is_skipped_for_email_invite(self, mock_send_email):
+    def test_local_business_listing_without_valid_contact_is_rejected_before_invite(self, mock_send_email):
         from projects.models_contractor_discovery import ContractorDiscoveryInvite
         from projects.services.contractor_discovery import create_discovery_invites
 
@@ -28580,24 +28718,15 @@ class CustomerPortalAccessTests(TestCase):
             primary_trade="Pool",
         )
 
-        result = create_discovery_invites(
-            intake=self.comparison_intake,
-            selected_targets=[
-                {
-                    "source": "listing",
-                    "id": f"listing:{listing.id}",
-                    "channel": "email",
-                }
-            ],
-            preferred_channel="email",
-        )
+        with self.assertRaisesMessage(ValueError, "no supported contact method"):
+            create_discovery_invites(
+                intake=self.comparison_intake,
+                selected_targets=[{"source": "listing", "id": f"listing:{listing.id}", "channel": "email"}],
+                preferred_channel="email",
+            )
 
-        invite = ContractorDiscoveryInvite.objects.get(directory_listing=listing)
-        self.assertEqual(invite.status, ContractorDiscoveryInvite.STATUS_PENDING)
-        self.assertEqual(invite.destination_email, "")
-        self.assertIn("No supported contact channel", invite.error_message)
-        self.assertFalse(mock_send_email.called)
-        self.assertEqual(result["created"][0]["status"], ContractorDiscoveryInvite.STATUS_PENDING)
+        self.assertFalse(ContractorDiscoveryInvite.objects.filter(directory_listing=listing).exists())
+        mock_send_email.assert_not_called()
 
     def test_customer_portal_requests_are_scoped_to_verified_email(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

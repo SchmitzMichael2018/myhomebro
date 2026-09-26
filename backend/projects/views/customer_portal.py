@@ -141,8 +141,11 @@ from projects.services.marketplace_permissions import (
     contractor_marketplace_action_block_reason,
 )
 from projects.services.marketplace_readiness import (
+    automatic_invite_ids_for_intake,
     customer_safe_marketplace_capability,
+    eligible_marketplace_listings,
     marketplace_enabled_for_intake,
+    marketplace_request_action_block_reason,
 )
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.property_intelligence import build_property_intelligence
@@ -982,7 +985,7 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
     marketplace_capability = customer_safe_marketplace_capability(
         marketplace_enabled_for_intake(capability_intake),
         direct_invitation_count=len(invitations),
-        archived=row.status in {PropertyWorkOrder.STATUS_CLOSED, PropertyWorkOrder.STATUS_CANCELLED},
+        terminal_reason=marketplace_request_action_block_reason(work_order=row),
     )
     return {
         "id": row.id,
@@ -2086,11 +2089,16 @@ def _customer_request_project_mode_to_intake(value: str) -> str:
 def _customer_request_matching_counts(request_row) -> dict:
     source_intake = getattr(request_row, "source_intake", None)
     if not source_intake:
-        return {"opportunities": 0, "invites": 0, "leads": 0, "total": 0}
+        return {"opportunities": 0, "invites": 0, "direct_invites": 0, "leads": 0, "total": 0}
     opportunities = ContractorOpportunity.objects.filter(intake_request=source_intake).count()
-    invites = ContractorDiscoveryInvite.objects.filter(public_intake=source_intake).count()
-    leads = PublicContractorLead.objects.filter(source_intake=source_intake).count()
-    return {"opportunities": opportunities, "invites": invites, "leads": leads, "total": opportunities + invites + leads}
+    invite_ids = set(ContractorDiscoveryInvite.objects.filter(public_intake=source_intake).values_list("id", flat=True))
+    automatic_invite_ids = automatic_invite_ids_for_intake(source_intake) & invite_ids
+    invites = len(automatic_invite_ids)
+    direct_invites = len(invite_ids - automatic_invite_ids)
+    leads = PublicContractorLead.objects.filter(
+        Q(source_intake=source_intake) | Q(ai_analysis__source_intake_id=source_intake.id)
+    ).distinct().count()
+    return {"opportunities": opportunities, "invites": invites, "direct_invites": direct_invites, "leads": leads, "total": opportunities + len(invite_ids) + leads}
 
 
 def _customer_request_can_edit(request_row) -> bool:
@@ -2134,7 +2142,7 @@ def _customer_request_can_delete(request_row) -> bool:
     return _customer_request_matching_counts(request_row)["total"] == 0
 
 
-def _customer_request_workflow_status(request_row, *, bids_count: int = 0) -> tuple[str, str, str]:
+def _customer_request_workflow_status(request_row, *, bids_count: int = 0, routed_count: int | None = None) -> tuple[str, str, str]:
     if getattr(request_row, "converted_project_id", None):
         return "agreement_created", "Agreement Created", "Open the linked agreement when you are ready."
     status_value = _safe_text(getattr(request_row, "status", "")).lower()
@@ -2146,7 +2154,7 @@ def _customer_request_workflow_status(request_row, *, bids_count: int = 0) -> tu
         return "contractor_response_received", "Contractor Response Received", "Review contractor responses and choose how to proceed."
     matching_counts = _customer_request_matching_counts(request_row)
     if matching_counts["total"] > 0 or status_value == CustomerRequest.STATUS_ROUTED:
-        count = matching_counts["total"]
+        count = routed_count if routed_count is not None else matching_counts["total"]
         label = f"Sent to {count} Contractor{'s' if count != 1 else ''}" if count else "Sent to Contractors"
         return "sent_to_contractors", label, "Wait for contractor responses or continue reviewing this request."
     if getattr(request_row, "source_intake_id", None) or status_value == CustomerRequest.STATUS_MARKETPLACE_READY:
@@ -2172,6 +2180,7 @@ def _customer_request_routed_contractors(source_intake) -> list[dict]:
     if not source_intake:
         return []
     rows = []
+    represented_automatic_contractors = set()
     for opportunity in (
         ContractorOpportunity.objects.select_related("directory_entry", "directory_entry__claimed_by_contractor")
         .filter(intake_request=source_intake)
@@ -2181,11 +2190,17 @@ def _customer_request_routed_contractors(source_intake) -> list[dict]:
         if payload:
             payload["id"] = f"opportunity-{opportunity.id}"
             rows.append(payload)
+            contractor_id = getattr(opportunity.directory_entry, "claimed_by_contractor_id", None)
+            if contractor_id:
+                represented_automatic_contractors.add(contractor_id)
+    automatic_invite_ids = automatic_invite_ids_for_intake(source_intake)
     for invite in (
         ContractorDiscoveryInvite.objects.select_related("directory_listing", "contractor")
         .filter(public_intake=source_intake)
         .order_by("-created_at", "-id")
     ):
+        if invite.id in automatic_invite_ids and invite.contractor_id in represented_automatic_contractors:
+            continue
         listing = getattr(invite, "directory_listing", None)
         contractor = getattr(invite, "contractor", None)
         rows.append(
@@ -2713,23 +2728,19 @@ def _request_lifecycle_payload(request_row, *, source_intake=None, linked_agreem
         return {"state": "agreement_created", "label": "Agreement Created", "next_action": "Open the linked agreement for next steps."}
     if getattr(request_row, "converted_project_id", None) or request_row.status == CustomerRequest.STATUS_CONVERTED_TO_PROJECT:
         return {"state": "agreement_created", "label": "Agreement Created", "next_action": "Open the linked project or agreement."}
-    if matching_counts and matching_counts.get("total", 0) > 0:
-        return {"state": "sent_to_contractors", "label": "Sent to Contractors", "next_action": "Watch for contractor responses."}
-    if source_intake is not None and source_intake.marketplace_archived_at:
-        return {
-            "state": "closed",
-            "label": "Closed and Archived",
-            "next_action": (
-                "No contractor response was received during the response window. "
-                "Review this request in your history or submit a new request if work is still needed."
-            ),
-        }
-    if source_intake is not None:
-        return {"state": "reviewing", "label": "Reviewing Request", "next_action": "Find or select contractors when ready."}
     if request_row.status == CustomerRequest.STATUS_CANCELLED:
         return {"state": "closed", "label": "Closed", "next_action": "This request is cancelled."}
     if request_row.status == CustomerRequest.STATUS_CLOSED:
         return {"state": "closed", "label": "Closed", "next_action": "This request is closed."}
+    if source_intake is not None and source_intake.marketplace_archived_at:
+        return {
+            "state": "closed", "label": "Closed and Archived",
+            "next_action": "Review this request in your history or submit a new request if work is still needed.",
+        }
+    if matching_counts and matching_counts.get("total", 0) > 0:
+        return {"state": "sent_to_contractors", "label": "Sent to Contractors", "next_action": "Watch for contractor responses."}
+    if source_intake is not None:
+        return {"state": "reviewing", "label": "Reviewing Request", "next_action": "Find or select contractors when ready."}
     if request_row.status == CustomerRequest.STATUS_DRAFT:
         return {"state": "draft", "label": "Draft", "next_action": "Finish and submit this request."}
     return {"state": "requested", "label": "Requested", "next_action": "Review the request or find a contractor."}
@@ -2785,9 +2796,11 @@ def _customer_request_rows(email: str) -> list[dict]:
         workflow_key, workflow_label, next_action = _customer_request_workflow_status(
             request_row,
             bids_count=0,
+            routed_count=len(routed_contractors),
         )
         can_edit = _customer_request_can_edit(request_row)
         matching_counts = _customer_request_matching_counts(request_row)
+        terminal_reason = marketplace_request_action_block_reason(customer_request=request_row)
         capability_intake = source_intake or ProjectIntake(
             project_city=_safe_text(request_row.city) or _safe_text(getattr(property_profile, "city", "")),
             project_state=_safe_text(request_row.state) or _safe_text(getattr(property_profile, "state", "")),
@@ -2798,8 +2811,8 @@ def _customer_request_rows(email: str) -> list[dict]:
         marketplace_capability = customer_safe_marketplace_capability(
             marketplace_enabled_for_intake(capability_intake),
             automatic_routed_count=matching_counts["invites"],
-            direct_invitation_count=max(0, matching_counts["opportunities"] - matching_counts["invites"]),
-            archived=bool(getattr(source_intake, "marketplace_archived_at", None)),
+            direct_invitation_count=matching_counts["direct_invites"],
+            terminal_reason=terminal_reason,
         )
         can_cancel, cancel_lock_reason = _customer_request_cancel_state(request_row)
         can_delete = _customer_request_can_delete(request_row)
@@ -2863,10 +2876,19 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "source_intake_id": getattr(source_intake, "id", None),
                 "source_intake_token": _safe_text(getattr(source_intake, "share_token", "")),
                 "source_intake": _customer_request_source_intake_payload(request_row),
-                "routed_contractor_count": matching_counts["total"],
+                "routed_contractor_count": len(routed_contractors),
                 "routed_contractors": routed_contractors,
                 "routed_at": _safe_dt(getattr(source_intake, "post_submit_flow_selected_at", None) or getattr(source_intake, "updated_at", None)) if matching_counts["total"] else "",
                 "marketplace": marketplace_capability,
+                "marketplace_outcomes": {
+                    "saved_request": True,
+                    "direct_invitations": matching_counts["direct_invites"],
+                    "automatic_invitations": matching_counts["invites"],
+                    "opportunities": matching_counts["opportunities"],
+                    "leads": matching_counts["leads"],
+                    "contractor_responses": sum(1 for row in routed_contractors if row.get("status") in {"accepted", "responded", "claimed"}),
+                    "terminal": bool(terminal_reason),
+                },
                 "latest_activity": _safe_dt(request_row.updated_at or request_row.created_at),
                 "created_at": _safe_dt(request_row.created_at),
                 "updated_at": _safe_dt(request_row.updated_at),
@@ -6387,6 +6409,7 @@ class CustomerPortalRequestCancelView(APIView):
 class CustomerPortalRequestMatchingView(APIView):
     permission_classes = [AllowAny]
 
+    @transaction.atomic
     def post(self, request, token: str, request_id: int):
         try:
             email = _unsign_portal_token(token)
@@ -6396,13 +6419,15 @@ class CustomerPortalRequestMatchingView(APIView):
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
         customer_request = get_object_or_404(
-            CustomerRequest.objects.select_related("property_profile", "source_intake", "converted_project"),
+            CustomerRequest.objects.select_for_update(),
             pk=request_id,
             customer_email__iexact=email.lower().strip(),
         )
-        if getattr(getattr(customer_request, "source_intake", None), "marketplace_archived_at", None):
+        if customer_request.source_intake_id:
+            customer_request.source_intake = ProjectIntake.objects.select_for_update().get(pk=customer_request.source_intake_id)
+        if marketplace_request_action_block_reason(customer_request=customer_request):
             return Response(
-                {"detail": "Restore this archived request before searching for contractors."},
+                {"detail": "This request is no longer available for contractor search."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         source_intake = _sync_customer_request_source_intake(customer_request)
@@ -6440,13 +6465,15 @@ class CustomerPortalRequestContractorSelectView(APIView):
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
         customer_request = get_object_or_404(
-            CustomerRequest.objects.select_related("property_profile", "source_intake", "converted_project"),
+            CustomerRequest.objects.select_for_update(),
             pk=request_id,
             customer_email__iexact=email.lower().strip(),
         )
-        if getattr(getattr(customer_request, "source_intake", None), "marketplace_archived_at", None):
+        if customer_request.source_intake_id:
+            customer_request.source_intake = ProjectIntake.objects.select_for_update().get(pk=customer_request.source_intake_id)
+        if marketplace_request_action_block_reason(customer_request=customer_request):
             return Response(
-                {"detail": "Restore this archived request before inviting a contractor."},
+                {"detail": "This request is no longer available for contractor invitations."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         selected = request.data.get("selected_contractors") or request.data.get("selected") or []
@@ -8563,15 +8590,16 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             if not isinstance(raw_recipients, list):
                 return [], True, Response({"detail": "Selected recipients could not be read."}, status=status.HTTP_400_BAD_REQUEST)
             for raw in raw_recipients:
-                if isinstance(raw, dict):
-                    source = _safe_text(raw.get("source"))
-                    if source:
-                        recipients.append(raw)
+                if not isinstance(raw, dict) or not _safe_text(raw.get("source")):
+                    return [], True, Response({"detail": "Selected recipients could not be read."}, status=status.HTTP_400_BAD_REQUEST)
+                recipients.append(raw)
         selected_entry_ids = request.data.get("directory_entry_ids")
         if selected_entry_ids is None:
             selected_entry_ids = request.data.get("selected_directory_entry_ids")
         if selected_entry_ids:
             explicit = True
+            if not isinstance(selected_entry_ids, list):
+                return [], True, Response({"detail": "Selected contractors could not be read."}, status=status.HTTP_400_BAD_REQUEST)
             try:
                 seen_directory_ids = {
                     int(raw.get("directory_entry_id"))
@@ -8586,16 +8614,47 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 return [], True, Response({"detail": "Selected contractors could not be read."}, status=status.HTTP_400_BAD_REQUEST)
         if explicit and not 1 <= len(recipients) <= 5:
             return [], True, Response({"detail": "Select 1 to 5 recipients."}, status=status.HTTP_400_BAD_REQUEST)
+        seen_recipients = set()
         for recipient in recipients:
             source = _safe_text(recipient.get("source"))
-            if source == PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR:
-                name = _safe_text(recipient.get("name"))
+            if source not in {
+                PropertyWorkOrderRecipientInvitation.TYPE_MYHOMEBRO_CONTRACTOR,
+                PropertyWorkOrderRecipientInvitation.TYPE_PREFERRED_VENDOR,
+                PropertyWorkOrderRecipientInvitation.TYPE_LOCAL_BUSINESS,
+                PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR,
+            }:
+                return [], True, Response({"detail": "A selected recipient is not supported."}, status=status.HTTP_400_BAD_REQUEST)
+            if source == PropertyWorkOrderRecipientInvitation.TYPE_MYHOMEBRO_CONTRACTOR:
+                entry_id = _safe_text(recipient.get("directory_entry_id"))
+                if not entry_id.isdecimal():
+                    return [], True, Response({"detail": "Selected contractors could not be read."}, status=status.HTTP_400_BAD_REQUEST)
+                identity = (source, int(entry_id))
+            elif source == PropertyWorkOrderRecipientInvitation.TYPE_PREFERRED_VENDOR:
+                vendor_id = _safe_text(recipient.get("vendor_id"))
+                vendor = PropertyVendor.objects.filter(
+                    property_management_company_id=row.property_management_company_id,
+                    pk=int(vendor_id), status=PropertyVendor.STATUS_ACTIVE,
+                ).first() if vendor_id.isdecimal() else None
+                if vendor is None:
+                    return [], True, Response({"detail": "Selected vendor is not available for this property."}, status=status.HTTP_400_BAD_REQUEST)
+                if not (vendor.email or vendor.phone):
+                    return [], True, Response({"detail": "Selected vendor has no email or phone."}, status=status.HTTP_400_BAD_REQUEST)
+                identity = (source, int(vendor_id))
+            else:
+                name = _safe_text(recipient.get("name") or recipient.get("business_name"))
                 email = _safe_text(recipient.get("email"))
                 phone = _safe_text(recipient.get("phone"))
-                if not name:
-                    return [], True, Response({"detail": "Manual vendor name is required."}, status=status.HTTP_400_BAD_REQUEST)
-                if not (email or phone):
-                    return [], True, Response({"detail": "Manual vendor email or phone is required."}, status=status.HTTP_400_BAD_REQUEST)
+                if source == PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR:
+                    if not name:
+                        return [], True, Response({"detail": "Manual vendor name is required."}, status=status.HTTP_400_BAD_REQUEST)
+                    if not (email or phone):
+                        return [], True, Response({"detail": "Manual vendor email or phone is required."}, status=status.HTTP_400_BAD_REQUEST)
+                if not name or not (email or phone):
+                    return [], True, Response({"detail": "Recipient name and email or phone are required."}, status=status.HTTP_400_BAD_REQUEST)
+                identity = (source, name.casefold(), email.casefold(), phone)
+            if identity in seen_recipients:
+                return [], True, Response({"detail": "The same recipient was selected more than once."}, status=status.HTTP_400_BAD_REQUEST)
+            seen_recipients.add(identity)
         return recipients, explicit, None
 
     def _invite_url(self, request, invitation: PropertyWorkOrderRecipientInvitation) -> str:
@@ -8615,22 +8674,30 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         }
         if invitation.email:
             results["email"]["attempted"] = True
-            ok, message = send_postmark_email(
-                to_email=invitation.email,
-                subject=subject,
-                text_body=body,
-                html_body=(
-                    "<div style='font-family:Arial'>"
-                    "<h2>New MyHomeBro work order invitation</h2>"
-                    f"<p>{invitation.work_order.title}</p>"
-                    f"<p><a href='{response_url}'>Review and Respond</a></p>"
-                    "</div>"
-                ),
-            )
+            try:
+                ok, message = send_postmark_email(
+                    to_email=invitation.email,
+                    subject=subject,
+                    text_body=body,
+                    html_body=(
+                        "<div style='font-family:Arial'>"
+                        "<h2>New MyHomeBro work order invitation</h2>"
+                        f"<p>{invitation.work_order.title}</p>"
+                        f"<p><a href='{response_url}'>Review and Respond</a></p>"
+                        "</div>"
+                    ),
+                )
+            except Exception:
+                logger.exception("Work order invitation email failed for invitation_id=%s", invitation.id)
+                ok, message = False, "Delivery failed after commit."
             results["email"].update({"ok": ok, "message": message})
         if invitation.phone:
             results["sms"]["attempted"] = True
-            ok, message = send_twilio_sms(to_phone=invitation.phone, body=f"MyHomeBro work order: {response_url}")
+            try:
+                ok, message = send_twilio_sms(to_phone=invitation.phone, body=f"MyHomeBro work order: {response_url}")
+            except Exception:
+                logger.exception("Work order invitation SMS failed for invitation_id=%s", invitation.id)
+                ok, message = False, "Delivery failed after commit."
             results["sms"].update({"ok": ok, "message": message})
         return results
 
@@ -8666,20 +8733,31 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             invitation.status = PropertyWorkOrderRecipientInvitation.STATUS_NO_CONTACT
             invitation.save(update_fields=["status", "updated_at"])
             return invitation
-        delivery = self._deliver_work_order_invitation(request, invitation)
-        email_ok = bool(delivery.get("email", {}).get("ok"))
-        sms_ok = bool(delivery.get("sms", {}).get("ok"))
-        invitation.email_status = "sent" if email_ok else (_safe_text(delivery.get("email", {}).get("message"))[:40] if delivery.get("email", {}).get("attempted") else "")
-        invitation.sms_status = "sent" if sms_ok else (_safe_text(delivery.get("sms", {}).get("message"))[:40] if delivery.get("sms", {}).get("attempted") else "")
-        invitation.status = PropertyWorkOrderRecipientInvitation.STATUS_SENT
-        invitation.sent_at = now
-        if not (email_ok or sms_ok):
-            invitation.delivery_error = "; ".join(
-                _safe_text(item.get("message"))
-                for item in [delivery.get("email", {}), delivery.get("sms", {})]
-                if item.get("attempted") and item.get("message")
-            )
-        invitation.save(update_fields=["email_status", "sms_status", "status", "sent_at", "delivery_error", "updated_at"])
+        invitation_id = invitation.id
+
+        def deliver_after_commit():
+            pending = PropertyWorkOrderRecipientInvitation.objects.select_related("work_order", "property_management_company").filter(pk=invitation_id, status=PropertyWorkOrderRecipientInvitation.STATUS_PENDING).first()
+            if pending is None:
+                return
+            try:
+                delivery = self._deliver_work_order_invitation(request, pending)
+                email_ok = bool(delivery.get("email", {}).get("ok"))
+                sms_ok = bool(delivery.get("sms", {}).get("ok"))
+                pending.email_status = "sent" if email_ok else ("failed" if delivery.get("email", {}).get("attempted") else "")
+                pending.sms_status = "sent" if sms_ok else ("failed" if delivery.get("sms", {}).get("attempted") else "")
+                pending.status = PropertyWorkOrderRecipientInvitation.STATUS_SENT if email_ok or sms_ok else PropertyWorkOrderRecipientInvitation.STATUS_PENDING
+                pending.sent_at = timezone.now() if email_ok or sms_ok else None
+                pending.delivery_error = "; ".join(
+                    _safe_text(item.get("message"))[:100]
+                    for item in [delivery.get("email", {}), delivery.get("sms", {})]
+                    if item.get("attempted") and item.get("message")
+                ) if not (email_ok or sms_ok) else ""
+            except Exception:
+                logger.exception("Work order invitation delivery failed for invitation_id=%s", invitation_id)
+                pending.delivery_error = "Delivery failed after commit; retry is required."
+            pending.save(update_fields=["email_status", "sms_status", "status", "sent_at", "delivery_error", "updated_at"])
+
+        transaction.on_commit(deliver_after_commit, robust=True)
         return invitation
 
     def _manual_vendor_from_recipient(self, company: PropertyManagementCompany, recipient: dict) -> PropertyVendor:
@@ -8712,11 +8790,13 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             },
         )
 
+    @transaction.atomic
     def post(self, request, token: str, property_id: int, work_order_id: int):
         email, company, property_profile, error = self._property_from_token(token, property_id)
         if error is not None:
             return error
         row = self._work_order_for_marketplace(company, property_profile, work_order_id)
+        row = PropertyWorkOrder.objects.select_for_update().select_related("property_profile", "property_management_company").get(pk=row.pk)
         action = getattr(self, "action", "send")
         if action == "withdraw":
             if row.marketplace_status not in {PropertyWorkOrder.MARKETPLACE_SENT, PropertyWorkOrder.MARKETPLACE_DECLINED}:
@@ -8731,6 +8811,8 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 row._prefetched_objects_cache.clear()
             return Response({"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)}, status=status.HTTP_200_OK)
 
+        if marketplace_request_action_block_reason(work_order=row):
+            return Response({"detail": "This work order is no longer available for contractor routing."}, status=status.HTTP_400_BAD_REQUEST)
         if row.assignment_type not in {PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR, PropertyWorkOrder.ASSIGNMENT_VENDOR}:
             return Response({"detail": "Set assignment type to Vendor or Marketplace Contractor before sending."}, status=status.HTTP_400_BAD_REQUEST)
         if row.marketplace_status in {PropertyWorkOrder.MARKETPLACE_SENT, PropertyWorkOrder.MARKETPLACE_ACCEPTED}:
@@ -8742,7 +8824,42 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         selected_recipients, explicit_selection, selection_error = self._selected_recipient_rows(request, row)
         if selection_error is not None:
             return selection_error
-        entries = list(self._eligible_directory_entries(row)) if row.assignment_type == PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR else []
+        automatic_matching = _safe_text(request.data.get("mode")) == "automatic_matching"
+        if automatic_matching and (explicit_selection or row.assignment_type != PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR):
+            return Response({"detail": "Choose either specific recipients or automatic matching."}, status=status.HTTP_400_BAD_REQUEST)
+        if not automatic_matching and not explicit_selection:
+            return Response({"detail": "Select a contractor or explicitly choose automatic matching."}, status=status.HTTP_400_BAD_REQUEST)
+        entries = list(self._eligible_directory_entries(row)) if row.assignment_type == PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR and not automatic_matching else []
+        if automatic_matching:
+            capability_intake = ProjectIntake(
+                project_city=_safe_text(row.property_profile.city),
+                project_state=_safe_text(row.property_profile.state),
+                project_postal_code=_safe_text(row.property_profile.postal_code),
+                ai_project_type=_safe_text(row.get_category_display()),
+            )
+            readiness = marketplace_enabled_for_intake(capability_intake)
+            if not readiness.get("can_auto_route"):
+                return Response({"detail": "Automatic matching is not ready for this location and trade. Search for or invite a contractor directly."}, status=status.HTTP_400_BAD_REQUEST)
+            eligible_listings = list(eligible_marketplace_listings(capability_intake))
+            eligible_ids = {listing.claimed_contractor_id for listing in eligible_listings}
+            cap = min(5, int(readiness.get("max_bids_per_request") or 5))
+            entry_by_contractor = {
+                entry.claimed_by_contractor_id: entry
+                for entry in ContractorDirectoryEntry.objects.select_related("claimed_by_contractor").filter(
+                    claimed=True,
+                    claimed_by_contractor_id__in=eligible_ids,
+                    claimed_by_contractor__marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
+                ).order_by("business_name", "id")
+            }
+            entries = []
+            for listing in eligible_listings:
+                entry = entry_by_contractor.get(listing.claimed_contractor_id)
+                if entry and entry not in entries:
+                    entries.append(entry)
+                if len(entries) >= cap:
+                    break
+            if not entries:
+                return Response({"detail": "No eligible contractors are available for automatic matching. Choose a contractor directly."}, status=status.HTTP_400_BAD_REQUEST)
         external_invitations = []
         if explicit_selection:
             selected_entry_ids = {
@@ -8909,6 +9026,8 @@ class CustomerPortalPropertyWorkOrderContractorMatchView(CustomerPortalPropertyW
         if error is not None:
             return error
         row = self._work_order_for_marketplace(company, property_profile, work_order_id)
+        if marketplace_request_action_block_reason(work_order=row):
+            return Response({"detail": "This work order is no longer available for contractor search."}, status=status.HTTP_400_BAD_REQUEST)
         search_text = _safe_text(request.query_params.get("search"))
         location = _safe_text(request.query_params.get("location"))
         radius_miles = _customer_portal_radius_miles(request.query_params.get("radius_miles"))

@@ -16,8 +16,9 @@ from projects.models_customer_portal import CustomerRequest, SmartNotification, 
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_discovery import create_discovery_invites
-from projects.services.marketplace_readiness import automatic_matching_readiness, create_marketplace_invites_for_intake, customer_safe_marketplace_capability, eligible_marketplace_listings, location_readiness, marketplace_enabled_for_intake
+from projects.services.marketplace_readiness import automatic_matching_readiness, create_marketplace_invites_for_intake, customer_safe_marketplace_capability, eligible_marketplace_listings, location_readiness, marketplace_enabled_for_intake, marketplace_request_action_block_reason
 from projects.services.marketplace_coverage_map import build_marketplace_coverage_map
+from projects.views.customer_portal import _customer_request_matching_counts
 
 
 class AdminMarketplaceTests(TestCase):
@@ -1202,6 +1203,212 @@ class AdminMarketplaceTests(TestCase):
 
 
 class MarketplaceGatingTests(TestCase):
+    def test_terminal_customer_request_blocks_both_invitation_services_without_writes(self):
+        for request_status in (
+            CustomerRequest.STATUS_CANCELLED,
+            CustomerRequest.STATUS_CLOSED,
+            CustomerRequest.STATUS_CONVERTED_TO_PROJECT,
+        ):
+            with self.subTest(status=request_status):
+                intake = self._intake()
+                request_row = CustomerRequest.objects.create(
+                    customer_email="homeowner@example.com", request_type=CustomerRequest.TYPE_REPAIR,
+                    title="Flooring repair", description="Repair the flooring", source_intake=intake,
+                    status=request_status,
+                )
+                self.assertEqual(marketplace_request_action_block_reason(customer_request=request_row), "request_closed")
+                terminal_capability = customer_safe_marketplace_capability(
+                    {"status": "active", "can_auto_route": True}, terminal_reason="request_closed",
+                )
+                self.assertEqual(terminal_capability["routing_outcome"], "terminal")
+                self.assertFalse(terminal_capability["automatic_matching_available"])
+                blocked_routing = create_marketplace_invites_for_intake(intake.id)
+                self.assertEqual(blocked_routing["created_count"], 0)
+                self.assertTrue(blocked_routing["terminal"])
+                self.assertFalse(blocked_routing["archived"])
+                with self.assertRaisesMessage(ValueError, "no longer available"):
+                    create_discovery_invites(
+                        intake=intake,
+                        selected_targets=[{"source": "contractor", "id": f"contractor:{self.contractors[0].id}"}],
+                    )
+                self.assertFalse(ContractorDiscoveryInvite.objects.filter(public_intake=intake).exists())
+                self.assertFalse(ContractorOpportunity.objects.filter(intake_request=intake).exists())
+                self.assertFalse(PublicContractorLead.objects.filter(source_intake=intake).exists())
+                self.assertFalse(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).exists())
+                self.assertFalse(Notification.objects.filter(event_type=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED).exists())
+
+    def test_stale_intake_is_rechecked_before_direct_invitation(self):
+        intake = self._intake()
+        stale_intake = ProjectIntake.objects.get(pk=intake.pk)
+        intake.marketplace_archived_at = timezone.now()
+        intake.save(update_fields=["marketplace_archived_at"])
+        with self.assertRaisesMessage(ValueError, "no longer available"):
+            create_discovery_invites(
+                intake=stale_intake,
+                selected_targets=[{"source": "contractor", "id": f"contractor:{self.contractors[0].id}"}],
+            )
+        self.assertFalse(ContractorDiscoveryInvite.objects.filter(public_intake=intake).exists())
+
+    def test_archived_request_requires_authoritative_restore(self):
+        intake = self._intake()
+        intake.marketplace_archived_at = timezone.now()
+        intake.save(update_fields=["marketplace_archived_at"])
+        self.assertEqual(marketplace_request_action_block_reason(intake=intake), "request_archived")
+        blocked_routing = create_marketplace_invites_for_intake(intake.id)
+        self.assertEqual(blocked_routing["created_count"], 0)
+        self.assertTrue(blocked_routing["archived"])
+        self.assertFalse(blocked_routing["terminal"])
+        intake.marketplace_archived_at = None
+        intake.save(update_fields=["marketplace_archived_at"])
+        self.assertEqual(marketplace_request_action_block_reason(intake=intake), "")
+
+    def test_admin_archived_classification_and_fraud_cannot_route(self):
+        intake = self._intake()
+        for classification, expected_reason in (("archived", "request_archived"), ("spam_fraud", "request_closed")):
+            with self.subTest(classification=classification):
+                intake.traffic_classification = classification
+                intake.save(update_fields=["traffic_classification"])
+                self.assertEqual(marketplace_request_action_block_reason(intake=intake), expected_reason)
+                self.assertEqual(create_marketplace_invites_for_intake(intake.id)["created_count"], 0)
+                with self.assertRaisesMessage(ValueError, "no longer available"):
+                    create_discovery_invites(
+                        intake=intake,
+                        selected_targets=[{"source": "contractor", "id": f"contractor:{self.contractors[0].id}"}],
+                    )
+                self.assertFalse(ContractorDiscoveryInvite.objects.filter(public_intake=intake).exists())
+        intake.traffic_classification = "real"
+        intake.save(update_fields=["traffic_classification"])
+        self.assertEqual(marketplace_request_action_block_reason(intake=intake), "")
+
+    def test_first_direct_invitation_does_not_disable_another(self):
+        capability = customer_safe_marketplace_capability(
+            automatic_matching_readiness("Dallas", "TX", "flooring"), direct_invitation_count=1,
+        )
+        self.assertTrue(capability["can_direct_invite"])
+        self.assertEqual(capability["routing_outcome"], "direct_invited")
+
+    @patch("projects.services.contractor_discovery.send_twilio_sms", return_value=(True, "sent"))
+    @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(True, "sent"))
+    def test_direct_invites_remain_distinct_and_retries_keep_original_token(self, _email, _sms):
+        intake = self._intake(city="Dallas", state="TX")
+        target_one = {"source": "contractor", "id": f"contractor:{self.contractors[0].id}", "channel": "email"}
+        target_two = {"source": "contractor", "id": f"contractor:{self.contractors[1].id}", "channel": "email"}
+        first = create_discovery_invites(intake=intake, selected_targets=[target_one])["created"][0]
+        second = create_discovery_invites(intake=intake, selected_targets=[target_two])["created"][0]
+        repeat = create_discovery_invites(intake=intake, selected_targets=[target_one])["created"][0]
+        accepted_invite = ContractorDiscoveryInvite.objects.get(pk=first["id"])
+        accepted_invite.status = ContractorDiscoveryInvite.STATUS_CLAIMED
+        accepted_invite.claimed_at = timezone.now()
+        accepted_invite.save(update_fields=["status", "claimed_at", "updated_at"])
+        accepted_repeat = create_discovery_invites(intake=intake, selected_targets=[target_one])["created"][0]
+        accepted_invite.refresh_from_db()
+        self.assertEqual((accepted_repeat["id"], accepted_repeat["invite_token"]), (first["id"], first["invite_token"]))
+        self.assertEqual(accepted_invite.status, ContractorDiscoveryInvite.STATUS_CLAIMED)
+        listing = ContractorDirectoryListing.objects.get(claimed_contractor=self.contractors[0])
+        same_business_from_listing = create_discovery_invites(
+            intake=intake,
+            selected_targets=[{"source": "listing", "id": f"listing:{listing.id}", "channel": "email"}],
+        )["created"][0]
+        duplicate_batch = create_discovery_invites(
+            intake=intake,
+            selected_targets=[target_one, {"source": "listing", "id": f"listing:{listing.id}", "channel": "email"}],
+        )
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual((repeat["id"], repeat["invite_token"]), (first["id"], first["invite_token"]))
+        self.assertEqual((same_business_from_listing["id"], same_business_from_listing["invite_token"]), (first["id"], first["invite_token"]))
+        self.assertEqual(duplicate_batch["invite_count"], 1)
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 2)
+        request_row = CustomerRequest.objects.create(
+            customer_email="homeowner@example.com", request_type=CustomerRequest.TYPE_NEW_PROJECT,
+            title="Flooring project", description="Replace flooring", source_intake=intake,
+        )
+        counts = _customer_request_matching_counts(request_row)
+        self.assertEqual(counts["direct_invites"], 2)
+        self.assertEqual(counts["invites"], 0)
+        self.assertEqual(counts["leads"], 2)
+
+    @patch("projects.services.contractor_discovery.send_twilio_sms", return_value=(True, "sent"))
+    @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(True, "sent"))
+    def test_direct_invite_delivery_waits_for_commit_and_rollback_sends_nothing(self, mock_email, mock_sms):
+        intake = self._intake(city="Dallas", state="TX")
+        target = {"source": "contractor", "id": f"contractor:{self.contractors[0].id}", "channel": "email"}
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            with self.assertRaisesMessage(ValueError, "abort"):
+                with transaction.atomic():
+                    create_discovery_invites(intake=intake, selected_targets=[target])
+                    raise ValueError("abort")
+        self.assertEqual(callbacks, [])
+        self.assertFalse(ContractorDiscoveryInvite.objects.filter(public_intake=intake).exists())
+        mock_email.assert_not_called()
+        mock_sms.assert_not_called()
+
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            result = create_discovery_invites(intake=intake, selected_targets=[target])
+        self.assertEqual(len(callbacks), 1)
+        self.assertEqual(result["invite_count"], 1)
+        self.assertEqual(mock_email.call_count, 1)
+        mock_sms.assert_not_called()  # This fixture has email, but no contractor phone.
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            repeat = create_discovery_invites(intake=intake, selected_targets=[target])
+        self.assertEqual(callbacks, [])
+        self.assertEqual(repeat["created"][0]["id"], result["created"][0]["id"])
+        self.assertEqual(mock_email.call_count, 1)
+
+    @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(False, "Provider unavailable"))
+    def test_failed_direct_delivery_is_recorded_and_retry_does_not_duplicate(self, mock_email):
+        intake = self._intake(city="Dallas", state="TX")
+        target = {"source": "contractor", "id": f"contractor:{self.contractors[0].id}", "channel": "email"}
+        with self.captureOnCommitCallbacks(execute=True):
+            result = create_discovery_invites(intake=intake, selected_targets=[target])
+        invite = ContractorDiscoveryInvite.objects.get(pk=result["created"][0]["id"])
+        self.assertEqual(invite.status, ContractorDiscoveryInvite.STATUS_FAILED)
+        self.assertEqual(invite.error_message, "Delivery failed after commit.")
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            repeat = create_discovery_invites(intake=intake, selected_targets=[target])
+        self.assertEqual(callbacks, [])
+        self.assertEqual(repeat["created"][0]["invite_token"], str(invite.invite_token))
+        self.assertEqual(mock_email.call_count, 1)
+
+    @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(True, "sent"))
+    def test_direct_invite_database_failure_rolls_back_without_delivery(self, mock_email):
+        intake = self._intake(city="Dallas", state="TX")
+        target = {"source": "contractor", "id": f"contractor:{self.contractors[0].id}", "channel": "email"}
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            with patch("projects.services.contractor_discovery.upsert_customer_for_public_lead", side_effect=RuntimeError("database failure")):
+                with self.assertRaisesMessage(RuntimeError, "database failure"):
+                    create_discovery_invites(intake=intake, selected_targets=[target])
+        self.assertEqual(callbacks, [])
+        mock_email.assert_not_called()
+        self.assertFalse(ContractorDiscoveryInvite.objects.filter(public_intake=intake).exists())
+        self.assertFalse(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).exists())
+
+    @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(True, "sent"))
+    def test_direct_invitation_can_coexist_with_five_automatic_matches(self, _email):
+        MarketplaceLocation.objects.create(
+            city="Austin", state="TX", is_enabled=True,
+            min_claimed_contractors=1, min_verified_contractors=1, min_stripe_ready_contractors=1,
+            max_bids_per_request=5,
+        )
+        self._approve()
+        intake = self._intake()
+        auto = create_marketplace_invites_for_intake(intake.id)
+        self.assertEqual(auto["created_count"], 5)
+        auto_contractor_ids = {row["contractor_id"] for row in auto["created"]}
+        remaining = next(contractor for contractor in self.contractors if contractor.id not in auto_contractor_ids)
+        with self.captureOnCommitCallbacks(execute=True):
+            direct = create_discovery_invites(
+                intake=intake, selected_targets=[{"source": "contractor", "id": f"contractor:{remaining.id}", "channel": "email"}],
+            )
+        self.assertEqual(direct["invite_count"], 1)
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 6)
+        request_row = CustomerRequest.objects.create(
+            customer_email="homeowner@example.com", request_type=CustomerRequest.TYPE_NEW_PROJECT,
+            title="Flooring project", description="Replace flooring", source_intake=intake,
+        )
+        counts = _customer_request_matching_counts(request_row)
+        self.assertEqual(counts["invites"], 5)
+        self.assertEqual(counts["direct_invites"], 1)
+
     def _approve(self, trade="flooring", city="Austin", state="TX"):
         return MarketplaceAutomaticMatchingApproval.objects.create(
             city_key=city, state_key=state, trade=trade, is_approved=True,
@@ -1357,7 +1564,7 @@ class MarketplaceGatingTests(TestCase):
             direct_invitation_count=1,
         )
         self.assertEqual(invited["routing_outcome"], "direct_invited")
-        self.assertFalse(invited["can_direct_invite"])
+        self.assertTrue(invited["can_direct_invite"])
 
     def test_narrative_trade_without_authoritative_classification_cannot_route(self):
         MarketplaceLocation.objects.create(
@@ -1812,7 +2019,8 @@ class MarketplaceGatingTests(TestCase):
         self._approve()
         intake = self._intake()
 
-        result = create_marketplace_invites_for_intake(intake.id)
+        with self.captureOnCommitCallbacks(execute=True):
+            result = create_marketplace_invites_for_intake(intake.id)
 
         self.assertEqual(result["created_count"], 5)
         lead = PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).first()
@@ -1839,7 +2047,8 @@ class MarketplaceGatingTests(TestCase):
             5,
         )
 
-        create_marketplace_invites_for_intake(intake.id)
+        with self.captureOnCommitCallbacks(execute=True):
+            create_marketplace_invites_for_intake(intake.id)
 
         self.assertEqual(
             Notification.objects.filter(event_type=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED).count(),
