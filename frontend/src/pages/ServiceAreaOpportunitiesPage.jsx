@@ -63,15 +63,14 @@ export default function ServiceAreaOpportunitiesPage() {
   const requestIdRef = useRef(0);
   const query = searchParams.toString();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ signal } = {}) => {
     const requestId = ++requestIdRef.current;
-    const controller = new AbortController();
     setLoading(true);
     setError("");
     try {
       const response = await api.get(
         `/projects/contractor/service-area-opportunities/${query ? `?${query}` : ""}`,
-        { signal: controller.signal }
+        { signal }
       );
       if (requestId === requestIdRef.current) setPayload(response.data);
     } catch (requestError) {
@@ -87,17 +86,14 @@ export default function ServiceAreaOpportunitiesPage() {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-    return () => controller.abort();
   }, [query]);
 
   useEffect(() => {
-    let cleanup;
-    load().then((abort) => {
-      cleanup = abort;
-    });
+    const controller = new AbortController();
+    load({ signal: controller.signal });
     return () => {
       requestIdRef.current += 1;
-      cleanup?.();
+      controller.abort();
     };
   }, [load]);
 
@@ -245,7 +241,7 @@ export default function ServiceAreaOpportunitiesPage() {
             tone="danger"
             title="Demand trends unavailable"
             actions={
-              <Button theme="operational" variant="secondary" onClick={load}>
+              <Button theme="operational" variant="secondary" onClick={() => load()}>
                 <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 Retry
               </Button>

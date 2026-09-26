@@ -22,6 +22,7 @@ from projects.services.marketplace_readiness import (
     normalize_trade,
 )
 from projects.services.marketplace_request_lifecycle import (
+    meaningful_response_intake_ids,
     qualifying_marketplace_requests,
     request_started_at,
 )
@@ -182,15 +183,24 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
     context = _contractor_context(contractor)
     requests = qualifying_marketplace_requests()
     time_window = normalize_location_value(params.get("time_window")).lower()
-    if time_window in TIME_WINDOWS:
-        requests = requests.filter(
-            created_at__gte=timezone.now() - timedelta(days=TIME_WINDOWS[time_window])
-        )
-    else:
+    if time_window not in TIME_WINDOWS:
         time_window = "all"
+    now = timezone.now()
+    cutoffs = {
+        name: now - timedelta(days=days)
+        for name, days in TIME_WINDOWS.items()
+    }
+
+    # The lifecycle's responded state is no longer open demand. Routed but
+    # unanswered requests remain eligible; a meaningful response does not.
+    responded_ids = meaningful_response_intake_ids(
+        requests.values_list("id", flat=True)
+    )
+    if responded_ids:
+        requests = requests.exclude(pk__in=responded_ids)
 
     groups: dict[tuple[str, str, str, str], dict[str, Any]] = defaultdict(
-        lambda: {"count": 0, "newest": None}
+        lambda: {"counts": {"all": 0, **dict.fromkeys(TIME_WINDOWS, 0)}, "newest": None}
     )
     for intake in requests.only(
         "id",
@@ -208,6 +218,7 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
         "created_at",
         "marketplace_restored_at",
     ).iterator(chunk_size=500):
+        started_at = request_started_at(intake)
         trades = marketplace_request_trade_signature(intake)
         if len(trades) != 1:
             continue
@@ -217,11 +228,17 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
         zip_code = normalize_location_value(zip_code).split("-")[0][:5]
         if not state or not (city or zip_code):
             continue
-        key = (state, city.casefold(), zip_code if not city else "", trades[0])
+        # Keep ZIP in the signature even when city is populated so ZIP
+        # drill-down can find ordinary records without double-counting them.
+        key = (state, city.casefold(), zip_code, trades[0])
         group = groups[key]
-        group["count"] += 1
-        started_at = request_started_at(intake)
-        if not group["newest"] or started_at > group["newest"]:
+        group["counts"]["all"] += 1
+        for window, cutoff in cutoffs.items():
+            if started_at >= cutoff:
+                group["counts"][window] += 1
+        if (time_window == "all" or started_at >= cutoffs[time_window]) and (
+            not group["newest"] or started_at > group["newest"]
+        ):
             group["newest"] = started_at
         group["city"] = city
 
@@ -229,7 +246,7 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
         {
             (group["city"], state)
             for (state, _city_key, _zip_code, _trade), group in groups.items()
-            if group["city"]
+            if group["city"] and group["counts"][time_window]
         }
     )
     market_rows = automatic_matching_readiness_rows_for_locations(location_keys)
@@ -240,6 +257,9 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
 
     rows = []
     for (state, city_key, zip_code, trade), group in groups.items():
+        count = group["counts"][time_window]
+        if not count:
+            continue
         city = group["city"]
         location_key = automatic_matching_location_keys(city, state) if city else ("", state)
         in_service_area = location_key in context["service_locations"]
@@ -271,22 +291,23 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
             relationship = "expansion_opportunity"
         else:
             relationship = "outside_current_coverage"
-        count = group["count"]
+        # Overlapping windows must not let an exact count disclose a one- or
+        # two-request difference by subtraction. Only a count that is stable
+        # across every nonempty window can be returned exactly.
+        positive_counts = {value for value in group["counts"].values() if value}
+        exact_count = count if count >= CONTRACTOR_DEMAND_PRIVACY_THRESHOLD and len(positive_counts) == 1 else None
         rows.append(
             {
-                "area": f"{city}, {state}" if city else f"{zip_code}, {state}",
+                "area": f"{city}, {state} {zip_code}" if city and zip_code else f"{city}, {state}" if city else f"{zip_code}, {state}",
                 "state": state,
                 "city": city,
                 "zip": zip_code,
                 "trade": trade,
-                "demand_signal": (
-                    str(count)
-                    if count >= CONTRACTOR_DEMAND_PRIVACY_THRESHOLD
+                "demand_signal": str(exact_count) if exact_count is not None else (
+                    "Established demand" if count >= CONTRACTOR_DEMAND_PRIVACY_THRESHOLD
                     else "Emerging demand"
                 ),
-                "demand_count": (
-                    count if count >= CONTRACTOR_DEMAND_PRIVACY_THRESHOLD else None
-                ),
+                "demand_count": exact_count,
                 "relationship": relationship,
                 "relationship_label": RELATIONSHIP_LABELS[relationship],
                 "market_readiness": {
@@ -300,14 +321,14 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
                 "automatic_matching_available": market_enabled,
                 "contractor_readiness": readiness,
                 "recommended_action": _recommended_action(readiness, relationship),
-                "newest_demand_at": group["newest"].isoformat(),
+                # Exact request timestamps must not escape an aggregate API.
+                "_newest_demand_at": group["newest"],
             }
         )
 
     state_filter = normalize_location_value(params.get("state")).upper()
-    area_filter = normalize_location_value(
-        params.get("city") or params.get("zip")
-    ).casefold()
+    area_filter = normalize_location_value(params.get("city")).casefold()
+    zip_filter = normalize_location_value(params.get("zip")).casefold()
     trade_filter = normalize_trade(params.get("trade"))
     relationship_filter = normalize_location_value(params.get("relationship")).lower()
     readiness_filter = normalize_location_value(params.get("readiness")).lower()
@@ -320,6 +341,7 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
             or row["city"].casefold() == area_filter
             or row["zip"].casefold() == area_filter
         )
+        and (not zip_filter or row["zip"].casefold() == zip_filter)
         and (not trade_filter or row["trade"] == trade_filter)
         and (
             relationship_filter not in RELATIONSHIPS
@@ -348,7 +370,16 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
     if sort not in SORTS:
         sort = "strongest_demand"
     if sort == "newest_demand":
-        rows.sort(key=lambda row: (row["newest_demand_at"], identity(row)), reverse=True)
+        # Treat all sub-threshold groups alike, including their sort position.
+        # Otherwise request recency becomes a side channel for small groups.
+        rows.sort(
+            key=lambda row: (
+                row["demand_count"] is None,
+                -row["_newest_demand_at"].timestamp()
+                if row["demand_count"] is not None else 0,
+                identity(row),
+            )
+        )
     elif sort == "largest_coverage_gap":
         rows.sort(
             key=lambda row: (
@@ -403,8 +434,11 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
         ),
         "authorized_individual_opportunities": authorized_count,
     }
+    page_rows = rows[start : start + page_size]
+    for row in page_rows:
+        row.pop("_newest_demand_at")
     return {
-        "results": rows[start : start + page_size],
+        "results": page_rows,
         "summary": summary,
         "pagination": {
             "page": page,
@@ -417,6 +451,7 @@ def build_contractor_service_area_opportunities(contractor, params) -> dict[str,
         "filters": {
             "state": state_filter,
             "city_or_zip": area_filter,
+            "zip": zip_filter,
             "trade": trade_filter,
             "relationship": relationship_filter,
             "readiness": readiness_filter,
