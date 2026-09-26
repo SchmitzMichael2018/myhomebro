@@ -25,6 +25,7 @@ from projects.services.marketplace_readiness import (
 )
 from projects.services.marketplace_request_lifecycle import (
     meaningful_response_intake_ids,
+    qualifying_marketplace_requests,
     request_started_at,
 )
 
@@ -129,25 +130,7 @@ def _trades(*values: Any) -> set[str]:
 
 
 def _marketplace_requests():
-    cancelled_ids = CustomerRequest.objects.filter(
-        status=CustomerRequest.STATUS_CANCELLED,
-        source_intake_id__isnull=False,
-    ).values("source_intake_id")
-    return ProjectIntake.objects.filter(
-        Q(post_submit_flow="multi_contractor")
-        | Q(
-            lead_source=PublicContractorLead.SOURCE_LANDING_PAGE,
-            status__in=["submitted", "analyzed"],
-            contractor__isnull=True,
-        )
-    ).filter(
-        status__in=("submitted", "analyzed"),
-        agreement_id__isnull=True,
-        converted_at__isnull=True,
-        marketplace_archived_at__isnull=True,
-    ).exclude(
-        traffic_classification__in=("test", "spam_fraud", "archived"),
-    ).exclude(pk__in=cancelled_ids)
+    return qualifying_marketplace_requests()
 
 
 def _date_cutoff(value: str):

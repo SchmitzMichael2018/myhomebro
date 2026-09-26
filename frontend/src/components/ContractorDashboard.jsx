@@ -27,6 +27,7 @@ import {
   FileText,
   Flag,
   CalendarDays,
+  MapPinned,
   ScanLine,
   AlertTriangle,
   Wrench,
@@ -3954,7 +3955,7 @@ export default function ContractorDashboard() {
                     <span className="mt-1 block text-sm font-medium text-sky-100/76">Choose your workflow</span>
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-7">
                   <Button
                     theme="operational"
                     variant="primary"
@@ -4022,6 +4023,16 @@ export default function ContractorDashboard() {
                   >
                     <BadgeDollarSign className="h-5 w-5" />
                     <span>Payment</span>
+                  </Button>
+                  <Button
+                    theme="operational"
+                    variant="secondary"
+                    data-testid="dashboard-quick-action-demand-trends"
+                    onClick={() => navigate("/app/service-area-opportunities")}
+                    className="!min-h-[76px] !flex-col !rounded-2xl px-4"
+                  >
+                    <MapPinned className="h-5 w-5" />
+                    <span>Demand Trends</span>
                   </Button>
                 </div>
               </div>

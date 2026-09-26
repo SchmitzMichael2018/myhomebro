@@ -211,6 +211,7 @@ test("dashboard quick actions show estimate-first workflow in order", async ({ p
     "Today's Schedule",
     "Expense",
     "Payment",
+    "Demand Trends",
   ]);
 
   const quickActionButtons = await actions.getByRole("button").all();

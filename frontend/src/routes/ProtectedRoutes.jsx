@@ -75,6 +75,7 @@ const PayoutHistoryPage = lazy(() => import("../pages/PayoutHistoryPage.jsx"));
 const PayoutDetailPage = lazy(() => import("../pages/PayoutDetailPage.jsx"));
 const ContractorPayoutHistoryPage = lazy(() => import("../pages/ContractorPayoutHistoryPage.jsx"));
 const ContractorBidsPage = lazy(() => import("../pages/ContractorBidsPage.jsx"));
+const ServiceAreaOpportunitiesPage = lazy(() => import("../pages/ServiceAreaOpportunitiesPage.jsx"));
 const EstimatesPage = lazy(() => import("../pages/EstimatesPage.jsx"));
 const ProposalWorkspacePage = lazy(() => import("../pages/ProposalWorkspacePage.jsx"));
 const CustomerRecordsPage = lazy(() => import("../pages/CustomerRecordsPage.jsx"));
@@ -234,6 +235,7 @@ export function protectedRoutes() {
           <Route path="public-presence" element={<Navigate to="/app/marketing" replace />} />
 
           <Route path="opportunities" element={<ContractorBidsPage />} />
+          <Route path="service-area-opportunities" element={<ServiceAreaOpportunitiesPage />} />
           <Route path="estimates" element={<EstimatesPage />} />
           <Route path="estimates/:proposalId" element={<ProposalWorkspacePage />} />
           <Route path="bids" element={<Navigate to="/app/opportunities" replace />} />
