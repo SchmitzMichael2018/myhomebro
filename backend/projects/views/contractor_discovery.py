@@ -155,6 +155,9 @@ class PublicIntakeContractorSearchView(APIView):
         intake, error = _get_intake_from_request(request)
         if error:
             return error
+        from projects.services.marketplace_readiness import marketplace_request_action_block_reason
+        if marketplace_request_action_block_reason(intake=intake):
+            return Response({"detail": "This request is no longer available for contractor search."}, status=status.HTTP_400_BAD_REQUEST)
 
         query = _safe_text(request.query_params.get("query"))
         manual_search = _safe_text(request.query_params.get("search_mode")).lower() == "manual"

@@ -3845,7 +3845,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     try {
       const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/send-to-marketplace/`, payload);
       if (data?.portal) onPortalUpdate?.(data.portal);
-      toast.success("Work order sent to selected recipients.");
+      toast.success(payload.mode === "automatic_matching" ? "Work order sent for automatic matching." : "Work order sent to selected recipients.");
       return data;
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Could not send that work order.");

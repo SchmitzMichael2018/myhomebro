@@ -272,7 +272,10 @@ def create_or_update_opportunity_from_selection(selection_context: dict[str, Any
     upsert_customer_for_contractor_opportunity(opportunity)
     mark_directory_discovery_selected(directory_entry, {"intake_request": intake})
     if created and not selection_context.get("suppress_contractor_notification"):
-        _notify_selected_contractor_opportunity(opportunity)
+        opportunity_id = opportunity.id
+        transaction.on_commit(lambda: _notify_selected_contractor_opportunity(
+            ContractorOpportunity.objects.select_related("directory_entry__claimed_by_contractor").get(pk=opportunity_id)
+        ), robust=True)
     return opportunity
 
 

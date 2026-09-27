@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite
+from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_capabilities import get_contractor_capability_flags
 from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.contractor_trade_relevance import (
@@ -1350,10 +1351,35 @@ def build_contractor_recommendations(
 def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], preferred_channel: str = "") -> dict[str, Any]:
     if intake is None:
         raise ValueError("Missing intake.")
+    from projects.services.marketplace_readiness import marketplace_request_action_block_reason
+    intake = ProjectIntake.objects.select_for_update().get(pk=intake.pk)
+    if marketplace_request_action_block_reason(intake=intake):
+        raise ValueError("This request is no longer available for contractor invitations.")
     if not isinstance(selected_targets, list) or not selected_targets:
         raise ValueError("Select at least one contractor.")
 
+    # Validate the complete batch before creating any lead, invite or notification.
+    for raw_target in selected_targets:
+        if not isinstance(raw_target, dict):
+            raise ValueError("Each selected contractor must be a valid contractor record.")
+        target_id = _safe_text(raw_target.get("id"))
+        source = _safe_text(raw_target.get("source"))
+        target_type, _, target_value = target_id.partition(":")
+        if not target_value:
+            target_type, target_value = source, target_id
+        if target_type == "contractor":
+            target = Contractor.objects.filter(pk=target_value).first() if target_value.isdecimal() else None
+            if target is None or contractor_direct_invite_block_reason(target):
+                raise ValueError(DIRECT_INVITE_UNAVAILABLE_DETAIL)
+        else:
+            listing = ContractorDirectoryListing.objects.select_related("claimed_contractor").filter(pk=target_value).first() if target_value.isdecimal() else None
+            if listing is None or contractor_direct_invite_block_reason(listing.claimed_contractor):
+                raise ValueError(DIRECT_INVITE_UNAVAILABLE_DETAIL)
+            if listing.claimed_contractor_id is None and not (listing.phone_number or normalize_valid_email(listing.email)):
+                raise ValueError("The selected contractor has no supported contact method.")
+
     created_rows: list[dict[str, Any]] = []
+    seen_invite_ids: set[int] = set()
     summary = _normalize_project_payload(intake=intake)
     project_brief = summary.get("project_scope_summary") or summary.get("description") or summary.get("project_title")
     claim_link_base = f"/contractors/claim"
@@ -1390,12 +1416,17 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
         if block_reason:
             raise ValueError(DIRECT_INVITE_UNAVAILABLE_DETAIL)
 
-        duplicate = ContractorDiscoveryInvite.objects.filter(
-            public_intake=intake,
-            contractor=contractor,
-            directory_listing=listing,
-        ).order_by("-created_at").first()
-        if duplicate is not None and (timezone.now() - duplicate.created_at).total_seconds() < 1800:
+        existing_invites = ContractorDiscoveryInvite.objects.filter(public_intake=intake)
+        # The same claimed business can arrive through a contractor card or a
+        # directory listing. Those are one logical recipient, not two invites.
+        duplicate = (
+            existing_invites.filter(contractor=contractor)
+            if contractor is not None else existing_invites.filter(directory_listing=listing)
+        ).order_by("-created_at", "-id").first()
+        if duplicate is not None:
+            if duplicate.id in seen_invite_ids:
+                continue
+            seen_invite_ids.add(duplicate.id)
             created_rows.append(
                 {
                     "id": duplicate.id,
@@ -1419,6 +1450,7 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
             destination_phone=_safe_text(getattr(contractor, "phone", "")) or _safe_text(getattr(listing, "phone_number", "")),
             destination_email=normalize_valid_email(getattr(getattr(contractor, "user", None), "email", "")) or normalize_valid_email(getattr(listing, "email", "")),
         )
+        seen_invite_ids.add(invite.id)
 
         invite_message = (
             f"MyHomeBro: A homeowner near {summary.get('project_city') or summary.get('project_state') or 'your area'} selected "
@@ -1454,6 +1486,8 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
                 status=PublicContractorLead.STATUS_READY_FOR_REVIEW,
                 ai_analysis={
                     **_safe_dict(getattr(intake, "ai_analysis_payload", None)),
+                    "source_intake_id": intake.id,
+                    "discovery_invite_id": invite.id,
                     "project_mode": summary.get("project_mode"),
                     "payment_preference": summary.get("payment_preference"),
                     "project_scope_summary": project_brief,
@@ -1469,24 +1503,41 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
                 link=f"/app/bids",
             )
             contractor_email = normalize_valid_email(getattr(getattr(contractor, "user", None), "email", ""))
-            if contractor_email:
-                send_postmark_email(
-                    to_email=contractor_email,
-                    subject="New project request near you on MyHomeBro",
-                    text_body=(
-                        f"A homeowner near {summary.get('project_city') or summary.get('project_state') or 'your area'} selected "
-                        f"{getattr(contractor, 'business_name', '') or contractor.name or 'your profile'} to review a "
-                        f"{summary.get('project_type') or 'project'} project.\n\n"
-                        "Your business profile has been selected by a homeowner on MyHomeBro.\n"
-                        f"Review the project:\n{invite_url}"
-                    ),
-                )
-            if contractor.phone:
-                send_twilio_sms(
-                    to_phone=contractor.phone,
-                    body=invite_message + f" View project details: {invite_url}",
-                )
-            invite.touch_sent()
+            email_body = (
+                f"A homeowner near {summary.get('project_city') or summary.get('project_state') or 'your area'} selected "
+                f"{getattr(contractor, 'business_name', '') or contractor.name or 'your profile'} to review a "
+                f"{summary.get('project_type') or 'project'} project.\n\n"
+                "Your business profile has been selected by a homeowner on MyHomeBro.\n"
+                f"Review the project:\n{invite_url}"
+            )
+            contractor_phone = contractor.phone
+            invite_id = invite.id
+
+            def deliver_claimed_after_commit(
+                invite_id=invite_id, contractor_email=contractor_email, contractor_phone=contractor_phone,
+                email_body=email_body, invite_message=invite_message, invite_url=invite_url,
+            ):
+                pending = ContractorDiscoveryInvite.objects.filter(pk=invite_id, status=ContractorDiscoveryInvite.STATUS_PENDING).first()
+                if pending is None:
+                    return
+                delivered = False
+                try:
+                    if contractor_email:
+                        delivered = bool(send_postmark_email(
+                            to_email=contractor_email, subject="New project request near you on MyHomeBro", text_body=email_body,
+                        )[0]) or delivered
+                    if contractor_phone:
+                        delivered = bool(send_twilio_sms(
+                            to_phone=contractor_phone, body=invite_message + f" View project details: {invite_url}",
+                        )[0]) or delivered
+                except Exception:
+                    logger.exception("Discovery invite delivery failed for invite_id=%s", invite_id)
+                pending.status = ContractorDiscoveryInvite.STATUS_SENT if delivered else ContractorDiscoveryInvite.STATUS_FAILED
+                pending.sent_at = timezone.now() if delivered else None
+                pending.error_message = "" if delivered else "Delivery failed after commit."
+                pending.save(update_fields=["status", "sent_at", "error_message", "updated_at"])
+
+            transaction.on_commit(deliver_claimed_after_commit, robust=True)
             note = "claimed-contractor"
             claim_url = f"/app/bids"
         else:
@@ -1497,29 +1548,45 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
                 f"Claim your MyHomeBro profile:\n{claim_url}\n\n"
                 "Reply STOP to opt out of SMS."
             )
-            if channel == ContractorDiscoveryInvite.CHANNEL_SMS and listing.phone_number and not listing.sms_opt_out:
-                ok, msg = send_twilio_sms(to_phone=listing.phone_number, body=body_text)
-                invite.error_message = "" if ok else msg
-                invite.status = ContractorDiscoveryInvite.STATUS_SENT if ok else ContractorDiscoveryInvite.STATUS_FAILED
+            deliver_sms = channel == ContractorDiscoveryInvite.CHANNEL_SMS and bool(listing.phone_number) and not listing.sms_opt_out
+            listing_email = normalize_valid_email(getattr(listing, "email", ""))
+            deliver_email = channel == ContractorDiscoveryInvite.CHANNEL_EMAIL and bool(listing_email) and not listing.email_opt_out
+            if deliver_sms:
                 invite.destination_phone = listing.phone_number
                 invite.destination_email = ""
-                invite.sent_at = timezone.now() if ok else None
-            listing_email = normalize_valid_email(getattr(listing, "email", ""))
-            if channel == ContractorDiscoveryInvite.CHANNEL_EMAIL and listing_email and not listing.email_opt_out:
-                ok, msg = send_postmark_email(
-                    to_email=listing_email,
-                    subject="New project request near you on MyHomeBro",
-                    text_body=body_text,
-                )
-                invite.error_message = "" if ok else msg
-                invite.status = ContractorDiscoveryInvite.STATUS_SENT if ok else ContractorDiscoveryInvite.STATUS_FAILED
+            if deliver_email:
                 invite.destination_email = listing_email
                 invite.destination_phone = ""
-                invite.sent_at = timezone.now() if ok else None
-            elif not (channel == ContractorDiscoveryInvite.CHANNEL_SMS and listing.phone_number and not listing.sms_opt_out):
-                invite.status = ContractorDiscoveryInvite.STATUS_PENDING
+            if not deliver_sms and not deliver_email:
                 invite.error_message = "No supported contact channel available."
             invite.save(update_fields=["status", "error_message", "destination_phone", "destination_email", "sent_at", "updated_at"])
+            if deliver_sms or deliver_email:
+                invite_id = invite.id
+                listing_phone = listing.phone_number
+
+                def deliver_listing_after_commit(
+                    invite_id=invite_id, deliver_sms=deliver_sms, listing_phone=listing_phone,
+                    listing_email=listing_email, body_text=body_text,
+                ):
+                    pending = ContractorDiscoveryInvite.objects.filter(pk=invite_id, status=ContractorDiscoveryInvite.STATUS_PENDING).first()
+                    if pending is None:
+                        return
+                    try:
+                        if deliver_sms:
+                            ok, message = send_twilio_sms(to_phone=listing_phone, body=body_text)
+                        else:
+                            ok, message = send_postmark_email(
+                                to_email=listing_email, subject="New project request near you on MyHomeBro", text_body=body_text,
+                            )
+                    except Exception:
+                        logger.exception("Discovery invite delivery failed for invite_id=%s", invite_id)
+                        ok, message = False, "Delivery failed after commit."
+                    pending.status = ContractorDiscoveryInvite.STATUS_SENT if ok else ContractorDiscoveryInvite.STATUS_FAILED
+                    pending.error_message = "" if ok else _safe_text(message)[:255]
+                    pending.sent_at = timezone.now() if ok else None
+                    pending.save(update_fields=["status", "error_message", "sent_at", "updated_at"])
+
+                transaction.on_commit(deliver_listing_after_commit, robust=True)
             note = "listing"
 
         created_rows.append(

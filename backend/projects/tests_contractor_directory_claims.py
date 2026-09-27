@@ -143,11 +143,11 @@ class ContractorDirectoryClaimFoundationTests(TestCase):
         admin_client = APIClient()
         admin_client.force_authenticate(self.admin)
 
-        response = admin_client.post(
-            f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
-            {"preferred_channel": "email"},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = admin_client.post(
+                f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
+                {"preferred_channel": "email"}, format="json",
+            )
 
         self.assertEqual(response.status_code, 200, response.data)
         invite = ContractorMarketplaceJoinInvite.objects.get(directory_entry=self.entry)
@@ -165,27 +165,27 @@ class ContractorDirectoryClaimFoundationTests(TestCase):
         admin_client = APIClient()
         admin_client.force_authenticate(self.admin)
 
-        first = admin_client.post(
-            f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
-            {"preferred_channel": "email"},
-            format="json",
-        )
-        second = admin_client.post(
-            f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
-            {"preferred_channel": "email"},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            first = admin_client.post(
+                f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
+                {"preferred_channel": "email"}, format="json",
+            )
+        with self.captureOnCommitCallbacks(execute=True):
+            second = admin_client.post(
+                f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
+                {"preferred_channel": "email"}, format="json",
+            )
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(ContractorMarketplaceJoinInvite.objects.filter(directory_entry=self.entry).count(), 1)
         self.assertEqual(mock_email.call_count, 1)
 
-        resend = admin_client.post(
-            f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
-            {"preferred_channel": "email", "resend": True},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            resend = admin_client.post(
+                f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
+                {"preferred_channel": "email", "resend": True}, format="json",
+            )
         self.assertEqual(resend.status_code, 200)
         self.assertEqual(ContractorMarketplaceJoinInvite.objects.filter(directory_entry=self.entry).count(), 1)
         self.assertEqual(mock_email.call_count, 2)
@@ -198,11 +198,11 @@ class ContractorDirectoryClaimFoundationTests(TestCase):
         admin_client = APIClient()
         admin_client.force_authenticate(self.admin)
 
-        response = admin_client.post(
-            f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
-            {"preferred_channel": "sms"},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = admin_client.post(
+                f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
+                {"preferred_channel": "sms"}, format="json",
+            )
 
         self.assertEqual(response.status_code, 200, response.data)
         invite = ContractorMarketplaceJoinInvite.objects.get(directory_entry=self.entry)
@@ -225,11 +225,11 @@ class ContractorDirectoryClaimFoundationTests(TestCase):
         admin_client = APIClient()
         admin_client.force_authenticate(self.admin)
 
-        response = admin_client.post(
-            f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
-            {"preferred_channel": "sms"},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = admin_client.post(
+                f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
+                {"preferred_channel": "sms"}, format="json",
+            )
 
         self.assertEqual(response.status_code, 200, response.data)
         invite = ContractorMarketplaceJoinInvite.objects.get(directory_entry=self.entry)
@@ -258,7 +258,7 @@ class ContractorDirectoryClaimFoundationTests(TestCase):
     def test_claiming_join_invite_marks_invite_claimed(self):
         admin_client = APIClient()
         admin_client.force_authenticate(self.admin)
-        with patch("projects.services.contractor_marketplace_join_invites.send_postmark_email", return_value=(True, "sent")):
+        with patch("projects.services.contractor_marketplace_join_invites.send_postmark_email", return_value=(True, "sent")), self.captureOnCommitCallbacks(execute=True):
             response = admin_client.post(
                 f"/api/projects/admin/contractor-directory/{self.entry.id}/join-invite/",
                 {"preferred_channel": "email"},

@@ -806,12 +806,22 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
     }
   };
 
-  const sendToMarketplace = async (row) => {
+  const openMarketplaceSelection = (row, { inviteKnown = false } = {}) => {
     if (!row?.id) return;
+    openEdit(row, {
+      assignment_type: inviteKnown ? "vendor" : "marketplace_contractor",
+    });
+    if (inviteKnown) setVendorEntryMode("manual");
+    setWorkflowStep(2);
+  };
+
+  const sendForAutomaticMatching = async (row) => {
+    if (!row?.id || !row.marketplace?.automatic_matching_available) return;
     try {
-      await onSendToMarketplace?.(row.property_profile_id || activePropertyId, row.id);
+      setError("");
+      await onSendToMarketplace?.(row.property_profile_id || activePropertyId, row.id, { mode: "automatic_matching" });
     } catch (err) {
-      setError(err?.response?.data?.detail || "Could not send that work order.");
+      setError(err?.response?.data?.detail || "Automatic matching is not available. Search for or invite a contractor directly.");
     }
   };
 
@@ -975,6 +985,9 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
                       </>
                     ) : null}
                   </div>
+                  {row.assignment_type === "marketplace_contractor" && row.marketplace ? (
+                    <MarketplaceGuidance capability={row.marketplace} compact testId={`property-work-order-marketplace-guidance-${row.id}`} />
+                  ) : null}
                   {(row.recipient_invitations || []).length ? (
                     <div data-testid={`property-work-order-recipient-list-${row.id}`} className="mt-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3">
                       <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Selected Recipients</div>
@@ -1048,10 +1061,24 @@ function PropertyWorkOrdersSection({ workOrders = [], propertyProfile = {}, prop
                         Close Work
                       </button>
                     ) : null}
-                    {row.assignment_type === "marketplace_contractor" && (!row.marketplace_status || row.marketplace_status === "not_sent" || row.marketplace_status === "withdrawn" || row.marketplace_status === "declined") ? (
-                      <button type="button" data-testid={`property-work-order-send-marketplace-${row.id}`} onClick={() => sendToMarketplace(row)} className="rounded-lg border border-amber-300/45 bg-amber-300/10 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-300/20">
-                        Send To Marketplace
-                      </button>
+                    {row.assignment_type === "marketplace_contractor" && row.marketplace?.can_search_contractors && (!row.marketplace_status || row.marketplace_status === "not_sent" || row.marketplace_status === "withdrawn" || row.marketplace_status === "declined") ? (
+                      <>
+                        <button type="button" data-testid={`property-work-order-search-contractors-${row.id}`} onClick={() => openMarketplaceSelection(row)} className="rounded-lg border border-amber-300/45 bg-amber-300/10 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-300/20">
+                          Search contractors
+                        </button>
+                        {row.marketplace?.can_direct_invite ? (
+                          <button type="button" data-testid={`property-work-order-invite-contractor-${row.id}`} onClick={() => openMarketplaceSelection(row, { inviteKnown: true })} className="rounded-lg border border-sky-300/40 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/10">
+                            Invite a contractor you know
+                          </button>
+                        ) : null}
+                        {row.marketplace?.automatic_matching_available ? (
+                          <button type="button" data-testid={`property-work-order-auto-match-${row.id}`} disabled={saving} onClick={() => sendForAutomaticMatching(row)} className="rounded-lg border border-emerald-300/45 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-50">
+                            Send for automatic matching
+                          </button>
+                        ) : (
+                          <span className="text-xs text-amber-100">Automatic matching is not ready here. Search for or invite a contractor directly.</span>
+                        )}
+                      </>
                     ) : null}
                     {row.assignment_type === "marketplace_contractor" && row.marketplace_status === "sent" ? (
                       <button type="button" data-testid={`property-work-order-withdraw-marketplace-${row.id}`} onClick={() => withdrawMarketplace(row)} className="rounded-lg border border-rose-300/45 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10">
@@ -1741,6 +1768,10 @@ function normalizeRequestStatusLabel(label = "") {
 }
 
 function requestMatchingText(request = {}, bids = []) {
+  const capability = request.marketplace || {};
+  if (displayValue(capability.automatic_matching_status_label)) {
+    return capability.automatic_matching_status_label;
+  }
   const bidCount = Number(request.bids_count ?? bids.length ?? 0);
   const routedCount = Number(request.routed_contractor_count || 0);
   if (request.linked_work || request.agreement_token) return "Converted to project agreement";
@@ -1757,6 +1788,10 @@ function requestMatchingText(request = {}, bids = []) {
 }
 
 function requestNextStep(request = {}, bids = []) {
+  const capability = request.marketplace || {};
+  if (capability.manual_selection_required) return "Search for a contractor or invite one you already know.";
+  if (capability.routing_outcome === "automatic_routed") return "Wait for responses or choose a contractor directly.";
+  if (capability.routing_outcome === "direct_invited") return "Wait for the invited contractor to respond.";
   const explicit = displayValue(request.current_next_action || request.action_label);
   if (explicit && !["view request", "review request details"].includes(explicit.toLowerCase())) return explicit;
   if (request.linked_work || request.agreement_token) return "Open the linked agreement when you are ready.";
@@ -1795,6 +1830,32 @@ function requestContractorRoutes(request = {}) {
   const routed = request.routed_contractors || [];
   if (routed.length) return routed;
   return request.selected_contractor ? [request.selected_contractor] : [];
+}
+
+function MarketplaceGuidance({ capability = {}, compact = false, testId = "marketplace-guidance" }) {
+  if (!capability.customer_safe_message) return null;
+  return (
+    <div
+      data-testid={testId}
+      role="status"
+      aria-live="polite"
+      className={`mt-3 rounded-xl border p-3 ${
+        capability.manual_selection_required
+          ? "border-amber-300/35 bg-amber-300/10 text-amber-50"
+          : "border-sky-300/30 bg-sky-400/10 text-sky-50"
+      }`}
+    >
+      <div className="text-sm font-bold">{capability.automatic_matching_status_label || "Marketplace status"}</div>
+      {!compact || capability.manual_selection_required ? (
+        <p className="mt-1 text-sm leading-6 opacity-90">{capability.customer_safe_message}</p>
+      ) : null}
+      {!compact && capability.manual_selection_required ? (
+        <p className="mt-2 text-xs leading-5 opacity-80">
+          You can return to this request at any time. If no contractor is selected, the request will follow MyHomeBro&apos;s unanswered-request lifecycle.
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function RequestTimeline({ items = [] }) {
@@ -2201,7 +2262,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
     setContractorRouteReviewOpen(false);
   };
 
-  const beginContractorSearch = async (request) => {
+  const beginContractorSearch = async (request, { inviteKnown = false } = {}) => {
     setSelectedRequest(null);
     setEditingRequest(null);
     setSelectedContractors([]);
@@ -2224,6 +2285,7 @@ export default function CustomerRequests({ requests = [], bids = [], tenantMaint
         workflow_status_label: "Contractor Matching",
       };
       setContractorSearchRequest(updatedRequest);
+      if (inviteKnown) setManualContractor({ name: "", phone: "", email: "" });
     } catch (error) {
       setContractorSearchError(error?.response?.data?.detail || error?.message || "Contractor search could not be opened. Please try again.");
     } finally {
@@ -2781,6 +2843,7 @@ I need help installing shelves and patching drywall.`}
                           <strong className="text-slate-200">Next:</strong> {requestNextStep(request, requestBids(request))}
                         </span>
                       </div>
+                      <MarketplaceGuidance capability={request.marketplace} compact testId={`customer-request-marketplace-guidance-${request.id}`} />
                       {!request.can_edit && requestCanEditText(request) && !String(requestCanEditText(request)).toLowerCase().includes("cancelled") ? <p className="mt-2 text-xs font-semibold text-slate-500">{requestCanEditText(request)}</p> : null}
                     </div>
                     <div className="flex flex-wrap gap-2" data-testid={`customer-request-actions-${request.id}`}>
@@ -2803,9 +2866,14 @@ I need help installing shelves and patching drywall.`}
                           Edit Request
                         </button>
                       ) : null}
-                      {request.can_edit || request.workflow_status === "contractor_matching" ? (
+                      {(request.marketplace?.can_search_contractors ?? (request.can_edit || request.workflow_status === "contractor_matching")) ? (
                         <button type="button" data-testid={`customer-request-find-contractor-${request.id}`} onClick={() => beginContractorSearch(request)} className="rounded-lg bg-sky-300 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-sky-200">
-                          Find Contractor
+                          Search contractors
+                        </button>
+                      ) : null}
+                      {request.marketplace?.can_direct_invite ? (
+                        <button type="button" data-testid={`customer-request-invite-contractor-${request.id}`} onClick={() => beginContractorSearch(request, { inviteKnown: true })} className="rounded-lg border border-amber-300/50 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-300/10">
+                          Invite a contractor you know
                         </button>
                       ) : null}
                       {requestCanCancel(request) ? (
@@ -2989,9 +3057,14 @@ I need help installing shelves and patching drywall.`}
                       Edit Request
                     </button>
                   ) : null}
-                  {selectedRequest.can_edit || selectedRequest.workflow_status === "contractor_matching" ? (
+                  {(selectedRequest.marketplace?.can_search_contractors ?? (selectedRequest.can_edit || selectedRequest.workflow_status === "contractor_matching")) ? (
                     <button type="button" data-testid="customer-request-detail-find-contractor" onClick={() => beginContractorSearch(selectedRequest)} className="rounded-xl bg-sky-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-sky-200">
-                      Find Contractor
+                      Search contractors
+                    </button>
+                  ) : null}
+                  {selectedRequest.marketplace?.can_direct_invite ? (
+                    <button type="button" data-testid="customer-request-detail-invite-contractor" onClick={() => beginContractorSearch(selectedRequest, { inviteKnown: true })} className="rounded-xl border border-amber-300/50 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/10">
+                      Invite a contractor you know
                     </button>
                   ) : null}
                   {requestCanCancel(selectedRequest) ? (
@@ -3008,6 +3081,7 @@ I need help installing shelves and patching drywall.`}
                     <p className="mt-1 leading-6 text-rose-100/85">{selectedRequest.cancellation_reason || "It will not be sent to contractors."}</p>
                   </div>
                 ) : null}
+                <MarketplaceGuidance capability={selectedRequest.marketplace} testId="customer-request-detail-marketplace-guidance" />
                 <DetailSection title="Request Summary" eyebrow="Submitted Request" testId="customer-request-detail-summary">
                   <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <DetailField label="Current Status" value={homeownerRequestStatus(selectedRequest, requestBids(selectedRequest))} />

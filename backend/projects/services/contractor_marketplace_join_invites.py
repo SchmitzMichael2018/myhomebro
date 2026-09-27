@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import logging
 from typing import Any
 
 from django.conf import settings
@@ -17,6 +18,9 @@ from projects.models_sms import SMSConsentStatus
 from projects.services.contractor_directory_claims import generate_directory_claim_token
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
 from projects.services.sms_service import get_sms_consent, normalize_phone_to_e164
+
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_text(value: Any) -> str:
@@ -169,11 +173,11 @@ def send_marketplace_join_invite(
         .order_by("-created_at", "-id")
         .first()
     )
-    claim_token = generate_directory_claim_token(entry, generated_by=sent_by)
+    if invite is not None and not resend:
+        return invite
+    claim_token = invite.claim_token if invite is not None and invite.claim_token_id else generate_directory_claim_token(entry, generated_by=sent_by)
     if invite is None:
         invite = ContractorMarketplaceJoinInvite(directory_entry=entry, claim_token=claim_token)
-    elif invite.sent_at and not resend:
-        return invite
 
     invite.claim_token = invite.claim_token or claim_token
     invite.invited_business_name = entry.business_name or ""
@@ -191,69 +195,65 @@ def send_marketplace_join_invite(
     invite.save()
 
     claim_url = build_join_claim_url(invite, request=request)
-    wants_email = invite.delivery_channel in {
-        ContractorMarketplaceJoinInvite.CHANNEL_EMAIL,
-        ContractorMarketplaceJoinInvite.CHANNEL_BOTH,
-    }
-    wants_sms = invite.delivery_channel in {
-        ContractorMarketplaceJoinInvite.CHANNEL_SMS,
-        ContractorMarketplaceJoinInvite.CHANNEL_BOTH,
-    }
+    invite_id = invite.id
 
-    if wants_email:
-        if invite.email:
-            subject, text, html = _email_body(invite=invite, claim_url=claim_url, project_title=_safe_text(project_title))
-            ok, message = send_postmark_email(to_email=invite.email, subject=subject, text_body=text, html_body=html)
-            invite.email_status = "sent" if ok else "failed"
-            invite.email_error = "" if ok else message
-            ContractorDirectoryOutreachLog.objects.create(
-                directory_entry=entry,
-                outreach_type=ContractorDirectoryOutreachLog.TYPE_EMAIL,
-                destination=invite.email,
-                status=invite.email_status,
-                created_by=sent_by,
-                notes=message,
-            )
-        else:
-            invite.email_status = "suppressed"
-            invite.email_error = "No email address available."
+    def deliver_after_commit():
+        pending = ContractorMarketplaceJoinInvite.objects.select_related("directory_entry").filter(
+            pk=invite_id, status=ContractorMarketplaceJoinInvite.STATUS_PENDING,
+        ).first()
+        if pending is None:
+            return
+        wants_email = pending.delivery_channel in {
+            ContractorMarketplaceJoinInvite.CHANNEL_EMAIL, ContractorMarketplaceJoinInvite.CHANNEL_BOTH,
+        }
+        wants_sms = pending.delivery_channel in {
+            ContractorMarketplaceJoinInvite.CHANNEL_SMS, ContractorMarketplaceJoinInvite.CHANNEL_BOTH,
+        }
+        if wants_email:
+            if pending.email:
+                subject, body, html = _email_body(invite=pending, claim_url=claim_url, project_title=_safe_text(project_title))
+                try:
+                    ok, message = send_postmark_email(to_email=pending.email, subject=subject, text_body=body, html_body=html)
+                except Exception:
+                    logger.exception("Marketplace join email delivery failed for invite_id=%s", invite_id)
+                    ok, message = False, "Delivery failed after commit."
+                pending.email_status = "sent" if ok else "failed"
+                pending.email_error = "" if ok else message
+                ContractorDirectoryOutreachLog.objects.create(
+                    directory_entry=pending.directory_entry, outreach_type=ContractorDirectoryOutreachLog.TYPE_EMAIL,
+                    destination=pending.email, status=pending.email_status, created_by=sent_by, notes=message,
+                )
+            else:
+                pending.email_status = "suppressed"
+                pending.email_error = "No email address available."
+        if wants_sms:
+            if not pending.phone:
+                pending.sms_status = "suppressed"
+                pending.sms_error = "No phone number available."
+            elif _sms_opted_out(pending.phone):
+                pending.sms_status = "suppressed"
+                pending.sms_error = "SMS opt-out is active for this phone number."
+                pending.sms_opted_out = True
+            elif not getattr(settings, "MARKETPLACE_JOIN_INVITE_SMS_ENABLED", False):
+                pending.sms_status = "suppressed"
+                pending.sms_error = "Marketplace join invite SMS is disabled."
+            else:
+                try:
+                    ok, message = send_twilio_sms(to_phone=pending.phone, body=_sms_body(invite=pending, claim_url=claim_url, project_title=_safe_text(project_title)))
+                except Exception:
+                    logger.exception("Marketplace join SMS delivery failed for invite_id=%s", invite_id)
+                    ok, message = False, "Delivery failed after commit."
+                pending.sms_status = "sent" if ok else "failed"
+                pending.sms_error = "" if ok else message
+                ContractorDirectoryOutreachLog.objects.create(
+                    directory_entry=pending.directory_entry, outreach_type=ContractorDirectoryOutreachLog.TYPE_SMS,
+                    destination=pending.phone, status=pending.sms_status, created_by=sent_by, notes=message,
+                )
+        pending.status = _derive_status(pending) if wants_email or wants_sms else ContractorMarketplaceJoinInvite.STATUS_SUPPRESSED
+        pending.sent_at = timezone.now()
+        pending.save()
 
-    if wants_sms:
-        if not invite.phone:
-            invite.sms_status = "suppressed"
-            invite.sms_error = "No phone number available."
-        elif _sms_opted_out(invite.phone):
-            invite.sms_status = "suppressed"
-            invite.sms_error = "SMS opt-out is active for this phone number."
-            invite.sms_opted_out = True
-        elif not getattr(settings, "MARKETPLACE_JOIN_INVITE_SMS_ENABLED", False):
-            invite.sms_status = "suppressed"
-            invite.sms_error = "Marketplace join invite SMS is disabled."
-        else:
-            ok, message = send_twilio_sms(to_phone=invite.phone, body=_sms_body(invite=invite, claim_url=claim_url, project_title=_safe_text(project_title)))
-            invite.sms_status = "sent" if ok else "failed"
-            invite.sms_error = "" if ok else message
-            ContractorDirectoryOutreachLog.objects.create(
-                directory_entry=entry,
-                outreach_type=ContractorDirectoryOutreachLog.TYPE_SMS,
-                destination=invite.phone,
-                status=invite.sms_status,
-                created_by=sent_by,
-                notes=message,
-            )
-
-    if not wants_email and not wants_sms:
-        invite.status = ContractorMarketplaceJoinInvite.STATUS_SUPPRESSED
-    else:
-        invite.status = _derive_status(invite)
-    if invite.status in {
-        ContractorMarketplaceJoinInvite.STATUS_SENT,
-        ContractorMarketplaceJoinInvite.STATUS_PARTIAL,
-        ContractorMarketplaceJoinInvite.STATUS_FAILED,
-        ContractorMarketplaceJoinInvite.STATUS_SUPPRESSED,
-    }:
-        invite.sent_at = timezone.now()
-    invite.save()
+    transaction.on_commit(deliver_after_commit, robust=True)
     return invite
 
 
