@@ -110,10 +110,19 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
         intake_qs = intake_qs.filter(Q(submitted_at__gte=date_from) | Q(created_at__gte=date_from))
     if date_to:
         intake_qs = intake_qs.filter(Q(submitted_at__lte=date_to) | Q(created_at__lte=date_to))
-    if city_filter:
-        intake_qs = intake_qs.filter(Q(project_city__iexact=city_filter) | Q(customer_city__iexact=city_filter))
-    if state_filter:
-        intake_qs = intake_qs.filter(Q(project_state__iexact=state_filter) | Q(customer_state__iexact=state_filter))
+    if city_filter and state_filter:
+        intake_qs = intake_qs.filter(
+            Q(project_city__iexact=city_filter, project_state__iexact=state_filter)
+            | (Q(project_city="", project_state="") & Q(customer_city__iexact=city_filter, customer_state__iexact=state_filter))
+        )
+    elif city_filter:
+        intake_qs = intake_qs.filter(
+            Q(project_city__iexact=city_filter) | (Q(project_city="") & Q(customer_city__iexact=city_filter))
+        )
+    elif state_filter:
+        intake_qs = intake_qs.filter(
+            Q(project_state__iexact=state_filter) | (Q(project_state="") & Q(customer_state__iexact=state_filter))
+        )
     if trade_filter:
         intake_qs = intake_qs.filter(
             Q(ai_project_type__icontains=trade_filter)

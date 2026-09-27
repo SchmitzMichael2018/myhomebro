@@ -1053,6 +1053,28 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(response.json()["pilot"]["saved_requests"], 1001)
         self.assertEqual(response.json()["funnel"]["requests_submitted"], 1001)
 
+    def test_marketplace_pilot_filters_use_one_authoritative_location(self):
+        baseline = dict(
+            initiated_by="homeowner", post_submit_flow="multi_contractor", status="submitted",
+            customer_name="Synthetic Pilot", customer_email="synthetic@example.com",
+            accomplishment_text="Pilot request.", submitted_at=timezone.now(),
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="Austin", project_state="TX",
+            customer_city="San Antonio", customer_state="TX",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="San Antonio", project_state="CA",
+            customer_city="Austin", customer_state="TX",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="", project_state="",
+            customer_city="San Antonio", customer_state="TX",
+        )
+        response = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "San Antonio", "state": "TX"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pilot"]["saved_requests"], 1)
+
     def test_marketplace_analytics_requires_admin(self):
         regular = get_user_model().objects.create_user(email="not-admin@example.com", password="testpass123")
         self.client.force_authenticate(user=regular)
