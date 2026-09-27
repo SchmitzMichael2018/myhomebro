@@ -3,6 +3,7 @@ from datetime import datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db import transaction
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -209,16 +210,18 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(opportunity.converted_customer, existing)
 
     def test_selecting_contractor_creates_dashboard_notification_and_sms_suppression_without_consent(self):
-        response = self.client.post(
-            "/api/projects/public-intake/select-contractor/",
-            {
-                "token": self.intake.share_token,
-                "selected_contractors": [{"directory_entry_id": self.entry.id, "id": f"directory_entry:{self.entry.id}"}],
-            },
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            response = self.client.post(
+                "/api/projects/public-intake/select-contractor/",
+                {
+                    "token": self.intake.share_token,
+                    "selected_contractors": [{"directory_entry_id": self.entry.id, "id": f"directory_entry:{self.entry.id}"}],
+                },
+                format="json",
+            )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(callbacks), 1)
         opportunity = ContractorOpportunity.objects.get()
         notification = Notification.objects.get(
             contractor=self.contractor,
@@ -253,13 +256,15 @@ class ContractorOpportunityFlowTests(TestCase):
         self.entry.public_email = ""
         self.entry.save(update_fields=["claimed", "claimed_by_contractor", "phone", "public_email"])
 
-        response = self.client.post(
-            "/api/projects/public-intake/select-contractor/",
-            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            response = self.client.post(
+                "/api/projects/public-intake/select-contractor/",
+                {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+                format="json",
+            )
 
         self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(callbacks), 1)
         opportunity = ContractorOpportunity.objects.get()
         self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_PENDING)
         self.assertEqual(opportunity.outreach_status, ContractorOpportunity.OUTREACH_AWAITING_SMS_CONSENT)
@@ -297,11 +302,12 @@ class ContractorOpportunityFlowTests(TestCase):
         self.entry.phone = "512-555-9191"
         self.entry.public_email = ""
         self.entry.save(update_fields=["claimed", "claimed_by_contractor", "phone", "public_email"])
-        self.client.post(
-            "/api/projects/public-intake/select-contractor/",
-            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(
+                "/api/projects/public-intake/select-contractor/",
+                {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+                format="json",
+            )
 
         handle_inbound_sms(from_phone="+15125559191", body="STOP", message_sid="SM-STOP")
 
@@ -328,13 +334,15 @@ class ContractorOpportunityFlowTests(TestCase):
             consent_text_snapshot="Admin confirmed contractor SMS consent.",
         )
 
-        response = self.client.post(
-            "/api/projects/public-intake/select-contractor/",
-            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
-            format="json",
-        )
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            response = self.client.post(
+                "/api/projects/public-intake/select-contractor/",
+                {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+                format="json",
+            )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(callbacks), 1)
         decision = SMSAutomationDecision.objects.get(event_type="contractor_opportunity_received")
         self.assertEqual(decision.phone_number_e164, "+15125551111")
         self.assertEqual(decision.reason_code, "send_failed")
@@ -382,15 +390,38 @@ class ContractorOpportunityFlowTests(TestCase):
             "token": self.intake.share_token,
             "selected_contractors": [{"directory_entry_id": self.entry.id}],
         }
-        first = self.client.post("/api/projects/public-intake/select-contractor/", payload, format="json")
-        second = self.client.post("/api/projects/public-intake/select-contractor/", payload, format="json")
+        with self.captureOnCommitCallbacks(execute=True) as first_callbacks:
+            first = self.client.post("/api/projects/public-intake/select-contractor/", payload, format="json")
+        with self.captureOnCommitCallbacks(execute=True) as second_callbacks:
+            second = self.client.post("/api/projects/public-intake/select-contractor/", payload, format="json")
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(first_callbacks), 1)
+        self.assertEqual(second_callbacks, [])
         self.assertEqual(ContractorOpportunity.objects.count(), 1)
         self.assertEqual(Notification.objects.filter(category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED).count(), 1)
         self.assertEqual(SMSAutomationDecision.objects.filter(event_type="contractor_opportunity_received").count(), 1)
         self.assertEqual(first.data["opportunity_id"], second.data["opportunity_id"])
+
+    @patch("projects.services.contractor_opportunities._notify_selected_contractor_opportunity")
+    def test_rolled_back_selection_sends_no_contractor_notification(self, notify):
+        payload = {
+            "token": self.intake.share_token,
+            "selected_contractors": [{"directory_entry_id": self.entry.id}],
+        }
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            with self.assertRaisesMessage(ValueError, "abort selection"):
+                with transaction.atomic():
+                    response = self.client.post("/api/projects/public-intake/select-contractor/", payload, format="json")
+                    self.assertEqual(response.status_code, 200)
+                    raise ValueError("abort selection")
+
+        self.assertEqual(callbacks, [])
+        self.assertFalse(ContractorOpportunity.objects.exists())
+        self.assertFalse(Notification.objects.filter(category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED).exists())
+        self.assertFalse(SMSAutomationDecision.objects.filter(event_type="contractor_opportunity_received").exists())
+        notify.assert_not_called()
 
     def test_selected_discovery_record_is_marked_selected(self):
         discovery = ContractorDirectoryDiscovery.objects.create(
