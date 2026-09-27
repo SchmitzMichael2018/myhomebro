@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from projects.models import Agreement, Contractor, PublicContractorLead
+from projects.models_invite import ContractorInvite
 from projects.models_contractor_discovery import (
     ContractorDiscoveryInvite,
     ContractorOpportunity,
@@ -120,13 +121,18 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
             | Q(accomplishment_text__icontains=trade_filter)
         )
 
-    intakes = list(intake_qs.order_by("-created_at", "-id")[:1000])
+    # The filter totals must describe the entire selected cohort, including older requests.
+    intakes = list(intake_qs.order_by("-created_at", "-id"))
     intake_ids = {row.id for row in intakes}
 
     invite_qs = ContractorDiscoveryInvite.objects.filter(public_intake_id__in=intake_ids)
     opportunity_qs = ContractorOpportunity.objects.filter(intake_request_id__in=intake_ids)
-    lead_qs = PublicContractorLead.objects.select_related("contractor", "converted_agreement").all()
-    leads = [lead for lead in lead_qs if _source_intake_id(lead) in intake_ids]
+    lead_qs = PublicContractorLead.objects.filter(
+        Q(ai_analysis__source_intake_id__in=intake_ids)
+        | Q(ai_analysis__source_intake_id__in=[str(pk) for pk in intake_ids])
+    ).select_related("contractor", "converted_agreement")
+    all_leads = list(lead_qs)
+    leads = [lead for lead in all_leads if _source_intake_id(lead) in intake_ids]
     if contractor_status:
         leads = [
             lead for lead in leads
@@ -139,9 +145,29 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
         if source_id:
             leads_by_intake[source_id].append(lead)
 
-    routed_ids = set(invite_qs.values_list("public_intake_id", flat=True))
-    routed_ids.update(opportunity_qs.values_list("intake_request_id", flat=True))
-    routed_ids.update(leads_by_intake.keys())
+    invite_pairs = list(invite_qs.values_list("id", "public_intake_id", "status"))
+    automatically_matched_ids = {
+        (analysis.get("source_intake_id"), analysis.get("marketplace_invite_id"))
+        for analysis in (lead.ai_analysis for lead in all_leads)
+        if isinstance(analysis, dict) and analysis.get("marketplace_request")
+        and type(analysis.get("marketplace_invite_id")) is int
+    }
+    automatic_invite_ids = {pk for pk, intake_id, _ in invite_pairs if (intake_id, pk) in automatically_matched_ids}
+    sent_statuses = {
+        ContractorDiscoveryInvite.STATUS_SENT, ContractorDiscoveryInvite.STATUS_DELIVERED,
+        ContractorDiscoveryInvite.STATUS_CLICKED, ContractorDiscoveryInvite.STATUS_CLAIMED,
+        ContractorDiscoveryInvite.STATUS_RESPONDED, ContractorDiscoveryInvite.STATUS_DECLINED,
+        ContractorDiscoveryInvite.STATUS_EXPIRED,
+    }
+    routed_ids = {intake_id for pk, intake_id, status in invite_pairs if pk in automatic_invite_ids and status in sent_statuses}
+    direct_invite_pairs = [(pk, intake_id, status) for pk, intake_id, status in invite_pairs if pk not in automatic_invite_ids]
+    known_vendor_invites = list(ContractorInvite.objects.filter(source_intake_id__in=intake_ids).values_list("source_intake_id", "accepted_at"))
+    direct_request_ids = {intake_id for _, intake_id, _ in direct_invite_pairs}
+    direct_request_ids.update(intake_id for intake_id, _ in known_vendor_invites)
+    response_ids = {intake_id for _, intake_id, status in invite_pairs if status in ("claimed", "responded")}
+    response_ids.update(intake_id for intake_id, accepted_at in known_vendor_invites if accepted_at)
+    response_ids.update(opportunity_qs.filter(status__in=[ContractorOpportunity.STATUS_ACCEPTED, ContractorOpportunity.STATUS_CONVERTED]).values_list("intake_request_id", flat=True))
+    response_ids.update(source_id for lead in all_leads if lead.status == PublicContractorLead.STATUS_ACCEPTED for source_id in [_source_intake_id(lead)] if source_id)
 
     awarded_leads = [
         lead for lead in leads
@@ -177,6 +203,8 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
     requests_with_bid = len([pk for pk in intake_ids if leads_by_intake.get(pk)])
     awarded_request_ids = {_source_intake_id(lead) for lead in awarded_leads if _source_intake_id(lead)}
     agreement_request_ids = {_source_intake_id(lead) for lead in agreement_leads if _source_intake_id(lead)}
+    pilot_agreements = {lead.converted_agreement_id: lead.converted_agreement for lead in all_leads if lead.converted_agreement_id}
+    pilot_draft_ids = {_source_intake_id(lead) for lead in all_leads if lead.converted_agreement_id and _source_intake_id(lead)}
 
     funnel = {
         "requests_submitted": requests_submitted,
@@ -191,9 +219,22 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
         "signed_agreements": len(signed_agreements),
         "escrow_funded": len(escrow_funded),
     }
+    pilot = {
+        "saved_requests": requests_submitted,
+        "requests_with_direct_invites": len(direct_request_ids),
+        "direct_invitations": len(direct_invite_pairs) + len(known_vendor_invites),
+        "requests_automatically_matched": len(routed_ids),
+        "requests_with_contractor_activity": len(response_ids),
+        "requests_with_agreement_drafts": len(pilot_draft_ids),
+        "signed_agreements": sum(_signed(agreement) for agreement in pilot_agreements.values()),
+        "funded_agreements": sum(
+            bool(agreement.escrow_funded) or Decimal(str(agreement.escrow_funded_amount or 0)) > 0
+            for agreement in pilot_agreements.values()
+        ),
+    }
     conversion_rates = {
         "request_to_routed": _pct(funnel["requests_routed"], funnel["requests_submitted"]),
-        "routed_to_bid_received": _pct(funnel["requests_with_at_least_one_bid"], funnel["requests_routed"]),
+        "routed_to_bid_received": _pct(len(routed_ids & set(leads_by_intake)), funnel["requests_routed"]),
         "bid_received_to_awarded": _pct(funnel["awarded_requests"], funnel["requests_with_at_least_one_bid"]),
         "awarded_to_agreement_draft": _pct(funnel["agreement_drafts_created"], funnel["awarded_requests"]),
         "agreement_draft_to_signed": _pct(funnel["signed_agreements"], funnel["agreement_drafts_created"]),
@@ -297,6 +338,7 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
             "contractor_status": contractor_status,
         },
         "funnel": funnel,
+        "pilot": pilot,
         "conversion_rates": conversion_rates,
         "city_analytics": sorted(city_analytics, key=lambda row: (-row["requests"], row["state"], row["city"]))[:50],
         "contractor_analytics": contractor_rows[:50],
