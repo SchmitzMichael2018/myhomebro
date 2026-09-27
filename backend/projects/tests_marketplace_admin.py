@@ -963,7 +963,7 @@ class AdminMarketplaceTests(TestCase):
             project_description="Install luxury vinyl plank flooring.",
             budget_text="$5,000",
             status=PublicContractorLead.STATUS_ACCEPTED,
-            ai_analysis={"source_intake_id": request.id, "suggested_total_price": "5000", "marketplace_request": True, "marketplace_invite_id": automatic_invite.id},
+            ai_analysis={"source_intake_id": str(request.id), "suggested_total_price": "5000", "marketplace_request": True, "marketplace_invite_id": automatic_invite.id},
             converted_homeowner=homeowner,
             converted_agreement=agreement,
             converted_at=timezone.now(),
@@ -999,6 +999,19 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(filtered.status_code, 200, filtered.data)
         self.assertEqual(filtered.json()["funnel"]["requests_submitted"], 1)
         self.assertEqual(filtered.json()["funnel"]["bids_submitted"], 0)
+
+        # Automatic routing initially creates a pending invite with an associated lead.
+        # It is a real match before delivery, while a failed invite must not count.
+        automatic_invite.status = ContractorDiscoveryInvite.STATUS_PENDING
+        automatic_invite.save(update_fields=["status"])
+        pending = self.client.get("/api/projects/admin/marketplace/analytics/").json()
+        self.assertEqual(pending["pilot"]["requests_automatically_matched"], 1)
+        self.assertEqual(pending["pilot"]["direct_invitations"], 0)
+        automatic_invite.status = ContractorDiscoveryInvite.STATUS_FAILED
+        automatic_invite.save(update_fields=["status"])
+        failed = self.client.get("/api/projects/admin/marketplace/analytics/").json()
+        self.assertEqual(failed["pilot"]["requests_automatically_matched"], 0)
+        self.assertEqual(failed["pilot"]["direct_invitations"], 0)
 
     def test_marketplace_pilot_keeps_manual_invitations_separate_from_automatic_matching(self):
         manual = ProjectIntake.objects.create(
@@ -1048,10 +1061,12 @@ class AdminMarketplaceTests(TestCase):
             for _ in range(1001)
         ])
 
-        response = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "San Antonio", "state": "TX"})
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "San Antonio", "state": "TX"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["pilot"]["saved_requests"], 1001)
         self.assertEqual(response.json()["funnel"]["requests_submitted"], 1001)
+        self.assertLess(len(queries), 20)
 
     def test_marketplace_pilot_filters_use_one_authoritative_location(self):
         baseline = dict(
@@ -1071,11 +1086,27 @@ class AdminMarketplaceTests(TestCase):
             **baseline, project_city="", project_state="",
             customer_city="San Antonio", customer_state="TX",
         )
+        ProjectIntake.objects.create(
+            **baseline, project_city="", project_state="CA",
+            customer_city="San Antonio", customer_state="TX",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="  ", project_state="  ",
+            customer_city=" San Antonio ", customer_state=" TX ",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="", project_state="",
+            customer_city="San Antonio", customer_state="TX", same_as_customer_address=False,
+        )
         response = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "San Antonio", "state": "TX"})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["pilot"]["saved_requests"], 1)
+        self.assertEqual(response.json()["pilot"]["saved_requests"], 3)
+        self.assertEqual(response.json()["city_analytics"][0]["city"], "San Antonio")
+        self.assertEqual(response.json()["city_analytics"][0]["state"], "TX")
 
     def test_marketplace_analytics_requires_admin(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get("/api/projects/admin/marketplace/analytics/").status_code, 401)
         regular = get_user_model().objects.create_user(email="not-admin@example.com", password="testpass123")
         self.client.force_authenticate(user=regular)
 

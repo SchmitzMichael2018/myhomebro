@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db.models import Q
+from django.db.models.functions import Trim
 from django.utils import timezone
 
 from projects.models import Agreement, Contractor, PublicContractorLead
@@ -18,7 +19,7 @@ from projects.models_contractor_discovery import (
 from projects.models_project_intake import ProjectIntake
 from projects.services.bid_workflow import parse_money_like_text
 from projects.services.contractor_reviews import contractor_performance_summary
-from projects.services.marketplace_readiness import normalize_location_value
+from projects.services.marketplace_readiness import intake_marketplace_location, normalize_location_value
 
 
 def _safe_text(value: Any) -> str:
@@ -110,19 +111,23 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
         intake_qs = intake_qs.filter(Q(submitted_at__gte=date_from) | Q(created_at__gte=date_from))
     if date_to:
         intake_qs = intake_qs.filter(Q(submitted_at__lte=date_to) | Q(created_at__lte=date_to))
-    if city_filter and state_filter:
-        intake_qs = intake_qs.filter(
-            Q(project_city__iexact=city_filter, project_state__iexact=state_filter)
-            | (Q(project_city="", project_state="") & Q(customer_city__iexact=city_filter, customer_state__iexact=state_filter))
+    if city_filter or state_filter:
+        # Match the same complete, single-address location used by marketplace readiness.
+        intake_qs = intake_qs.annotate(
+            project_city_clean=Trim("project_city"), project_state_clean=Trim("project_state"),
+            customer_city_clean=Trim("customer_city"), customer_state_clean=Trim("customer_state"),
         )
-    elif city_filter:
-        intake_qs = intake_qs.filter(
-            Q(project_city__iexact=city_filter) | (Q(project_city="") & Q(customer_city__iexact=city_filter))
-        )
-    elif state_filter:
-        intake_qs = intake_qs.filter(
-            Q(project_state__iexact=state_filter) | (Q(project_state="") & Q(customer_state__iexact=state_filter))
-        )
+        project_complete = ~Q(project_city_clean="") & ~Q(project_state_clean="")
+        customer_complete = ~Q(customer_city_clean="") & ~Q(customer_state_clean="")
+        project_match = project_complete
+        customer_match = ~project_complete & Q(same_as_customer_address=True) & customer_complete
+        if city_filter:
+            project_match &= Q(project_city_clean__iexact=city_filter)
+            customer_match &= Q(customer_city_clean__iexact=city_filter)
+        if state_filter:
+            project_match &= Q(project_state_clean__iexact=state_filter)
+            customer_match &= Q(customer_state_clean__iexact=state_filter)
+        intake_qs = intake_qs.filter(project_match | customer_match)
     if trade_filter:
         intake_qs = intake_qs.filter(
             Q(ai_project_type__icontains=trade_filter)
@@ -156,19 +161,20 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
 
     invite_pairs = list(invite_qs.values_list("id", "public_intake_id", "status"))
     automatically_matched_ids = {
-        (analysis.get("source_intake_id"), analysis.get("marketplace_invite_id"))
-        for analysis in (lead.ai_analysis for lead in all_leads)
-        if isinstance(analysis, dict) and analysis.get("marketplace_request")
+        (_source_intake_id(lead), analysis["marketplace_invite_id"])
+        for lead in all_leads
+        if isinstance(analysis := lead.ai_analysis, dict) and analysis.get("marketplace_request")
         and type(analysis.get("marketplace_invite_id")) is int
     }
     automatic_invite_ids = {pk for pk, intake_id, _ in invite_pairs if (intake_id, pk) in automatically_matched_ids}
-    sent_statuses = {
+    matched_statuses = {
+        ContractorDiscoveryInvite.STATUS_PENDING,
         ContractorDiscoveryInvite.STATUS_SENT, ContractorDiscoveryInvite.STATUS_DELIVERED,
         ContractorDiscoveryInvite.STATUS_CLICKED, ContractorDiscoveryInvite.STATUS_CLAIMED,
         ContractorDiscoveryInvite.STATUS_RESPONDED, ContractorDiscoveryInvite.STATUS_DECLINED,
         ContractorDiscoveryInvite.STATUS_EXPIRED,
     }
-    routed_ids = {intake_id for pk, intake_id, status in invite_pairs if pk in automatic_invite_ids and status in sent_statuses}
+    routed_ids = {intake_id for pk, intake_id, status in invite_pairs if pk in automatic_invite_ids and status in matched_statuses}
     direct_invite_pairs = [(pk, intake_id, status) for pk, intake_id, status in invite_pairs if pk not in automatic_invite_ids]
     known_vendor_invites = list(ContractorInvite.objects.filter(source_intake_id__in=intake_ids).values_list("source_intake_id", "accepted_at"))
     direct_request_ids = {intake_id for _, intake_id, _ in direct_invite_pairs}
@@ -252,8 +258,8 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
 
     city_rows = defaultdict(lambda: {"requests": 0, "routed": 0, "bids": 0, "zero_bid_requests": 0, "awarded_requests": 0, "agreement_drafts": 0})
     for intake in intakes:
-        city = normalize_location_value(getattr(intake, "project_city", "") or getattr(intake, "customer_city", "")) or "Unknown"
-        state = normalize_location_value(getattr(intake, "project_state", "") or getattr(intake, "customer_state", "")) or ""
+        city, state, _ = intake_marketplace_location(intake)
+        city = city or "Unknown"
         key = f"{city}, {state}".strip(", ")
         row = city_rows[key]
         row.update({"city": city, "state": state})
@@ -306,12 +312,13 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
     awarded_unsigned_queue = []
     for intake in intakes:
         related = leads_by_intake.get(intake.id, [])
+        city, state, _ = intake_marketplace_location(intake)
         if not related:
             zero_bid_queue.append({
                 "id": intake.id,
                 "title": _intake_title(intake),
-                "city": normalize_location_value(getattr(intake, "project_city", "") or getattr(intake, "customer_city", "")),
-                "state": normalize_location_value(getattr(intake, "project_state", "") or getattr(intake, "customer_state", "")),
+                "city": city,
+                "state": state,
                 "submitted_at": (getattr(intake, "submitted_at", None) or getattr(intake, "created_at", None)).isoformat(),
                 "routed": intake.id in routed_ids,
             })
@@ -319,8 +326,8 @@ def build_marketplace_analytics(params: dict[str, Any] | None = None) -> dict[st
             awaiting_award_queue.append({
                 "id": intake.id,
                 "title": _intake_title(intake),
-                "city": normalize_location_value(getattr(intake, "project_city", "") or getattr(intake, "customer_city", "")),
-                "state": normalize_location_value(getattr(intake, "project_state", "") or getattr(intake, "customer_state", "")),
+                "city": city,
+                "state": state,
                 "bid_count": len(related),
                 "oldest_bid_at": min(getattr(lead, "created_at", timezone.now()) for lead in related).isoformat(),
             })
