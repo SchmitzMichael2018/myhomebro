@@ -837,7 +837,7 @@ def _normalize_semantic_understanding(
 
 def _taxonomy_tokens(value: Any) -> set[str]:
     return {
-        token
+        "roof" if token == "roofing" else token
         for token in re.split(r"[^a-z0-9]+", _norm_text(_safe_str(value)))
         if token and token not in {"project", "work", "service", "general"}
     }
@@ -1180,7 +1180,28 @@ def classify_project_from_scope(
     taxonomy = taxonomy or build_project_taxonomy_snapshot(contractor=contractor)
     lookup = _taxonomy_lookup(taxonomy)
     clean_current_values = _clean_current_classification_values(current_values, lookup)
-    semantic_current_values = {
+    # A clear appliance symptom or gutter job in the customer's description
+    # must not inherit a prior request's unrelated title or type. Neither
+    # family is in the seeded project taxonomy, so a shared action word such
+    # as "installation" must not map gutters to another trade's subtype.
+    described_type, _, _ = classify_type_subtype(
+        project_title="",
+        description=description,
+        scope_text=scope,
+        requested_type="",
+        requested_subtype="",
+    )
+    description_overrides_stale_context = (
+        described_type in {"Appliance Repair", "Gutters"}
+        and not re.search(r"\b(?:remodel|renovat|rehab)\w*\b", f"{description} {scope}", re.IGNORECASE)
+    )
+    if description_overrides_stale_context and normalized_key(described_type) not in lookup.type_by_norm:
+        return _fallback_classification(
+            description=description,
+            scope=scope,
+            current_values={},
+        )
+    semantic_current_values = {} if description_overrides_stale_context else {
         "project_title": _safe_str(current_values.get("project_title")),
         "project_type": _safe_str(current_values.get("project_type")),
         "project_subtype": _safe_str(current_values.get("project_subtype")),
@@ -1197,7 +1218,7 @@ def classify_project_from_scope(
         return _fallback_classification(
             description=description,
             scope=scope,
-            current_values={"project_title": _safe_str(current_values.get("project_title"))},
+            current_values={"project_title": _safe_str(semantic_current_values.get("project_title"))},
         )
     candidate = _call_openai_classifier(
         description=description,

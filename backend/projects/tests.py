@@ -1412,6 +1412,50 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(result["confidence"], "high")
         self.assertEqual(result["taxonomy_match_quality"], "type_only")
 
+    @override_settings(OPENAI_API_KEY="", AI_OPENAI_API_KEY="")
+    def test_customer_description_wins_over_stale_trade_without_inventing_taxonomy(self):
+        taxonomy = {
+            "types": [
+                {"name": "Roofing", "subtypes": [{"name": "Roof Repair"}, {"name": "Metal Roofing"}]},
+                {"name": "Drywall", "subtypes": [{"name": "Drywall Installation"}]},
+                {"name": "Remodel", "subtypes": [{"name": "Kitchen"}]},
+                {"name": "Plumbing", "subtypes": [{"name": "Plumbing Repair"}]},
+            ]
+        }
+        cases = [
+            ("Roof leak over the guest bedroom", {}, ("Roofing", "Roof Repair")),
+            ("Install new gutters and downspouts", {"project_type": "Plumbing"}, ("Gutters", "Gutter Installation")),
+            ("Dryer is making loud noises", {"project_title": "Commercial Remodel"}, ("Appliance Repair", "Dryer Repair")),
+            (
+                "Remodel the kitchen, including moving plumbing and repairing the dryer",
+                {"project_title": "Kitchen Remodel"},
+                ("Remodel", "Kitchen"),
+            ),
+        ]
+        with patch("projects.services.ai.project_classifier._call_openai_classifier", return_value=None):
+            for description, current_values, expected in cases:
+                with self.subTest(description=description):
+                    result = classify_project_from_scope(
+                        description=description,
+                        scope=description,
+                        taxonomy=taxonomy,
+                        current_values=current_values,
+                    )
+                    self.assertEqual((result["project_type"], result["project_subtype"]), expected)
+            with_gutters = {
+                "types": [
+                    *taxonomy["types"],
+                    {"name": "Gutters", "subtypes": [{"name": "Gutter Installation"}]},
+                ]
+            }
+            result = classify_project_from_scope(
+                description="Install new gutters and downspouts",
+                scope="Install new gutters and downspouts",
+                taxonomy=with_gutters,
+                current_values={"project_title": "Commercial Remodel", "project_type": "Plumbing"},
+            )
+            self.assertEqual((result["project_type"], result["project_subtype"]), ("Gutters", "Gutter Installation"))
+
     def test_semantic_first_mapping_covers_remodels_and_pure_trades(self):
         cases = [
             {
@@ -28823,7 +28867,7 @@ class CustomerPortalAccessTests(TestCase):
             (
                 "Roof leak over the guest bedroom",
                 "Roofing",
-                "Repair",
+                "Roof Repair",
                 ["roof", "leak"],
                 ["plumbing", "toilet", "faucet", "drain"],
             ),
@@ -30913,16 +30957,19 @@ class CustomerPortalAccessTests(TestCase):
         dispute = Dispute.objects.get(agreement=self.agreement, milestone=milestone)
         self.assertEqual(dispute.initiator, "homeowner")
         self.assertEqual(dispute.status, "open")
-        self.assertTrue(dispute.escrow_frozen)
+        # The submitted draw belongs to an unfunded agreement. Opening a
+        # dispute must not imply that MyHomeBro is holding customer funds.
+        self.assertFalse(dispute.escrow_frozen)
+        self.assertEqual(dispute.payment_hold.status, "no_hold")
         self.assertIn(f"draw_id={draw.id}", dispute.description)
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.SUBMITTED)
         self.assertIn("Dispute opened", draw.homeowner_review_notes)
 
         payment_row = next(row for row in response.data["portal"]["payments"] if row["id"] == f"draw-{draw.id}")
-        self.assertEqual(payment_row["dispute_status_label"], "Escrow hold active")
-        self.assertTrue(payment_row["dispute_escrow_hold_active"])
-        self.assertEqual(payment_row["dispute_next_action"], "Track issue status")
+        self.assertEqual(payment_row["dispute_status_label"], "Dispute opened")
+        self.assertFalse(payment_row["dispute_escrow_hold_active"])
+        self.assertEqual(payment_row["dispute_next_action"], "Awaiting your response")
         self.assertEqual(payment_row["dispute_financial_disposition"], "")
         self.assertIn(f"/disputes/{dispute.id}?token=", payment_row["dispute_url"])
         self.assertTrue(
