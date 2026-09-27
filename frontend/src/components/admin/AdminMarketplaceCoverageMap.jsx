@@ -6,6 +6,14 @@ import {
   createCoverageMap,
   readAdminMapConfig,
 } from '../../lib/googleCoverageMap';
+import {
+  coverageLevelFromSearch,
+  coverageLevelLabel,
+  coverageZoom,
+  drilldownForPoint,
+  parentCoverageNavigation,
+  selectionQuery,
+} from '../../lib/coverageNavigation';
 
 const inputClass = 'mhb-admin-control';
 const panelClass = 'rounded-xl border border-white/10 bg-white/[0.08] p-4';
@@ -54,6 +62,7 @@ function filtersFromSearch(search) {
       ? positiveInt(params.get('coverage_page_size'), 25)
       : 25,
     coverage_sort: params.get('coverage_sort') || 'largest_coverage_gap',
+    coverage_level: coverageLevelFromSearch(params),
   };
 }
 
@@ -73,6 +82,7 @@ function coverageQuery(filters, viewport) {
     coverage_page: filters.coverage_page,
     coverage_page_size: filters.coverage_page_size,
     coverage_sort: filters.coverage_sort,
+    aggregation_level: filters.coverage_level,
     ...viewport,
   };
   return Object.fromEntries(
@@ -101,6 +111,8 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
   const [mapError, setMapError] = useState('');
   const [retryKey, setRetryKey] = useState(0);
   const [coverageRetryKey, setCoverageRetryKey] = useState(0);
+  const [selectedFallback, setSelectedFallback] = useState(null);
+  const [selectedError, setSelectedError] = useState('');
   const mapHostRef = useRef(null);
   const mapControllerRef = useRef(null);
   const viewportTimerRef = useRef(null);
@@ -109,12 +121,15 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
   const pointsRef = useRef(data.points || []);
   const layersRef = useRef(filters.layers);
   const selectedAreaRef = useRef(filters.area);
-  const aggregationLevelRef = useRef(aggregationLevelForZoom(viewport.zoom));
+  const aggregationLevelRef = useRef(filters.coverage_level);
+  const mapViewKeyRef = useRef('');
+  const programmaticViewportUntilRef = useRef(0);
   filtersRef.current = filters;
   locationRef.current = location;
   pointsRef.current = data.points || [];
   layersRef.current = filters.layers;
   selectedAreaRef.current = filters.area;
+  aggregationLevelRef.current = filters.coverage_level;
   const config = useMemo(() => readAdminMapConfig(), []);
   const layersKey = filters.layers.join(',');
   const requestParams = useMemo(
@@ -129,6 +144,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       coverage_page: filters.coverage_page,
       coverage_page_size: filters.coverage_page_size,
       coverage_sort: filters.coverage_sort,
+      coverage_level: filters.coverage_level,
     }, viewport),
     [
       filters.trade,
@@ -140,16 +156,19 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       filters.coverage_page,
       filters.coverage_page_size,
       filters.coverage_sort,
+      filters.coverage_level,
       layersKey,
       viewport,
     ],
   );
-  const selected = useMemo(
+  const selectedFromCurrentLevel = useMemo(
     () => data.coverage_areas?.results?.find((point) => point.id === filters.area)
       || data.points?.find((point) => point.id === filters.area)
       || null,
     [data.coverage_areas?.results, data.points, filters.area],
   );
+  const selected = selectedFromCurrentLevel
+    || (selectedFallback?.id === filters.area ? selectedFallback : null);
 
   const updateSearch = useCallback((changes, { replace = false } = {}) => {
     const currentFilters = filtersRef.current;
@@ -158,13 +177,13 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
     if ('state' in changes && changes.state !== currentFilters.state) {
       next.city = '';
       next.zip = '';
-      next.area = '';
+      if (!('area' in changes)) next.area = '';
     }
     if ('city' in changes && changes.city !== currentFilters.city) {
       next.zip = '';
-      next.area = '';
+      if (!('area' in changes)) next.area = '';
     }
-    if ('zip' in changes && changes.zip !== currentFilters.zip) next.area = '';
+    if ('zip' in changes && changes.zip !== currentFilters.zip && !('area' in changes)) next.area = '';
     const resetsCoveragePage = [
       'trade', 'state', 'city', 'zip', 'date_range', 'classification',
       'layers', 'coverage_sort', 'coverage_page_size',
@@ -187,12 +206,59 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
     setOrDelete('coverage_page', next.coverage_page, 1);
     setOrDelete('coverage_page_size', next.coverage_page_size, 25);
     setOrDelete('coverage_sort', next.coverage_sort, 'largest_coverage_gap');
+    if (
+      next.coverage_level === 'state'
+      && !next.state
+      && !next.city
+      && !next.zip
+    ) {
+      params.delete('coverage_level');
+    } else {
+      params.set('coverage_level', next.coverage_level);
+    }
     navigate({ pathname: currentLocation.pathname, search: params.toString() ? `?${params}` : '' }, { replace });
   }, [navigate]);
 
-  const selectPoint = useCallback((point) => {
-    updateSearch({ area: point.id });
+  const activatePoint = useCallback((point) => {
+    const next = drilldownForPoint(point);
+    aggregationLevelRef.current = next.coverage_level;
+    updateSearch(next);
   }, [updateSearch]);
+
+  useEffect(() => {
+    if (!filters.area || selectedFromCurrentLevel) {
+      setSelectedFallback(selectedFromCurrentLevel);
+      setSelectedError('');
+      return undefined;
+    }
+    let active = true;
+    setSelectedError('');
+    const selectedAreaQuery = selectionQuery(filters.area);
+    api.get('/projects/admin/marketplace/coverage/', {
+      params: coverageQuery({
+        ...filters,
+        ...selectedAreaQuery,
+        coverage_level: selectedAreaQuery.aggregation_level,
+        coverage_page: 1,
+        coverage_page_size: 25,
+      }, {}),
+    }).then(({ data: payload }) => {
+      if (!active) return;
+      const exact = payload?.coverage_areas?.results?.find((point) => point.id === filters.area)
+        || payload?.points?.find((point) => point.id === filters.area)
+        || null;
+      setSelectedFallback(exact);
+      if (!exact) setSelectedError('The selected aggregate is no longer available for the current filters.');
+    }).catch(() => {
+      if (active) {
+        setSelectedFallback(null);
+        setSelectedError('Selected area details could not be loaded.');
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [filters, selectedFromCurrentLevel]);
 
   useEffect(() => {
     let active = true;
@@ -235,15 +301,18 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       layers: layersRef.current,
       selectedAreaId: selectedAreaRef.current,
       signal: abortController.signal,
-      onSelect: selectPoint,
+      onSelect: activatePoint,
       onViewportChange(nextViewport) {
         clearTimeout(viewportTimerRef.current);
         viewportTimerRef.current = setTimeout(() => {
           if (!active) return;
           const nextLevel = aggregationLevelForZoom(nextViewport.zoom);
-          if (nextLevel !== aggregationLevelRef.current) {
+          if (
+            Date.now() >= programmaticViewportUntilRef.current
+            && nextLevel !== aggregationLevelRef.current
+          ) {
             aggregationLevelRef.current = nextLevel;
-            updateSearch({ coverage_page: 1 }, { replace: true });
+            updateSearch({ coverage_level: nextLevel, coverage_page: 1 }, { replace: true });
           }
           setViewport(nextViewport);
         }, 350);
@@ -276,11 +345,37 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
       pendingController?.destroy?.();
       mapControllerRef.current = null;
     };
-  }, [retryKey, config, selectPoint, updateSearch]);
+  }, [retryKey, config, activatePoint, updateSearch]);
 
   useEffect(() => {
     mapControllerRef.current?.update?.(data.points || [], filters.layers, filters.area);
   }, [data.points, filters.layers, filters.area]);
+
+  useEffect(() => {
+    if (mapStatus !== 'ready') return;
+    const viewKey = [
+      filters.coverage_level, filters.state, filters.city, filters.zip, filters.area,
+    ].join('|');
+    if (mapViewKeyRef.current === viewKey) return;
+    aggregationLevelRef.current = filters.coverage_level;
+    if (filters.area && !selected) return;
+    mapViewKeyRef.current = viewKey;
+    programmaticViewportUntilRef.current = Date.now() + 750;
+    if (selected?.has_marker !== false && selected?.latitude != null && selected?.longitude != null) {
+      mapControllerRef.current?.focus?.(selected, filters.coverage_level);
+    } else if (filters.coverage_level === 'state' && !filters.state && !filters.city && !filters.zip) {
+      mapControllerRef.current?.reset?.();
+    }
+    setViewport((current) => ({ ...current, zoom: coverageZoom(filters.coverage_level) }));
+  }, [
+    filters.area,
+    filters.city,
+    filters.coverage_level,
+    filters.state,
+    filters.zip,
+    mapStatus,
+    selected,
+  ]);
 
   const cities = (data.facets?.cities || []).filter(
     (row) => !filters.state || row.state === filters.state,
@@ -309,11 +404,11 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
             <option value="">All trades</option>
             {(data.facets?.trades || []).map((trade) => <option key={trade} value={trade}>{trade}</option>)}
           </select>
-          <select className={inputClass} aria-label="Filter map state" value={filters.state} onChange={(event) => updateSearch({ state: event.target.value })}>
+          <select className={inputClass} aria-label="Filter map state" value={filters.state} onChange={(event) => updateSearch({ state: event.target.value, coverage_level: event.target.value ? 'city' : 'state' })}>
             <option value="">All states</option>
             {(data.facets?.states || []).map((state) => <option key={state} value={state}>{state}</option>)}
           </select>
-          <select className={inputClass} aria-label="Filter map city" value={filters.city} disabled={!filters.state} onChange={(event) => updateSearch({ city: event.target.value })}>
+          <select className={inputClass} aria-label="Filter map city" value={filters.city} disabled={!filters.state} onChange={(event) => updateSearch({ city: event.target.value, coverage_level: event.target.value ? 'zip' : 'city' })}>
             <option value="">All cities</option>
             {cities.map((row) => <option key={`${row.state}-${row.city}`} value={row.city}>{row.city}</option>)}
           </select>
@@ -353,14 +448,17 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
           </div>
         </fieldset>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => { setViewport({ zoom: 4 }); mapControllerRef.current?.reset?.(); updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', layers: LAYERS.map(([value]) => value), area: '' }); }}>
+          {filters.coverage_level !== 'state' ? <button type="button" className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => updateSearch(parentCoverageNavigation(filters))}>
+            Back one level
+          </button> : null}
+          <button type="button" className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => { aggregationLevelRef.current = 'state'; programmaticViewportUntilRef.current = Date.now() + 750; setViewport({ zoom: 4 }); mapControllerRef.current?.reset?.(); updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', layers: LAYERS.map(([value]) => value), area: '', coverage_level: 'state' }); }}>
             Reset national view
           </button>
-          <button type="button" className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', layers: LAYERS.map(([value]) => value), area: '' })}>
+          <button type="button" className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-sm font-bold text-white" onClick={() => updateSearch({ trade: '', state: '', city: '', zip: '', date_range: '90d', classification: '', layers: LAYERS.map(([value]) => value), area: '', coverage_level: 'state' })}>
             Clear filters
           </button>
           <span className="text-sm text-sky-100/70" aria-live="polite">
-            {loading ? 'Updating coverage…' : `${summary.returned_area_count || 0} areas · ${data.aggregation_level || 'state'} aggregation`}
+            {loading ? 'Updating coverage…' : `${summary.returned_area_count || 0} areas · ${coverageLevelLabel(filters.coverage_level)} level`}
           </span>
         </div>
       </div>
@@ -398,7 +496,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
           </div>
         </div>
 
-        <aside className={panelClass} aria-live="polite" data-testid="admin-marketplace-coverage-detail">
+        <aside className={panelClass} aria-live="polite" aria-label="Selected coverage area details" data-testid="admin-marketplace-coverage-detail">
           {selected ? (
             <>
               <h3 className="text-lg font-black text-white">{locationLabel(selected)}</h3>
@@ -418,17 +516,16 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => onOpenRequests({ state: selected.state, city: selected.city, zip: selected.zip })} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900">View requests</button>
                 <button type="button" onClick={() => onOpenDirectory({ state: selected.state, city: selected.city, zip: selected.zip })} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-extrabold text-white">View Directory</button>
-                {selected.has_marker !== false ? <button type="button" onClick={() => mapControllerRef.current?.focus?.(selected)} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-extrabold text-white">Zoom to area</button> : null}
               </div>
             </>
-          ) : <div className="text-sm text-sky-100/70">Select an aggregate marker or list row to inspect privacy-safe demand and supply intelligence.</div>}
+          ) : <div className="text-sm text-sky-100/70">{selectedError || 'Select an aggregate marker or list row to inspect privacy-safe demand and supply intelligence.'}</div>}
         </aside>
       </div>
 
       <div className={panelClass} data-testid="admin-marketplace-coverage-fallback">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="font-black text-white">Coverage Areas</h3>
+            <h3 className="font-black text-white">Coverage Areas — {coverageLevelLabel(filters.coverage_level)}</h3>
             <p className="mt-1 max-w-3xl text-sm text-sky-100/70">Exact demand and contractor-supply totals for the selected geographic level. Areas without a privacy-safe map location remain available here.</p>
           </div>
           <label className="flex items-center gap-2 text-sm font-semibold text-sky-100">
@@ -452,7 +549,7 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
             <tbody>
               {coverageAreas.map((point) => (
                 <tr key={point.id} aria-selected={filters.area === point.id} className={`border-t border-white/10 ${filters.area === point.id ? 'bg-sky-300/15 ring-1 ring-inset ring-sky-200/50' : ''}`}>
-                  <td className="px-2 py-2"><button type="button" aria-pressed={filters.area === point.id} data-testid={`admin-marketplace-coverage-area-${point.id}`} className="rounded font-bold text-white underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-200" onClick={() => selectPoint(point)}>{locationLabel(point)}</button></td>
+                  <td className="px-2 py-2"><button type="button" aria-pressed={filters.area === point.id} data-testid={`admin-marketplace-coverage-area-${point.id}`} className="min-h-11 rounded px-2 font-bold text-white underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-200" onClick={() => activatePoint(point)}>{locationLabel(point)}</button></td>
                   <td className="px-2 py-2 text-sky-50">{point.counts?.active_demand || 0}</td>
                   <td className="px-2 py-2 text-sky-50">{point.counts?.eligible_claimed_supply || 0}</td>
                   <td className="px-2 py-2 text-sky-50">{point.counts?.directory_prospects || 0}</td>
@@ -473,8 +570,8 @@ export default function AdminMarketplaceCoverageMap({ onOpenRequests, onOpenDire
               type="button"
               key={point.id}
               aria-pressed={filters.area === point.id}
-              onClick={() => selectPoint(point)}
-              className={`block w-full rounded-xl border p-4 text-left focus:outline-none focus:ring-2 focus:ring-sky-200 ${filters.area === point.id ? 'border-sky-200/60 bg-sky-300/15' : 'border-white/10 bg-white/5'}`}
+              onClick={() => activatePoint(point)}
+              className={`block min-h-11 w-full rounded-xl border p-4 text-left focus:outline-none focus:ring-2 focus:ring-sky-200 ${filters.area === point.id ? 'border-sky-200/60 bg-sky-300/15' : 'border-white/10 bg-white/5'}`}
             >
               <div className="font-extrabold text-white">{locationLabel(point)}</div>
               <div className="mt-1 text-sm font-semibold text-sky-100">{point.coverage_status_label}</div>

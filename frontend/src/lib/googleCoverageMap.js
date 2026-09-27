@@ -217,10 +217,10 @@ export async function createCoverageMap({
       map.setCenter({ lat: 39.5, lng: -98.35 });
       map.setZoom(4);
     },
-    focus(point) {
+    focus(point, level = point.aggregation_level) {
       if (!rendered || destroyed) return;
       map.panTo({ lat: point.latitude, lng: point.longitude });
-      map.setZoom(point.aggregation_level === 'state' ? 6 : 10);
+      map.setZoom(level === 'city' ? 6 : level === 'zip' ? 10 : 4);
     },
     destroy() {
       if (destroyed) return;
