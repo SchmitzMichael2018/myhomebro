@@ -107,7 +107,7 @@ def prepare_accepted_change_amendment(amendment: AmendmentRequest, *, actor=None
         "confirmed_milestone_order": insert_order,
         "confirmed_milestone_date": proposed_date.isoformat() if proposed_date else None,
         "prior_executed_total": str(prior_executed_total),
-        "proposed_total": str(agreement.total_cost),
+        "proposed_total": str(Decimal(str(agreement.total_cost)).quantize(Decimal("0.01"))),
     })
     amendment.requested_changes = requested_changes
     amendment.save(update_fields=["requested_changes", "updated_at"])
