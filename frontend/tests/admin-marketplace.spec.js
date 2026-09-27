@@ -79,6 +79,8 @@ const directoryRows = [
 async function installMarketplaceMocks(page, {
   includeLegacyMissingLocation = false,
   emptyReadiness = false,
+  emptyCoverage = false,
+  coverageError = false,
   extraReadinessRows = 0,
   extraCoverageRows = 0,
   mapMode = 'ready',
@@ -612,10 +614,21 @@ async function installMarketplaceMocks(page, {
       return;
     }
     if (method === 'GET' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/coverage/')) {
+      if (coverageError) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Coverage intelligence is temporarily unavailable.' }),
+        });
+        return;
+      }
       const zoom = Number(requestUrl.searchParams.get('zoom') || 4);
       const state = requestUrl.searchParams.get('state') || '';
       const city = requestUrl.searchParams.get('city') || '';
-      const aggregationLevel = zoom >= 9 ? 'zip' : zoom >= 5 ? 'city' : 'state';
+      const requestedLevel = requestUrl.searchParams.get('aggregation_level');
+      const aggregationLevel = ['state', 'city', 'zip'].includes(requestedLevel)
+        ? requestedLevel
+        : zoom >= 9 ? 'zip' : zoom >= 5 ? 'city' : 'state';
       const point = {
         id: aggregationLevel === 'state' ? 'TX||' : aggregationLevel === 'city' ? 'TX|Austin|' : 'TX|Austin|78701',
         aggregation_level: aggregationLevel,
@@ -639,7 +652,9 @@ async function installMarketplaceMocks(page, {
         newest_active_demand_age_days: 2,
         total: 6,
       };
-      const mapPoints = nearbyStatePoints && aggregationLevel === 'state'
+      const mapPoints = emptyCoverage
+        ? []
+        : nearbyStatePoints && aggregationLevel === 'state'
         ? [point, { ...point, id: 'NJ||', state: 'NJ', latitude: 40.1, longitude: -74.4, total: 4 }, { ...point, id: 'NY||', state: 'NY', latitude: 40.2, longitude: -74.35, total: 15 }]
         : [point];
       const coverageRows = [
@@ -649,7 +664,7 @@ async function installMarketplaceMocks(page, {
           coverage_status: row.coverage_classification,
           coverage_status_label: row.coverage_classification === 'limited_supply' ? 'Limited supply' : 'Coverage ready',
         })),
-        ...(includeLegacyMissingLocation ? [{
+        ...(includeLegacyMissingLocation && aggregationLevel === 'city' ? [{
           ...point,
           id: 'TX|Unmapped City|',
           city: 'Unmapped City',
@@ -1169,7 +1184,7 @@ test('legacy saved request shows missing location, stays unroutable, and opens r
   await expect(page.getByRole('dialog', { name: 'Request REQ-502' })).toBeVisible();
 });
 
-test('admin marketplace has one compact navigation and mocked national coverage map', async ({ page }) => {
+test('admin marketplace drills state to city to terminal ZIP in one activation', async ({ page }) => {
   await installMarketplaceMocks(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
@@ -1184,27 +1199,29 @@ test('admin marketplace has one compact navigation and mocked national coverage 
   await expect(page.getByTestId('mock-united-states-basemap')).toContainText('United States');
   await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toContainText('TX');
   await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/coverage-map-national-desktop.png', fullPage: true });
   await page.getByTestId('admin-marketplace-coverage-area-TX||').click();
   await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('TX');
   await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Limited supply');
+  await expect(page).toHaveURL(/state=TX/);
+  await expect(page).toHaveURL(/coverage_level=city/);
+  await expect(page.getByTestId('admin-marketplace-coverage-area-TX|Austin|')).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__)).toMatchObject({
     initializations: 1,
     mapIds: ['fake-admin-map-id'],
     colorSchemes: ['DARK'],
-    markers: ['TX||'],
+    markers: ['TX|Austin|'],
   });
   await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toHaveCount(0);
   const coverageTop = await page.getByTestId('admin-marketplace-coverage-overview-section').evaluate((element) => element.getBoundingClientRect().top);
   expect(coverageTop).toBeLessThan(230);
-  await page.screenshot({ path: 'test-results/coverage-map-national-desktop.png', fullPage: true });
-
-  await page.getByRole('button', { name: 'Zoom to area' }).click();
-  await expect(page.getByTestId('admin-marketplace-coverage-area-TX|Austin|')).toBeVisible();
   await page.screenshot({ path: 'test-results/coverage-map-state-drilldown.png', fullPage: true });
   await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|').click();
-  await page.getByRole('button', { name: 'Zoom to area' }).click();
+  await expect(page).toHaveURL(/city=Austin/);
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX');
   await expect(page.getByTestId('admin-marketplace-coverage-area-TX|Austin|78701')).toBeVisible();
   await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|78701').click();
+  await expect(page).toHaveURL(/zip=78701/);
   await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX, 78701');
   await page.screenshot({ path: 'test-results/coverage-map-selected-zip-details.png', fullPage: true });
 
@@ -1333,13 +1350,16 @@ test('coverage and readiness pagination keep independent URL state', async ({ pa
 test('unmapped coverage card opens details without focusing the map', async ({ page }) => {
   await installMarketplaceMocks(page, { includeLegacyMissingLocation: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/admin/marketplace?state=TX&coverage_level=city', { waitUntil: 'domcontentloaded' });
 
   const card = page.getByTestId('admin-marketplace-coverage-cards').getByRole('button', { name: /Unmapped City/ });
   await card.click();
+  await expect(page).toHaveURL(/city=Unmapped\+City/);
+  await expect(page).toHaveURL(/coverage_level=zip/);
   await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Map location unavailable');
   await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('not enough privacy-safe business-location data');
   await expect(page.getByTestId('admin-marketplace-coverage-detail').getByRole('button', { name: 'Zoom to area' })).toHaveCount(0);
+  expect(await page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.lastPanTo)).toBeNull();
   await page.getByTestId('admin-marketplace-coverage-fallback').screenshot({
     path: 'test-results/admin-marketplace-mobile-coverage-unmapped.png',
   });
@@ -1348,18 +1368,25 @@ test('unmapped coverage card opens details without focusing the map', async ({ p
   });
 });
 
-test('mapped coverage row selects details without changing aggregation', async ({ page }) => {
+test('mapped coverage row selects details, drills, and supports one-level and national return', async ({ page }) => {
   await installMarketplaceMocks(page);
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
 
   await page.getByTestId('admin-marketplace-coverage-area-TX||').click();
   await expect(page).toHaveURL(/area=TX%7C%7C/);
+  await expect(page).toHaveURL(/coverage_level=city/);
   await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('TX');
-  await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('[data-coverage-area="TX||"] .mhb-coverage-marker--selected')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toBeVisible();
-  await page.getByRole('button', { name: 'Zoom to area' }).click();
   await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.lastPanTo)).toEqual({ lat: 31.0545, lng: -97.5635 });
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|').click();
+  await expect(page).toHaveURL(/coverage_level=zip/);
+  await page.getByRole('button', { name: 'Back one level' }).click();
+  await expect(page).toHaveURL(/coverage_level=city/);
+  await expect(page).not.toHaveURL(/city=Austin/);
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX');
+  await page.getByRole('button', { name: 'Reset national view' }).click();
+  await expect(page).not.toHaveURL(/coverage_level=/);
+  await expect(page).not.toHaveURL(/state=TX/);
+  await expect(page.getByTestId('admin-marketplace-coverage-area-TX||')).toBeVisible();
 });
 
 test('coverage layer filters can all be switched off and restored from the URL', async ({ page }) => {
@@ -1382,11 +1409,9 @@ test('coverage layer filters can all be switched off and restored from the URL',
 
 test('coverage details hand off state, city, and ZIP to the existing request queue', async ({ page }) => {
   await installMarketplaceMocks(page);
-  await page.goto('/app/admin/marketplace?state=TX&city=Austin&zip=78701', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('admin-marketplace-coverage-area-TX||').click();
-  await page.getByRole('button', { name: 'Zoom to area' }).click();
   await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|').click();
-  await page.getByRole('button', { name: 'Zoom to area' }).click();
   await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|78701').click();
   await page.getByRole('button', { name: 'View requests' }).click();
   await expect(page).toHaveURL(/\/app\/admin\/marketplace\/requests/);
@@ -1452,19 +1477,16 @@ test('coverage markers center counts and support keyboard selection', async ({ p
   await expect(marker).toHaveAttribute('aria-label', /TX: limited supply; 6 total/);
   await expect(marker).toHaveAttribute('data-collision-behavior', 'OPTIONAL_AND_HIDES_LOWER_PRIORITY');
   const glyph = marker.locator('.mhb-coverage-marker');
-  const glyphLayout = await glyph.evaluate((element) => ({
-    display: getComputedStyle(element).display,
-    placeItems: getComputedStyle(element).placeItems,
-    overflow: getComputedStyle(element).overflow,
-    width: element.getBoundingClientRect().width,
-    textFits: element.scrollWidth <= element.clientWidth,
-  }));
-  expect(glyphLayout).toMatchObject({ display: 'grid', placeItems: 'center', overflow: 'visible', textFits: true });
-  expect(glyphLayout.width).toBeGreaterThanOrEqual(44);
+  await expect(glyph).toHaveCSS('display', 'grid');
+  await expect(glyph).toHaveCSS('place-items', 'center');
+  await expect(glyph).toHaveCSS('overflow', 'visible');
+  expect((await glyph.boundingBox()).width).toBeGreaterThanOrEqual(44);
+  expect(await glyph.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await marker.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Limited supply');
-  await expect(marker.locator('.mhb-coverage-marker--selected')).toBeVisible();
+  await expect(page).toHaveURL(/coverage_level=city/);
+  await expect(page.getByTestId('admin-marketplace-coverage-area-TX|Austin|')).toBeVisible();
 });
 
 test('nearby aggregate markers have deterministic collision priority and selected visibility', async ({ page }) => {
@@ -1479,10 +1501,58 @@ test('nearby aggregate markers have deterministic collision priority and selecte
   expect(Number(await newJersey.getAttribute('data-z-index')))
     .toBeGreaterThan(Number(await newYork.getAttribute('data-z-index')));
   await newYork.click();
-  await expect(newYork).toHaveAttribute('data-collision-behavior', 'REQUIRED_AND_HIDES_OPTIONAL');
-  expect(Number(await newYork.getAttribute('data-z-index')))
-    .toBeGreaterThan(Number(await newJersey.getAttribute('data-z-index')));
-  await expect(newYork.locator('.mhb-coverage-marker--selected')).toBeVisible();
+  await expect(page).toHaveURL(/state=NY/);
+  await expect(page).toHaveURL(/coverage_level=city/);
+});
+
+test('browser history restores geographic level, selection, filters, and map view', async ({ page }) => {
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace?trade=roofing', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-coverage-area-TX||').click();
+  await page.getByTestId('admin-marketplace-coverage-area-TX|Austin|').click();
+  await expect(page).toHaveURL(/coverage_level=zip/);
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX');
+
+  await page.goBack();
+  await expect(page).toHaveURL(/coverage_level=city/);
+  await expect(page).toHaveURL(/trade=roofing/);
+  await expect(page).toHaveURL(/area=TX%7C%7C/);
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('TX');
+  await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.lastPanTo)).toEqual({ lat: 31.0545, lng: -97.5635 });
+
+  await page.goForward();
+  await expect(page).toHaveURL(/coverage_level=zip/);
+  await expect(page).toHaveURL(/area=TX%7CAustin%7C/);
+  await expect(page.getByTestId('admin-marketplace-coverage-detail')).toContainText('Austin, TX');
+  await expect.poll(() => page.evaluate(() => window.__MHB_ADMIN_MAP_METRICS__.lastPanTo)).toEqual({ lat: 30.2672, lng: -97.7431 });
+});
+
+test('mobile coverage navigation drills with touch-sized controls and captures the ZIP view', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-coverage-cards').getByRole('button', { name: /^TX / }).click();
+  const city = page.getByTestId('admin-marketplace-coverage-cards').getByRole('button', { name: /Austin/ });
+  await expect(city).toBeVisible();
+  expect((await city.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  await city.click();
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('Coverage Areas — ZIP areas');
+  await page.getByTestId('admin-marketplace-coverage-fallback').screenshot({
+    path: 'test-results/coverage-map-drilldown-mobile.png',
+  });
+});
+
+test('coverage data empty state remains actionable', async ({ page }) => {
+  await installMarketplaceMocks(page, { emptyCoverage: true });
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('admin-marketplace-coverage-fallback')).toContainText('No coverage areas match the current filters.');
+});
+
+test('coverage data error state keeps its retry action', async ({ page }) => {
+  await installMarketplaceMocks(page, { coverageError: true });
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('alert')).toContainText('Coverage intelligence is temporarily unavailable.');
+  await expect(page.getByRole('button', { name: 'Retry coverage data' })).toBeVisible();
 });
 
 test('the coverage map selects its published dark style in light and dark browser modes', async ({ page }) => {
