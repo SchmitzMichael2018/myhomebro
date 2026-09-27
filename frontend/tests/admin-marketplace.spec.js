@@ -431,6 +431,9 @@ async function installMarketplaceMocks(page, {
     return {
       generated_at: '2026-06-08T12:00:00Z',
       filters: { city },
+      pilot: filteredToDallas
+        ? { saved_requests: 1, requests_with_direct_invites: 0, direct_invitations: 0, requests_automatically_matched: 0, requests_with_contractor_activity: 0, requests_with_agreement_drafts: 0, signed_agreements: 0, funded_agreements: 0 }
+        : { saved_requests: 3, requests_with_direct_invites: 1, direct_invitations: 2, requests_automatically_matched: 2, requests_with_contractor_activity: 1, requests_with_agreement_drafts: 1, signed_agreements: 0, funded_agreements: 0 },
       funnel: filteredToDallas
         ? {
             requests_submitted: 1,
@@ -993,12 +996,14 @@ test('admin marketplace analytics renders funnel, tables, queues, and filters', 
   await expect(page.getByTestId('admin-marketplace-analytics-routed')).toContainText('2');
   await expect(page.getByTestId('admin-marketplace-analytics-bids')).toContainText('7');
   await expect(page.getByTestId('admin-marketplace-analytics-awarded')).toContainText('1');
-  await expect(page.getByTestId('admin-marketplace-analytics-funnel')).toContainText('Routed -> Bid');
+  await expect(page.getByTestId('admin-marketplace-analytics-funnel')).toContainText('Matched -> Lead');
+  await expect(page.getByTestId('admin-marketplace-pilot-activity')).toContainText('Requests with direct invites');
+  await expect(page.getByTestId('admin-marketplace-pilot-activity')).toContainText('2 invitations created');
   await expect(page.getByTestId('admin-marketplace-analytics-city-Austin-TX')).toContainText('Austin, TX');
   await expect(page.getByTestId('admin-marketplace-analytics-city-Austin-TX')).toContainText('3.5 avg/request');
   await expect(page.getByTestId('admin-marketplace-analytics-contractor-11')).toContainText('Claimed Roofing Pro');
   await expect(page.getByTestId('admin-marketplace-analytics-contractor-11')).toContainText('Score 91');
-  await expect(page.getByTestId('admin-marketplace-analytics-attention')).toContainText('Zero-bid requests');
+  await expect(page.getByTestId('admin-marketplace-analytics-attention')).toContainText('Requests without leads');
   await expect(page.getByTestId('admin-marketplace-analytics-attention')).toContainText('Luxury Vinyl Plank Flooring');
   await expect(page.getByTestId('admin-marketplace-analytics-attention')).toContainText('Awarded not signed/funded');
 
@@ -1008,6 +1013,25 @@ test('admin marketplace analytics renders funnel, tables, queues, and filters', 
   await expect(page.getByTestId('admin-marketplace-analytics-requests')).toContainText('1');
   await expect(page.getByTestId('admin-marketplace-analytics-bids')).toContainText('0');
   await expect(page.getByTestId('admin-marketplace-analytics-city-Dallas-TX')).toContainText('Dallas, TX');
+  await page.getByTestId('admin-marketplace-san-antonio-pilot').click();
+  await expect(page).toHaveURL(/city=San\+Antonio&state=TX/);
+  await expect(page.getByTestId('admin-marketplace-analytics-city')).toHaveValue('San Antonio');
+  await page.goBack();
+  await expect(page.getByTestId('admin-marketplace-analytics-city')).toHaveValue('Dallas');
+});
+
+test('San Antonio pilot metrics and filters remain readable on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMarketplaceMocks(page);
+  await page.goto('/app/admin/marketplace/analytics', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-san-antonio-pilot').click();
+
+  await expect(page).toHaveURL(/city=San\+Antonio&state=TX/);
+  await expect(page.getByTestId('admin-marketplace-analytics-city')).toHaveValue('San Antonio');
+  await expect(page.getByTestId('admin-marketplace-analytics-state')).toHaveValue('TX');
+  await expect(page.getByTestId('admin-marketplace-pilot-activity')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-pilot-activity')).toContainText('Automatically matched');
+  await expect(page.getByTestId('admin-marketplace-pilot-activity')).toContainText('Requests with direct invites');
 });
 
 test('admin marketplace routes saved requests after location enablement without duplicate UI state', async ({ page }) => {

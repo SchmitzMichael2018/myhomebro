@@ -15,6 +15,7 @@ from projects.models import Agreement, Contractor, ContractorPublicProfile, Home
 from projects.models_customer_portal import CustomerRequest, SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceAutomaticMatchingApproval, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
+from projects.models_invite import ContractorInvite
 from projects.services.contractor_discovery import create_discovery_invites
 from projects.services.marketplace_readiness import automatic_matching_readiness, create_marketplace_invites_for_intake, customer_safe_marketplace_capability, eligible_marketplace_listings, location_readiness, marketplace_enabled_for_intake, marketplace_request_action_block_reason
 from projects.services.marketplace_coverage_map import build_marketplace_coverage_map
@@ -919,7 +920,7 @@ class AdminMarketplaceTests(TestCase):
             claimed=True,
             claimed_by_contractor=self.claimed_contractor,
         )
-        ContractorDiscoveryInvite.objects.create(
+        automatic_invite = ContractorDiscoveryInvite.objects.create(
             public_intake=request,
             contractor=self.claimed_contractor,
             directory_listing=self.claimed_listing,
@@ -962,7 +963,7 @@ class AdminMarketplaceTests(TestCase):
             project_description="Install luxury vinyl plank flooring.",
             budget_text="$5,000",
             status=PublicContractorLead.STATUS_ACCEPTED,
-            ai_analysis={"source_intake_id": request.id, "suggested_total_price": "5000"},
+            ai_analysis={"source_intake_id": str(request.id), "suggested_total_price": "5000", "marketplace_request": True, "marketplace_invite_id": automatic_invite.id},
             converted_homeowner=homeowner,
             converted_agreement=agreement,
             converted_at=timezone.now(),
@@ -975,6 +976,8 @@ class AdminMarketplaceTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["funnel"]["requests_submitted"], 2)
         self.assertEqual(payload["funnel"]["requests_routed"], 1)
+        self.assertEqual(payload["pilot"]["requests_automatically_matched"], 1)
+        self.assertEqual(payload["pilot"]["requests_with_direct_invites"], 0)
         self.assertEqual(payload["funnel"]["bids_submitted"], 1)
         self.assertEqual(payload["funnel"]["requests_with_zero_bids"], 1)
         self.assertEqual(payload["funnel"]["awarded_requests"], 1)
@@ -997,7 +1000,113 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(filtered.json()["funnel"]["requests_submitted"], 1)
         self.assertEqual(filtered.json()["funnel"]["bids_submitted"], 0)
 
+        # Automatic routing initially creates a pending invite with an associated lead.
+        # It is a real match before delivery, while a failed invite must not count.
+        automatic_invite.status = ContractorDiscoveryInvite.STATUS_PENDING
+        automatic_invite.save(update_fields=["status"])
+        pending = self.client.get("/api/projects/admin/marketplace/analytics/").json()
+        self.assertEqual(pending["pilot"]["requests_automatically_matched"], 1)
+        self.assertEqual(pending["pilot"]["direct_invitations"], 0)
+        automatic_invite.status = ContractorDiscoveryInvite.STATUS_FAILED
+        automatic_invite.save(update_fields=["status"])
+        failed = self.client.get("/api/projects/admin/marketplace/analytics/").json()
+        self.assertEqual(failed["pilot"]["requests_automatically_matched"], 0)
+        self.assertEqual(failed["pilot"]["direct_invitations"], 0)
+
+    def test_marketplace_pilot_keeps_manual_invitations_separate_from_automatic_matching(self):
+        manual = ProjectIntake.objects.create(
+            initiated_by="homeowner", post_submit_flow="multi_contractor", status="submitted",
+            customer_name="Pilot Customer", customer_email="pilot@example.com",
+            project_city="San Antonio", project_state="TX", accomplishment_text="Repair fence.",
+            submitted_at=timezone.now(),
+        )
+        discovery = ContractorDiscoveryInvite.objects.create(
+            public_intake=manual, contractor=self.claimed_contractor,
+            status=ContractorDiscoveryInvite.STATUS_RESPONDED,
+        )
+        ContractorInvite.objects.create(
+            source_intake=manual, homeowner_name="Pilot Customer", homeowner_email="pilot@example.com",
+            contractor_email="vendor@example.com",
+        )
+        elsewhere = ProjectIntake.objects.create(
+            initiated_by="homeowner", post_submit_flow="multi_contractor", status="submitted",
+            customer_name="Other Customer", customer_email="other@example.com",
+            project_city="Austin", project_state="TX", accomplishment_text="Repair porch.",
+            submitted_at=timezone.now(),
+        )
+        ContractorDiscoveryInvite.objects.create(
+            public_intake=elsewhere, contractor=self.claimed_contractor,
+            status=ContractorDiscoveryInvite.STATUS_SENT,
+        )
+
+        response = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "San Antonio", "state": "TX"})
+        self.assertEqual(response.status_code, 200)
+        pilot = response.json()["pilot"]
+        self.assertEqual(pilot["saved_requests"], 1)
+        self.assertEqual(pilot["requests_with_direct_invites"], 1)
+        self.assertEqual(pilot["direct_invitations"], 2)
+        self.assertEqual(pilot["requests_automatically_matched"], 0)
+        self.assertEqual(pilot["requests_with_contractor_activity"], 1)
+        self.assertEqual(response.json()["funnel"]["requests_routed"], 0)
+        self.assertEqual(response.json()["conversion_rates"]["routed_to_bid_received"], 0)
+        self.assertEqual(discovery.status, ContractorDiscoveryInvite.STATUS_RESPONDED)
+
+    def test_marketplace_pilot_totals_include_requests_beyond_first_thousand(self):
+        ProjectIntake.objects.bulk_create([
+            ProjectIntake(
+                initiated_by="homeowner", post_submit_flow="multi_contractor", status="submitted",
+                customer_name="Synthetic Pilot", customer_email="synthetic@example.com",
+                project_city="San Antonio", project_state="TX", accomplishment_text="Synthetic pilot request.",
+            )
+            for _ in range(1001)
+        ])
+
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "San Antonio", "state": "TX"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pilot"]["saved_requests"], 1001)
+        self.assertEqual(response.json()["funnel"]["requests_submitted"], 1001)
+        self.assertLess(len(queries), 20)
+
+    def test_marketplace_pilot_filters_use_one_authoritative_location(self):
+        baseline = dict(
+            initiated_by="homeowner", post_submit_flow="multi_contractor", status="submitted",
+            customer_name="Synthetic Pilot", customer_email="synthetic@example.com",
+            accomplishment_text="Pilot request.", submitted_at=timezone.now(),
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="Austin", project_state="TX",
+            customer_city="San Antonio", customer_state="TX",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="San Antonio", project_state="CA",
+            customer_city="Austin", customer_state="TX",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="", project_state="",
+            customer_city="San Antonio", customer_state="TX",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="", project_state="CA",
+            customer_city="San Antonio", customer_state="TX",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="  ", project_state="  ",
+            customer_city=" San Antonio ", customer_state=" TX ",
+        )
+        ProjectIntake.objects.create(
+            **baseline, project_city="", project_state="",
+            customer_city="San Antonio", customer_state="TX", same_as_customer_address=False,
+        )
+        response = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "San Antonio", "state": "TX"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pilot"]["saved_requests"], 3)
+        self.assertEqual(response.json()["city_analytics"][0]["city"], "San Antonio")
+        self.assertEqual(response.json()["city_analytics"][0]["state"], "TX")
+
     def test_marketplace_analytics_requires_admin(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get("/api/projects/admin/marketplace/analytics/").status_code, 401)
         regular = get_user_model().objects.create_user(email="not-admin@example.com", password="testpass123")
         self.client.force_authenticate(user=regular)
 

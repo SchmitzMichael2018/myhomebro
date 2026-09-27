@@ -790,9 +790,12 @@ export default function AdminMarketplacePage() {
           <main className="space-y-6" data-testid="admin-marketplace-analytics-page">
             <Section
               title="Marketplace Analytics"
-              sub="Track whether cities are getting bids, bids are turning into awards, and awards are becoming signed or funded agreements."
+              sub="Review demand, contractor selection, automatic matching, and agreement progress."
               testId="admin-marketplace-analytics-filters"
             >
+              <button type="button" className="mb-4 rounded-xl border border-sky-300/50 px-4 py-2 text-sm font-bold text-sky-50 hover:bg-white/10" data-testid="admin-marketplace-san-antonio-pilot" onClick={() => navigate('/app/admin/marketplace/analytics?city=San+Antonio&state=TX')}>
+                View San Antonio pilot
+              </button>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
                 <input
                   type="date"
@@ -858,22 +861,33 @@ export default function AdminMarketplacePage() {
 
             {analytics ? (
               <>
+                <Section title="Pilot activity" sub="Counts cover the selected date, location, and trade across all contractors; the contractor-status filter applies only to the lead funnel below. Direct invitations and automatic matching are separate. An invitation or lead is not a completed job." testId="admin-marketplace-pilot-activity">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard label="Saved requests" value={analytics.pilot?.saved_requests ?? 0} />
+                    <MetricCard label="Requests with direct invites" value={analytics.pilot?.requests_with_direct_invites ?? 0} sub={`${analytics.pilot?.direct_invitations ?? 0} invitations created`} />
+                    <MetricCard label="Automatically matched" value={analytics.pilot?.requests_automatically_matched ?? 0} sub="Only confirmed automatic invitation records" />
+                    <MetricCard label="Contractor activity" value={analytics.pilot?.requests_with_contractor_activity ?? 0} sub="Claimed, responded, or accepted" />
+                    <MetricCard label="Agreement drafts" value={analytics.pilot?.requests_with_agreement_drafts ?? 0} />
+                    <MetricCard label="Signed agreements" value={analytics.pilot?.signed_agreements ?? 0} />
+                    <MetricCard label="Funded agreements" value={analytics.pilot?.funded_agreements ?? 0} />
+                  </div>
+                </Section>
                 <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" data-testid="admin-marketplace-analytics-kpis">
                   <MetricCard label="Requests Submitted" value={analytics.funnel?.requests_submitted || 0} sub="Marketplace requests" testId="admin-marketplace-analytics-requests" />
-                  <MetricCard label="Requests Routed" value={analytics.funnel?.requests_routed || 0} sub={`${rateText(analytics.conversion_rates?.request_to_routed)} routed`} tone="emerald" testId="admin-marketplace-analytics-routed" />
-                  <MetricCard label="Bids Submitted" value={analytics.funnel?.bids_submitted || 0} sub={`${analytics.funnel?.requests_with_at_least_one_bid || 0} requests with bids`} testId="admin-marketplace-analytics-bids" />
+                  <MetricCard label="Automatically Matched" value={analytics.funnel?.requests_routed || 0} sub={`${rateText(analytics.conversion_rates?.request_to_routed)} of requests`} tone="emerald" testId="admin-marketplace-analytics-routed" />
+                  <MetricCard label="Leads Recorded" value={analytics.funnel?.bids_submitted || 0} sub={`${analytics.funnel?.requests_with_at_least_one_bid || 0} requests with leads`} testId="admin-marketplace-analytics-bids" />
                   <MetricCard label="Awarded Requests" value={analytics.funnel?.awarded_requests || 0} sub={`${rateText(analytics.conversion_rates?.bid_received_to_awarded)} of bid requests`} tone="amber" testId="admin-marketplace-analytics-awarded" />
                   <MetricCard label="Agreement Drafts" value={analytics.funnel?.agreement_drafts_created || 0} sub={`${analytics.funnel?.signed_agreements || 0} signed | ${analytics.funnel?.escrow_funded || 0} funded`} tone="emerald" testId="admin-marketplace-analytics-agreements" />
                 </section>
 
                 <Section title="Marketplace Funnel" sub="Where requests are moving, and where they are getting stuck." testId="admin-marketplace-analytics-funnel">
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                    <MetricCard label="Routed -> Bid" value={rateText(analytics.conversion_rates?.routed_to_bid_received)} sub="Routed requests receiving bids" />
-                    <MetricCard label="Bid -> Award" value={rateText(analytics.conversion_rates?.bid_received_to_awarded)} sub="Requests with bids awarded" />
+                    <MetricCard label="Matched -> Lead" value={rateText(analytics.conversion_rates?.routed_to_bid_received)} sub="Leads recorded relative to matched requests" />
+                    <MetricCard label="Lead -> Award" value={rateText(analytics.conversion_rates?.bid_received_to_awarded)} sub="Requests with leads awarded" />
                     <MetricCard label="Award -> Draft" value={rateText(analytics.conversion_rates?.awarded_to_agreement_draft)} sub="Awarded bids creating drafts" />
                     <MetricCard label="Draft -> Signed" value={rateText(analytics.conversion_rates?.agreement_draft_to_signed)} sub="Drafts fully signed" />
                     <MetricCard label="Signed -> Funded" value={rateText(analytics.conversion_rates?.signed_to_escrow_funded)} sub="Signed agreements funded" />
-                    <MetricCard label="Zero-Bid Requests" value={analytics.funnel?.requests_with_zero_bids || 0} sub="Need supply or routing review" tone="amber" />
+                    <MetricCard label="Requests without leads" value={analytics.funnel?.requests_with_zero_bids || 0} sub="May need manual selection or follow-up" tone="amber" />
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <div className={panelClass}>
@@ -909,8 +923,8 @@ export default function AdminMarketplacePage() {
                             <tr key={`${row.city}-${row.state}`} data-testid={`admin-marketplace-analytics-city-${row.city}-${row.state}`} className="hover:bg-white/5">
                               <td className={tableCellClass}><div className="font-extrabold text-white">{row.city}, {row.state}</div></td>
                               <td className={tableCellClass}>{row.requests} requests<br /><span className="text-xs text-sky-100/60">{row.routed} routed</span></td>
-                              <td className={tableCellClass}>{row.bids} bids<br /><span className="text-xs text-sky-100/60">{row.average_bids_per_request} avg/request</span></td>
-                              <td className={tableCellClass}>{row.awarded_requests} awarded<br /><span className="text-xs text-sky-100/60">{row.zero_bid_requests} zero-bid</span></td>
+                              <td className={tableCellClass}>{row.bids} leads<br /><span className="text-xs text-sky-100/60">{row.average_bids_per_request} avg/request</span></td>
+                              <td className={tableCellClass}>{row.awarded_requests} awarded<br /><span className="text-xs text-sky-100/60">{row.zero_bid_requests} without leads</span></td>
                               <td className={tableCellClass}>{rateText(row.agreement_conversion_rate)} agreement conversion</td>
                             </tr>
                           )) : (
@@ -958,7 +972,7 @@ export default function AdminMarketplacePage() {
                 <Section title="Attention Queues" sub="Requests and awards that need admin review." testId="admin-marketplace-analytics-attention">
                   <div className="grid gap-4 xl:grid-cols-3">
                     {[
-                      ["Zero-bid requests", analytics.attention_queues?.zero_bid_requests || [], "No zero-bid requests."],
+                      ["Requests without leads", analytics.attention_queues?.zero_bid_requests || [], "No requests without leads."],
                       ["Requests awaiting award", analytics.attention_queues?.requests_awaiting_award || [], "No requests awaiting award."],
                       ["Awarded not signed/funded", analytics.attention_queues?.awarded_not_signed_or_funded || [], "No awarded drafts waiting on signature or funding."],
                     ].map(([title, rows, empty]) => (
