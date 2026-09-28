@@ -38,8 +38,8 @@ const ROUTES = {
   },
   '/san-antonio/': {
     title: 'San Antonio Home Projects & Contractor Search | MyHomeBro',
-    description: 'Plan flooring, concrete, or bathroom remodeling projects in San Antonio. Save a request, then search, select, and invite contractors when you choose.',
-    socialDescription: 'Plan a San Antonio home project and choose when to search for and invite contractors.',
+    description: 'Plan San Antonio home and DIY projects, keep property maintenance records, and manage agreed milestone payments. Search and invite contractors when needed.',
+    socialDescription: 'Plan home and DIY projects, track maintenance, and manage payment milestones in San Antonio.',
     index: true,
     structuredData: [
       {
@@ -47,7 +47,7 @@ const ROUTES = {
         '@id': `${SITE_ORIGIN}/san-antonio/#webpage`,
         url: `${SITE_ORIGIN}/san-antonio/`,
         name: 'San Antonio Home Projects & Contractor Search | MyHomeBro',
-        description: 'Plan a home project in San Antonio, save a request, and manually search for and invite contractors.',
+        description: 'Plan home and DIY projects in San Antonio, track maintenance, and manage agreed milestone payments.',
         isPartOf: { '@id': `${SITE_ORIGIN}/#website` },
       },
     ],

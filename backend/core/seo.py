@@ -30,8 +30,8 @@ INDEXABLE_ROUTES = {
     "/san-antonio/": {
         "title": "San Antonio Home Projects & Contractor Search | MyHomeBro",
         "description": (
-            "Plan flooring, concrete, or bathroom remodeling projects in San Antonio. "
-            "Save a request, then search, select, and invite contractors when you choose."
+            "Plan San Antonio home and DIY projects, keep property maintenance records, "
+            "and manage agreed milestone payments. Search and invite contractors when needed."
         ),
     },
 }
