@@ -397,7 +397,23 @@ function editorialTarget(item) {
     cta: item.next_action || 'create_project',
   });
   if (item.next_action === 'sign_up') {
-    context.set('next', item.canonical_path);
+    const continuation = new URLSearchParams({
+      source: 'improvement_library',
+      article: item.slug,
+      cta: 'sign_up',
+    });
+    const current = new URLSearchParams(window.location.search);
+    for (const key of [
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_content',
+      'utm_term',
+      'ref',
+    ]) {
+      if (current.has(key)) continuation.set(key, current.get(key));
+    }
+    context.set('next', `${item.canonical_path}?${continuation}`);
     if ((item.audience || item.public_audience) === 'contractor')
       return `/signup?${context}`;
     context.set(
@@ -433,17 +449,27 @@ function ContentSection({ title, value }) {
 }
 
 function PracticalSteps({ value }) {
-  const lines = String(value || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const lines = String(value || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
   const steps = lines.filter((line) => /^\d+\.\s/.test(line));
   const notes = lines.filter((line) => !/^\d+\.\s/.test(line));
   return (
     <section className="mt-10">
       <h2 className="text-2xl font-bold text-slate-950">Practical steps</h2>
       <ol className="mt-4 list-decimal space-y-3 pl-6 leading-8 text-slate-700">
-        {steps.map((line, index) => <li key={`${index}-${line}`}>{line.replace(/^\d+\.\s/, '')}</li>)}
+        {steps.map((line, index) => (
+          <li key={`${index}-${line}`}>{line.replace(/^\d+\.\s/, '')}</li>
+        ))}
       </ol>
       {notes.map((note, index) => (
-        <p key={`${index}-${note}`} className="mt-5 rounded-xl bg-amber-50 p-4 leading-7 text-slate-800">{note}</p>
+        <p
+          key={`${index}-${note}`}
+          className="mt-5 rounded-xl bg-amber-50 p-4 leading-7 text-slate-800"
+        >
+          {note}
+        </p>
       ))}
     </section>
   );

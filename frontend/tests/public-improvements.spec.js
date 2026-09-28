@@ -84,7 +84,10 @@ test('public library search, category, breadcrumbs, metadata, and CTAs work', as
     'Plan your next home project.'
   );
   await expect(page.getByRole('button', { name: /Contractors/ })).toBeVisible();
-  await page.screenshot({ path: 'test-results/improvement-library-desktop.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/improvement-library-desktop.png',
+    fullPage: true,
+  });
   await page.getByTestId('improvement-search').fill('vanity');
   await expect(
     page.getByRole('link', { name: 'Replace Bathroom Vanity' })
@@ -116,37 +119,80 @@ test('public library search, category, breadcrumbs, metadata, and CTAs work', as
 
 test('launch empty state is purposeful before any search', async ({ page }) => {
   await page.route('**/api/projects/public/improvements/**', (route) =>
-    route.fulfill({ status: 200, json: { categories: [], published_count: 0, improvements: [] } })
+    route.fulfill({
+      status: 200,
+      json: { categories: [], published_count: 0, improvements: [] },
+    })
   );
   await page.goto('/improvements/');
   await expect(page.getByText('The library is getting ready.')).toBeVisible();
-  await expect(page.getByText('No published improvements match this search')).toHaveCount(0);
-  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, follow');
+  await expect(
+    page.getByText('No published improvements match this search')
+  ).toHaveCount(0);
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+    'content',
+    'noindex, follow'
+  );
 });
 
-test('editorial contractor guide shows source, distinct Our take, and contextual signup', async ({ page }) => {
-  await page.route('**/api/projects/attribution/track/', (route) => route.fulfill({ status: 201, json: {} }));
-  await page.route('**/api/projects/public/improvements/contractor-practice/payment-plan/', (route) =>
-    route.fulfill({ status: 200, json: {
-      ...improvement,
-      slug: 'payment-plan', category_slug: 'contractor-practice', category_name: 'Contractor Practice',
-      canonical_path: '/improvements/contractor-practice/payment-plan/',
-      audience: 'contractor', audience_label: 'Contractors', problem: 'Payment timing is unclear.',
-      evidence: 'FTC consumer guidance supports written contracts.',
-      evidence_source: 'https://consumer.ftc.gov/articles/how-avoid-home-improvement-scam',
-      viewpoint: 'Agree on milestones before work begins.', practical_steps: '1. Define work.\n2. Set review steps.',
-      next_action: 'sign_up',
-    } })
+test('editorial contractor guide shows source, distinct Our take, and contextual signup', async ({
+  page,
+}) => {
+  await page.route('**/api/projects/attribution/track/', (route) =>
+    route.fulfill({ status: 201, json: {} })
   );
-  await page.goto('/improvements/contractor-practice/payment-plan/?utm_source=guide');
+  await page.route(
+    '**/api/projects/public/improvements/contractor-practice/payment-plan/',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        json: {
+          ...improvement,
+          slug: 'payment-plan',
+          category_slug: 'contractor-practice',
+          category_name: 'Contractor Practice',
+          canonical_path: '/improvements/contractor-practice/payment-plan/',
+          audience: 'contractor',
+          audience_label: 'Contractors',
+          problem: 'Payment timing is unclear.',
+          evidence: 'FTC consumer guidance supports written contracts.',
+          evidence_source:
+            'https://consumer.ftc.gov/articles/how-avoid-home-improvement-scam',
+          viewpoint: 'Agree on milestones before work begins.',
+          practical_steps: '1. Define work.\n2. Set review steps.',
+          next_action: 'sign_up',
+        },
+      })
+  );
+  await page.goto(
+    '/improvements/contractor-practice/payment-plan/?utm_source=guide'
+  );
   await expect(page.getByRole('heading', { name: 'Our take' })).toBeVisible();
-  await expect(page.getByRole('listitem').filter({ hasText: 'Define work.' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Read the source/ })).toHaveAttribute('href', 'https://consumer.ftc.gov/articles/how-avoid-home-improvement-scam');
+  await expect(
+    page.getByRole('listitem').filter({ hasText: 'Define work.' })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: /Read the source/ })
+  ).toHaveAttribute(
+    'href',
+    'https://consumer.ftc.gov/articles/how-avoid-home-improvement-scam'
+  );
   await page.getByRole('button', { name: 'Sign up' }).click();
   await expect(page).toHaveURL(/\/signup\?[^#]*source=improvement_library/);
   await expect(page).toHaveURL(/utm_source=guide/);
   await expect(page).toHaveURL(/next=/);
   await expect(page).toHaveURL(/cta=sign_up/);
+  const signupUrl = new URL(page.url());
+  const continuation = new URL(
+    signupUrl.searchParams.get('next'),
+    signupUrl.origin
+  );
+  expect(continuation.pathname).toBe(
+    '/improvements/contractor-practice/payment-plan/'
+  );
+  expect(continuation.searchParams.get('article')).toBe('payment-plan');
+  expect(continuation.searchParams.get('cta')).toBe('sign_up');
+  expect(continuation.searchParams.get('utm_source')).toBe('guide');
 });
 
 test('improvement CTAs remain usable on a mobile viewport', async ({
@@ -155,12 +201,22 @@ test('improvement CTAs remain usable on a mobile viewport', async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await mockImprovementApi(page);
   await page.goto('/improvements/');
-  await expect(page.getByRole('heading', { name: 'Guidance for the role you play' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
-  await page.screenshot({ path: 'test-results/improvement-library-mobile.png', fullPage: true });
+  await expect(
+    page.getByRole('heading', { name: 'Guidance for the role you play' })
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
+  ).toBe(false);
+  await page.screenshot({
+    path: 'test-results/improvement-library-mobile.png',
+    fullPage: true,
+  });
   await page.goto(improvement.canonical_path);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  await page.screenshot({ path: 'test-results/improvement-article-mobile.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/improvement-article-mobile.png',
+    fullPage: true,
+  });
   await expect(page.getByTestId('diy-this-project')).toBeVisible();
   await expect(page.getByTestId('get-contractor-help')).toBeVisible();
   await expect(page.getByTestId('improvement-breadcrumbs')).toBeVisible();
