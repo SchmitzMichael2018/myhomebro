@@ -9,6 +9,10 @@ for (const { name, width, height } of [
     await page.route('**/api/projects/attribution/track/', (route) => route.fulfill({ status: 200, json: {} }));
     await page.goto('/san-antonio/?utm_source=synthetic&ref=TEST-1&unsafe=discard');
     await expect(page.getByRole('heading', { level: 1 })).toContainText('San Antonio');
+    await expect(page.getByRole('heading', { name: 'Keep control of milestone payments' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Build a maintenance history for your home' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Plan it yourself; ask for help when you need it' })).toBeVisible();
+    await expect(page.getByTestId('san-antonio-diy')).toHaveAttribute('href', /\/create-account\?role=customer/);
     await expect(page.getByText('Automatic matching is available only where trade-specific readiness is met and approved.')).toBeVisible();
     await expect(page.getByTestId('san-antonio-start-project')).toHaveAttribute('href', /\/start-project\?/);
     await expect(page.getByTestId('san-antonio-find-contractor')).toHaveAttribute('href', /\/start-project\?/);
