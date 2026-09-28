@@ -124,6 +124,12 @@ from .views.public_improvements import (
     PublicImprovementDetailView,
     PublicImprovementLibraryView,
 )
+from .views.admin_improvements import (
+    AdminImprovementDetailView,
+    AdminImprovementListView,
+    AdminImprovementPreviewView,
+    AdminImprovementTransitionView,
+)
 from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorDeactivateView, ContractorMeView
@@ -587,6 +593,10 @@ agreements_router.register(
 )
 
 urlpatterns = [
+    path("admin/improvements/", AdminImprovementListView.as_view(), name="admin-improvement-list"),
+    path("admin/improvements/preview/<slug:public_slug>/", AdminImprovementPreviewView.as_view(), name="admin-improvement-preview"),
+    path("admin/improvements/<int:article_id>/", AdminImprovementDetailView.as_view(), name="admin-improvement-detail"),
+    path("admin/improvements/<int:article_id>/<str:action>/", AdminImprovementTransitionView.as_view(), name="admin-improvement-transition"),
     path("public/improvements/", PublicImprovementLibraryView.as_view(), name="public-improvement-library"),
     path("public/improvements/<slug:category_slug>/", PublicImprovementCategoryView.as_view(), name="public-improvement-category"),
     path("public/improvements/<slug:category_slug>/<slug:improvement_slug>/", PublicImprovementDetailView.as_view(), name="public-improvement-detail"),

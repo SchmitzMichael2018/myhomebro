@@ -17,6 +17,8 @@ const AdminRequestsPage = lazy(() => import("../pages/admin/AdminRequestsPage.js
 const AdminMaintenancePage = lazy(() => import("../pages/admin/AdminMaintenancePage.jsx"));
 const AdminReimbursementsPage = lazy(() => import("../pages/admin/AdminReimbursementsPage.jsx"));
 const AdminReviewsPage = lazy(() => import("../pages/admin/AdminReviewsPage.jsx"));
+const AdminImprovementsPage = lazy(() => import("../pages/admin/AdminImprovementsPage.jsx"));
+const PublicImprovementPreviewPage = lazy(() => import("../pages/PublicImprovementPage.jsx"));
 const AdminEntityDetailPage = lazy(() => import("../pages/admin/AdminEntityDetailPage.jsx"));
 const AdminPlatformFeePromotionsPage = lazy(() => import("../pages/admin/AdminPlatformFeePromotionsPage.jsx"));
 
@@ -163,6 +165,9 @@ export function protectedRoutes() {
           <Route path="admin/maintenance" element={<AdminMaintenancePage />} />
           <Route path="admin/reimbursements" element={<AdminReimbursementsPage />} />
           <Route path="admin/reviews" element={<AdminReviewsPage />} />
+          <Route path="admin/improvements" element={<AdminImprovementsPage />} />
+          <Route path="admin/improvements/:articleId" element={<AdminImprovementsPage />} />
+          <Route path="admin/improvements/preview/:publicSlug" element={<PublicImprovementPreviewPage preview />} />
           <Route path="admin/fee-waivers" element={<AdminPlatformFeePromotionsPage />} />
           <Route path="admin/contractor-directory" element={<AdminContractorDirectory />} />
           <Route path="admin/contractors/:contractorId" element={<AdminEntityDetailPage kind="contractor" />} />

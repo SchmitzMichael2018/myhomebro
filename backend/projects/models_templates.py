@@ -34,6 +34,16 @@ class ProjectTemplate(models.Model):
         PUBLISHED = "published", "Published"
         ARCHIVED = "archived", "Archived"
 
+    class PublicAudience(models.TextChoices):
+        CONTRACTOR = "contractor", "Contractors"
+        HOMEOWNER = "homeowner", "Homeowners"
+        PROPERTY_MANAGER = "property_manager", "Property managers"
+
+    class PublicAction(models.TextChoices):
+        SIGN_UP = "sign_up", "Sign up"
+        CREATE_PROJECT = "create_project", "Create a project"
+        REQUEST_HELP = "request_help", "Request help"
+
     class Difficulty(models.TextChoices):
         BEGINNER = "beginner", "Beginner"
         INTERMEDIATE = "intermediate", "Intermediate"
@@ -151,6 +161,13 @@ class ProjectTemplate(models.Model):
     public_summary = models.CharField(max_length=320, blank=True, default="")
     public_title = models.CharField(max_length=255, blank=True, default="")
     public_intro = models.TextField(blank=True, default="")
+    public_audience = models.CharField(max_length=24, choices=PublicAudience.choices, default=PublicAudience.HOMEOWNER, db_index=True)
+    public_problem = models.TextField(blank=True, default="")
+    public_evidence = models.TextField(blank=True, default="")
+    public_evidence_source = models.URLField(blank=True, default="")
+    public_viewpoint = models.TextField(blank=True, default="")
+    public_practical_steps = models.TextField(blank=True, default="")
+    public_next_action = models.CharField(max_length=24, choices=PublicAction.choices, blank=True, default="")
     difficulty = models.CharField(max_length=24, choices=Difficulty.choices, blank=True, default="")
     estimated_duration_min_days = models.PositiveIntegerField(null=True, blank=True)
     estimated_duration_max_days = models.PositiveIntegerField(null=True, blank=True)
@@ -290,11 +307,17 @@ class ProjectTemplate(models.Model):
                 if not str(value or "").strip():
                     errors[field] = "Required before public publication."
             has_useful_content = bool(
-                str(self.public_intro or self.description or self.default_scope).strip()
+                str(self.public_problem or self.public_intro or self.description or self.default_scope).strip()
                 or (self.pk and self.milestones.exists())
             )
             if not has_useful_content:
                 errors["public_intro"] = "Useful project content or milestones are required before publication."
+            if self.public_problem or self.public_evidence or self.public_viewpoint or self.public_practical_steps:
+                for field in ("public_problem", "public_evidence", "public_viewpoint", "public_practical_steps", "public_next_action"):
+                    if not str(getattr(self, field) or "").strip():
+                        errors[field] = "Required before publishing an editorial article."
+                if self.public_evidence and not self.public_evidence_source:
+                    errors["public_evidence_source"] = "A source URL is required for evidence claims."
             if not self.public_reviewed_at or not self.public_reviewed_by_id:
                 errors["public_reviewed_at"] = "A recorded human review is required before publication."
             if errors:
