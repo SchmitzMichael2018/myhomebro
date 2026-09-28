@@ -122,3 +122,16 @@ test('improvement CTAs remain usable on a mobile viewport', async ({
   await expect(page.getByTestId('get-contractor-help')).toBeVisible();
   await expect(page.getByTestId('improvement-breadcrumbs')).toBeVisible();
 });
+
+test('empty library shows branded guidance and project handoff without claiming published guides', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/projects/public/improvements/**', (route) => route.fulfill({
+    status: 200, json: { categories: [], improvements: [] },
+  }));
+  await page.goto('/improvements/');
+  await expect(page.getByRole('link', { name: 'MyHomeBro home' }).locator('img')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Start planning while we prepare the first guides.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Start a project' }).first()).toHaveAttribute('href', '/start-project');
+  await expect(page.getByText('No published improvements match this search.')).toHaveCount(0);
+  await expect(page.getByTestId('improvement-search')).toHaveCount(0);
+});

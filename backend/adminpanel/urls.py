@@ -47,8 +47,12 @@ from .views_reimbursements import (
 )
 from .views_promotions import AdminPlatformFeePromotionDetail, AdminPlatformFeePromotions
 from .views_requests import AdminRequestBulkAction, AdminRequestDetail, AdminRequests
+from .views_improvements import AdminImprovementLibrary, AdminImprovementDetail, AdminImprovementTransition
 
 urlpatterns = [
+    path("improvements/", AdminImprovementLibrary.as_view(), name="admin-improvements"),
+    path("improvements/<int:template_id>/", AdminImprovementDetail.as_view(), name="admin-improvement-detail"),
+    path("improvements/<int:template_id>/transition/", AdminImprovementTransition.as_view(), name="admin-improvement-transition"),
     path("requests/", AdminRequests.as_view(), name="admin-requests"),
     path("requests/bulk-action/", AdminRequestBulkAction.as_view(), name="admin-request-bulk-action"),
     path("requests/<int:request_id>/", AdminRequestDetail.as_view(), name="admin-request-detail"),
