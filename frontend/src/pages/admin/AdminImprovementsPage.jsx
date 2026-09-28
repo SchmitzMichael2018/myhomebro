@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import api from '../../api';
 
@@ -49,15 +49,34 @@ const fieldGroups = [
 ];
 const buttonClass =
   'min-h-11 rounded-xl border border-white/20 bg-white/10 px-4 py-2 font-bold text-white hover:bg-white/20 disabled:opacity-50';
+const assistedFields = {
+  public_summary: 'Short summary',
+  public_problem: 'Problem',
+  public_viewpoint: 'Our take',
+  public_practical_steps: 'Practical steps',
+};
 
 export default function AdminImprovementsPage() {
   const { articleId } = useParams();
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState(initial);
+  const [savedForm, setSavedForm] = useState(initial);
   const [status, setStatus] = useState('');
+  const [reviewedById, setReviewedById] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [aiSection, setAiSection] = useState('public_problem');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [proposal, setProposal] = useState(null);
+  const [proposalBasis, setProposalBasis] = useState('');
+  const proposalRequestId = useRef(0);
+  const dirty = JSON.stringify(form) !== JSON.stringify(savedForm);
+  const visibleRows = rows.filter(
+    (row) => statusFilter === 'all' || row.publication_status === statusFilter
+  );
   const load = async () => {
     try {
       const { data } = await api.get('/projects/admin/improvements/');
@@ -67,22 +86,32 @@ export default function AdminImprovementsPage() {
           (row) => String(row.id) === String(articleId)
         );
         if (current) {
-          setForm(
-            Object.fromEntries(
-              Object.keys(initial).map((key) => [
-                key,
-                current[key] ?? initial[key],
-              ])
-            )
+          const loaded = Object.fromEntries(
+            Object.keys(initial).map((key) => [
+              key,
+              current[key] ?? initial[key],
+            ])
           );
+          setForm(loaded);
+          setSavedForm(loaded);
           setStatus(current.publication_status);
+          setReviewedById(current.reviewed_by_id);
         } else setError('Article not found.');
+      } else {
+        setForm(initial);
+        setSavedForm(initial);
+        setStatus('');
+        setReviewedById(null);
       }
     } catch {
       setError('Could not load the editorial library.');
     }
   };
   useEffect(() => {
+    proposalRequestId.current += 1;
+    setProposal(null);
+    setAiError('');
+    setAiBusy(false);
     load();
   }, [articleId]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (key, value) =>
@@ -95,6 +124,8 @@ export default function AdminImprovementsPage() {
         ? await api.patch(`/projects/admin/improvements/${articleId}/`, form)
         : await api.post('/projects/admin/improvements/', form);
       setStatus(data.publication_status);
+      setReviewedById(data.reviewed_by_id);
+      setProposal(null);
       await load();
       if (!articleId) navigate(`/app/admin/improvements/${data.id}`);
     } catch (caught) {
@@ -111,12 +142,45 @@ export default function AdminImprovementsPage() {
         `/projects/admin/improvements/${articleId}/${action}/`
       );
       setStatus(data.publication_status);
+      setReviewedById(data.reviewed_by_id);
+      setProposal(null);
       await load();
     } catch (caught) {
       setError(JSON.stringify(caught.response?.data || 'Transition failed.'));
     } finally {
       setBusy(false);
     }
+  };
+  const requestProposal = async (mode) => {
+    const requestId = ++proposalRequestId.current;
+    setAiBusy(true);
+    setAiError('');
+    setProposal(null);
+    try {
+      const { data } = await api.post('/projects/admin/improvements/assist/', {
+        mode,
+        section: mode === 'rewrite' ? aiSection : undefined,
+        article: form,
+      });
+      if (requestId === proposalRequestId.current) {
+        setProposal(data.proposal);
+        setProposalBasis(JSON.stringify(form));
+      }
+    } catch (caught) {
+      if (requestId === proposalRequestId.current) {
+        setAiError(
+          caught.response?.data?.detail ||
+            'Project Assistant is unavailable. Continue editing manually.'
+        );
+      }
+    } finally {
+      if (requestId === proposalRequestId.current) setAiBusy(false);
+    }
+  };
+  const insertProposal = () => {
+    if (!proposal || proposalBasis !== JSON.stringify(form)) return;
+    setForm((current) => ({ ...current, ...proposal }));
+    setProposal(null);
   };
   return (
     <main className="min-h-screen bg-[#071b34] p-4 text-white sm:p-8">
@@ -147,6 +211,32 @@ export default function AdminImprovementsPage() {
         <div className="mt-8 grid gap-6 lg:grid-cols-[18rem_1fr]">
           <aside className="rounded-2xl border border-white/15 bg-white/5 p-4">
             <h2 className="text-lg font-bold">Articles</h2>
+            <label
+              className="mt-3 block text-sm font-bold"
+              htmlFor="article-status-filter"
+            >
+              Filter by status
+            </label>
+            <select
+              id="article-status-filter"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-lg bg-white p-2 text-slate-950"
+            >
+              <option value="all">All ({rows.length})</option>
+              {['draft', 'ready_for_review', 'published', 'archived'].map(
+                (value) => (
+                  <option key={value} value={value}>
+                    {value.replaceAll('_', ' ')} (
+                    {
+                      rows.filter((row) => row.publication_status === value)
+                        .length
+                    }
+                    )
+                  </option>
+                )
+              )}
+            </select>
             <Link
               to="/app/admin/improvements"
               className="mt-3 block rounded-lg bg-amber-300 px-3 py-2 font-bold text-slate-950"
@@ -154,7 +244,7 @@ export default function AdminImprovementsPage() {
               + New draft
             </Link>
             <ul className="mt-4 space-y-2">
-              {rows.map((row) => (
+              {visibleRows.map((row) => (
                 <li key={row.id}>
                   <Link
                     to={`/app/admin/improvements/${row.id}`}
@@ -168,6 +258,11 @@ export default function AdminImprovementsPage() {
                 </li>
               ))}
             </ul>
+            {visibleRows.length === 0 ? (
+              <p className="mt-4 text-sm text-sky-100">
+                No articles in this status.
+              </p>
+            ) : null}
           </aside>
           <section
             className="rounded-2xl border border-white/15 bg-white/5 p-5 sm:p-8"
@@ -184,14 +279,23 @@ export default function AdminImprovementsPage() {
                     {status ? status.replaceAll('_', ' ') : 'New draft'}
                   </strong>
                 </p>
+                {reviewedById ? (
+                  <p className="mt-1 text-sm text-emerald-200">
+                    Human review recorded
+                  </p>
+                ) : null}
               </div>
-              {articleId ? (
+              {articleId && !dirty ? (
                 <Link
                   to={`/app/admin/improvements/preview/${form.public_slug}`}
                   className={buttonClass}
                 >
                   Preview design
                 </Link>
+              ) : articleId ? (
+                <span className="text-sm text-amber-200">
+                  Save changes before previewing.
+                </span>
               ) : null}
             </div>
             <div className="mt-6 grid gap-7">
@@ -283,8 +387,8 @@ export default function AdminImprovementsPage() {
                   Related articles
                 </legend>
                 <p className="mb-3 text-sm text-sky-100">
-                  Select the guides to recommend after this article. Only published
-                  guides appear on the public page.
+                  Select the guides to recommend after this article. Only
+                  published guides appear on the public page.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {rows
@@ -309,10 +413,125 @@ export default function AdminImprovementsPage() {
                 </div>
               </fieldset>
             </div>
+            <section
+              className="mt-7 rounded-xl border border-sky-300/40 bg-sky-950/60 p-4"
+              aria-labelledby="editor-assistant-title"
+            >
+              <h3 id="editor-assistant-title" className="text-lg font-bold">
+                Project Assistant writing help
+              </h3>
+              <p className="mt-2 text-sm text-sky-100">
+                Proposals are advisory and unsaved. Evidence, source links,
+                numerical claims, and publication stay under staff control.
+              </p>
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <button
+                  type="button"
+                  className={buttonClass}
+                  disabled={aiBusy}
+                  onClick={() => requestProposal('outline')}
+                >
+                  Generate outline
+                </button>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  disabled={aiBusy}
+                  onClick={() => requestProposal('draft')}
+                >
+                  Generate article draft
+                </button>
+                <label className="text-sm font-bold">
+                  Section to rewrite
+                  <select
+                    value={aiSection}
+                    onChange={(event) => setAiSection(event.target.value)}
+                    className="mt-1 block min-h-11 rounded-lg bg-white p-2 text-slate-950"
+                  >
+                    {Object.entries(assistedFields).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  disabled={aiBusy}
+                  onClick={() => requestProposal('rewrite')}
+                >
+                  Rewrite selected section
+                </button>
+              </div>
+              {aiBusy ? (
+                <p role="status" className="mt-4">
+                  Preparing a proposal…
+                </p>
+              ) : null}
+              {aiError ? (
+                <p role="alert" className="mt-4 text-rose-200">
+                  {aiError}
+                </p>
+              ) : null}
+              {proposal ? (
+                <div
+                  className="mt-5 rounded-xl border border-amber-200/40 bg-slate-900/70 p-4"
+                  data-testid="editorial-ai-proposal"
+                >
+                  <h4 className="font-bold text-amber-200">
+                    Review the proposed text
+                  </h4>
+                  <p className="mt-1 text-sm text-sky-100">
+                    Edit below, then insert into the editor. Inserting does not
+                    save or publish.
+                  </p>
+                  {Object.entries(proposal).map(([key, value]) => (
+                    <label key={key} className="mt-4 block font-bold">
+                      {assistedFields[key]}
+                      <textarea
+                        rows={key === 'public_practical_steps' ? 7 : 4}
+                        value={value}
+                        onChange={(event) =>
+                          setProposal((current) => ({
+                            ...current,
+                            [key]: event.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg bg-white p-3 font-normal text-slate-950"
+                      />
+                    </label>
+                  ))}
+                  {proposalBasis !== JSON.stringify(form) ? (
+                    <p className="mt-3 text-sm text-amber-200">
+                      The article changed after this proposal. Generate a fresh
+                      proposal before inserting.
+                    </p>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={insertProposal}
+                      disabled={proposalBasis !== JSON.stringify(form)}
+                      className="min-h-11 rounded-xl bg-amber-300 px-4 font-bold text-slate-950 disabled:opacity-50"
+                    >
+                      Insert into editor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProposal(null)}
+                      className={buttonClass}
+                    >
+                      Discard proposal
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
             <div className="mt-8 flex flex-wrap gap-3">
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || (Boolean(articleId) && !dirty)}
                 onClick={save}
                 className="min-h-11 rounded-xl bg-amber-300 px-5 font-extrabold text-slate-950 disabled:opacity-50"
               >
@@ -321,27 +540,27 @@ export default function AdminImprovementsPage() {
               {articleId && status === 'draft' ? (
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || dirty}
                   onClick={() => transition('submit')}
                   className={buttonClass}
                 >
                   Submit for review
                 </button>
               ) : null}
-              {articleId && status === 'ready_for_review' ? (
+              {articleId && status === 'ready_for_review' && !reviewedById ? (
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || dirty}
                   onClick={() => transition('review')}
                   className={buttonClass}
                 >
                   Record review
                 </button>
               ) : null}
-              {articleId && status === 'ready_for_review' ? (
+              {articleId && status === 'ready_for_review' && reviewedById ? (
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || dirty}
                   onClick={() => transition('publish')}
                   className={buttonClass}
                 >

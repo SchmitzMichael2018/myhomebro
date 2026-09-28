@@ -6,10 +6,12 @@ from django.http import Http404
 from django.utils import timezone
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from projects.models_templates import ProjectTemplate
 from projects.views.public_improvements import serialize_improvement
+from projects.ai.improvement_editorial import propose_article_sections
 
 
 EDITABLE_FIELDS = (
@@ -19,6 +21,11 @@ EDITABLE_FIELDS = (
     "seo_title", "seo_description", "is_featured_public",
 )
 REQUIRED_DRAFT_FIELDS = ("public_title", "public_slug", "public_category_slug")
+
+
+class EditorialAssistThrottle(UserRateThrottle):
+    scope = "editorial_ai"
+    rate = "30/hour"
 
 
 def article_payload(article):
@@ -75,6 +82,36 @@ class AdminImprovementListView(APIView):
             related = ProjectTemplate.objects.filter(pk__in=data["related_ids"], public_slug__isnull=False).exclude(pk=article.pk)
             article.related_public_templates.set(related)
         return Response(article_payload(article), status=201)
+
+
+class AdminImprovementAssistView(APIView):
+    """Prepare a staff-only proposal; never save, review, or publish it."""
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    throttle_classes = [EditorialAssistThrottle]
+
+    def post(self, request):
+        if not isinstance(request.data, dict):
+            return Response({"detail": "Provide an article draft for assistance."}, status=400)
+        context = request.data.get("article")
+        mode = request.data.get("mode")
+        section = request.data.get("section")
+        if not isinstance(mode, str) or (section is not None and not isinstance(section, str)):
+            return Response({"detail": "Choose a valid writing action."}, status=400)
+        if not isinstance(context, dict) or len(str(context)) > 20000:
+            return Response({"detail": "Provide an article draft for assistance."}, status=400)
+        if not str(context.get("public_problem") or context.get("public_title") or "").strip():
+            return Response({"detail": "Enter an article title or problem first."}, status=400)
+        if context.get("public_audience") not in ProjectTemplate.PublicAudience.values:
+            return Response({"detail": "Choose a valid audience."}, status=400)
+        try:
+            proposal = propose_article_sections(mode=mode, section=section, context=context)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except Exception:
+            # Provider details, prompts, and credentials must not reach the client.
+            return Response({"detail": "Project Assistant is unavailable. Continue editing manually."}, status=503)
+        return Response({"proposal": proposal, "saved": False, "publication_status": None})
 
 
 class AdminImprovementDetailView(APIView):

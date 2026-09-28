@@ -125,6 +125,7 @@ from .views.public_improvements import (
     PublicImprovementLibraryView,
 )
 from .views.admin_improvements import (
+    AdminImprovementAssistView,
     AdminImprovementDetailView,
     AdminImprovementListView,
     AdminImprovementPreviewView,
@@ -594,6 +595,7 @@ agreements_router.register(
 
 urlpatterns = [
     path("admin/improvements/", AdminImprovementListView.as_view(), name="admin-improvement-list"),
+    path("admin/improvements/assist/", AdminImprovementAssistView.as_view(), name="admin-improvement-assist"),
     path("admin/improvements/preview/<slug:public_slug>/", AdminImprovementPreviewView.as_view(), name="admin-improvement-preview"),
     path("admin/improvements/<int:article_id>/", AdminImprovementDetailView.as_view(), name="admin-improvement-detail"),
     path("admin/improvements/<int:article_id>/<str:action>/", AdminImprovementTransitionView.as_view(), name="admin-improvement-transition"),
