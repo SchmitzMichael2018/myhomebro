@@ -938,6 +938,7 @@ export default function AdminDashboard() {
         {[
           { key: "overview", label: "Overview", action: () => goTo("overview") },
           { key: "marketplace", label: "Marketplace", action: () => navigate("/app/admin/marketplace") },
+          { key: "improvements", label: "Improvement Library", action: () => navigate("/app/admin/improvements") },
           { key: "contractors", label: "Contractors", action: () => goTo("contractors") },
           { key: "homeowners", label: "Customers", action: () => goTo("homeowners") },
           { key: "agreements", label: "Agreements", action: () => goTo("agreements") },

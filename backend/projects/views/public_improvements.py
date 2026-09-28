@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.http import Http404
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -29,6 +29,8 @@ def serialize_improvement(template, *, detail=False):
         "category_name": category_label(template.public_category_slug),
         "title": template.public_title or template.name,
         "summary": template.public_summary,
+        "audience": template.public_audience,
+        "audience_label": template.get_public_audience_display(),
         "difficulty": template.difficulty,
         "difficulty_label": template.get_difficulty_display() if template.difficulty else "",
         "estimated_duration_min_days": template.estimated_duration_min_days,
@@ -47,6 +49,12 @@ def serialize_improvement(template, *, detail=False):
     payload.update(
         {
             "intro": template.public_intro or template.description,
+            "problem": template.public_problem,
+            "evidence": template.public_evidence,
+            "evidence_source": template.public_evidence_source,
+            "viewpoint": template.public_viewpoint,
+            "practical_steps": template.public_practical_steps,
+            "next_action": template.public_next_action,
             "scope": template.default_scope,
             "cost_guidance": template.cost_guidance,
             "tools_guidance": template.tools_guidance,
@@ -85,8 +93,15 @@ class PublicImprovementLibraryView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        queryset = published_improvements()
+        all_published = published_improvements()
+        queryset = all_published
         query = str(request.query_params.get("q") or "").strip()
+        audience = str(request.query_params.get("audience") or "").strip()
+        category = str(request.query_params.get("category") or "").strip()
+        if audience in ProjectTemplate.PublicAudience.values:
+            queryset = queryset.filter(public_audience=audience)
+        if category:
+            queryset = queryset.filter(public_category_slug=category)
         if query:
             queryset = queryset.filter(
                 Q(name__icontains=query)
@@ -94,17 +109,26 @@ class PublicImprovementLibraryView(APIView):
                 | Q(project_type__icontains=query)
                 | Q(project_subtype__icontains=query)
                 | Q(public_summary__icontains=query)
+                | Q(public_problem__icontains=query)
+                | Q(public_practical_steps__icontains=query)
                 | Q(description__icontains=query)
             )
-        rows = list(queryset.order_by("-is_featured_public", "name"))
+        rows = list(queryset.annotate(
+            launch_order=Case(When(public_audience=ProjectTemplate.PublicAudience.CONTRACTOR, then=Value(0)), default=Value(1), output_field=IntegerField())
+        ).order_by("launch_order", "-is_featured_public", "-public_published_at", "name", "pk"))
         categories = {}
-        for item in rows:
+        for item in all_published.order_by("pk"):
             bucket = categories.setdefault(
                 item.public_category_slug,
                 {"slug": item.public_category_slug, "name": category_label(item.public_category_slug), "count": 0},
             )
             bucket["count"] += 1
-        return Response({"categories": list(categories.values()), "improvements": [serialize_improvement(item) for item in rows]})
+        return Response({
+            "categories": list(categories.values()),
+            "published_count": sum(category["count"] for category in categories.values()),
+            "contractor_published_count": all_published.filter(public_audience=ProjectTemplate.PublicAudience.CONTRACTOR).count(),
+            "improvements": [serialize_improvement(item) for item in rows],
+        })
 
 
 class PublicImprovementCategoryView(APIView):

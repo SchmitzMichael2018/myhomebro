@@ -4,6 +4,7 @@ from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
 
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.services.attribution import acquisition_report
@@ -195,3 +196,91 @@ class PublicImprovementLibraryTests(TestCase):
             {row["metadata__category"] for row in report["by_improvement_category"]},
             {"bathroom"},
         )
+
+    def test_audience_and_category_filters_never_reveal_drafts(self):
+        self.published.public_audience = "contractor"
+        self.published.save()
+        response = self.client.get("/api/projects/public/improvements/?audience=contractor&category=bathroom")
+        self.assertEqual([row["id"] for row in response.json()["improvements"]], [self.published.id])
+        self.assertEqual(response.json()["published_count"], 2)
+        self.assertNotIn(self.draft.id, [row["id"] for row in response.json()["improvements"]])
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class ImprovementEditorialWorkflowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = get_user_model().objects.create_user(
+            email="editor@example.com", password="not-used", is_staff=True
+        )
+        self.article = ProjectTemplate.objects.create(
+            name="Payment plan editorial QA", is_system=True,
+            public_title="Payment plan editorial QA", public_slug="qa-payment-plan-editorial",
+            public_category_slug="contractor-practice", public_audience="contractor",
+            public_summary="A concise guide for contractors.",
+            public_problem="Completion and payment can be unclear.",
+            public_evidence="The FTC recommends a written contract.",
+            public_evidence_source="https://consumer.ftc.gov/articles/how-avoid-home-improvement-scam",
+            public_viewpoint="Agree on deliverables and review steps up front.",
+            public_practical_steps="1. Write the scope. 2. Agree on the schedule.",
+            public_next_action="sign_up", seo_description="A practical contractor payment-planning guide.",
+        )
+
+    def test_staff_only_preview_and_publication_gate(self):
+        detail = f"/api/projects/admin/improvements/{self.article.id}/"
+        self.assertIn(self.client.get(detail).status_code, (401, 403))
+        self.assertEqual(self.client.get("/api/projects/public/improvements/").json()["improvements"], [])
+        self.assertEqual(self.client.get("/api/projects/public/improvements/contractor-practice/qa-payment-plan-editorial/").status_code, 404)
+        self.client.force_authenticate(self.admin)
+        preview = self.client.get(detail)
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.json()["viewpoint"], self.article.public_viewpoint)
+        self.assertEqual(preview.json()["publication_status"], "draft")
+        self.assertEqual(self.client.post(f"{detail}publish/").status_code, 400)
+        self.assertEqual(self.client.post(f"{detail}submit/").status_code, 200)
+        self.assertEqual(self.client.post(f"{detail}review/").status_code, 200)
+        self.assertEqual(self.client.post(f"{detail}publish/").status_code, 200)
+        public = self.client.get("/api/projects/public/improvements/contractor-practice/qa-payment-plan-editorial/")
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual(public.json()["viewpoint"], self.article.public_viewpoint)
+        self.assertIn("qa-payment-plan-editorial", self.client.get("/sitemap.xml").content.decode())
+        self.assertEqual(self.client.patch(detail, {"public_viewpoint": "A revised take."}, content_type="application/json").status_code, 200)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.public_publication_status, "draft")
+        self.assertIsNone(self.article.public_reviewed_at)
+        self.assertEqual(self.client.get("/api/projects/public/improvements/contractor-practice/qa-payment-plan-editorial/").status_code, 404)
+
+    def test_incomplete_editorial_claims_cannot_publish(self):
+        self.client.force_authenticate(self.admin)
+        detail = f"/api/projects/admin/improvements/{self.article.id}/"
+        self.client.patch(detail, {"public_evidence_source": ""}, content_type="application/json")
+        self.client.post(f"{detail}submit/")
+        self.client.post(f"{detail}review/")
+        response = self.client.post(f"{detail}publish/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("public_evidence_source", response.json())
+
+    def test_seeded_contractor_drafts_have_private_stable_previews(self):
+        slugs = [
+            "contractor-payment-plan",
+            "contractor-deposit-vs-milestones",
+            "contractor-change-orders",
+        ]
+        for slug in slugs:
+            article = ProjectTemplate.objects.get(public_slug=slug)
+            self.assertEqual(article.public_publication_status, "draft")
+            self.assertEqual(article.public_audience, "contractor")
+            self.assertTrue(article.public_evidence_source.startswith("https://"))
+            self.assertTrue(article.public_viewpoint)
+            self.assertEqual(article.related_public_templates.count(), 2)
+            self.assertNotIn(slug, self.client.get("/sitemap.xml").content.decode())
+            self.assertIn(self.client.get(f"/api/projects/admin/improvements/preview/{slug}/").status_code, (401, 403))
+            self.client.force_authenticate(self.admin)
+            preview = self.client.get(f"/api/projects/admin/improvements/preview/{slug}/")
+            self.assertEqual(preview.status_code, 200)
+            self.assertEqual(preview.json()["preview_path"], f"/app/admin/improvements/preview/{slug}")
+            self.client.force_authenticate(user=None)
+        payment = ProjectTemplate.objects.get(public_slug="contractor-payment-plan")
+        self.assertIn("not a residential-contractor statistic", payment.public_evidence)
+        change = ProjectTemplate.objects.get(public_slug="contractor-change-orders")
+        self.assertIn("does not show that contractors caused", change.public_evidence)

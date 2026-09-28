@@ -1152,6 +1152,13 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
                         "public_summary",
                         "public_title",
                         "public_intro",
+                        "public_audience",
+                        "public_problem",
+                        "public_evidence",
+                        "public_evidence_source",
+                        "public_viewpoint",
+                        "public_practical_steps",
+                        "public_next_action",
                         "difficulty",
                         "estimated_duration_min_days",
                         "estimated_duration_max_days",
@@ -1195,6 +1202,16 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
                 return 0
 
         def save_model(self, request, obj, form, change):
+            if change and set(form.changed_data) & {
+                "public_title", "public_slug", "public_category_slug", "public_summary",
+                "public_audience", "public_problem", "public_evidence", "public_evidence_source",
+                "public_viewpoint", "public_practical_steps", "public_next_action",
+                "seo_title", "seo_description",
+            }:
+                obj.public_reviewed_at = None
+                obj.public_reviewed_by = None
+                obj.public_publication_status = ProjectTemplate.PublicPublicationStatus.DRAFT
+                obj.public_published_at = None
             if obj.is_system_template:
                 obj.is_system = True
                 obj.contractor = None

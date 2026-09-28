@@ -115,9 +115,9 @@ def public_improvement_shell(request, category_slug=None, improvement_slug=None)
         ).exists()
         return spa(request, seo_override={
             **metadata_for_path("/improvements/"),
-            "seo_title": "Home Improvement Projects & DIY Guides | MyHomeBro",
-            "seo_description": "Explore home project guides, understand the work, and decide whether to DIY or get contractor help with MyHomeBro.",
-            "seo_social_description": "Plan a home project, understand the work, and choose whether to DIY or get contractor help.",
+            "seo_title": "Home Improvement Projects & Practical Guides | MyHomeBro",
+            "seo_description": "Practical home-project guidance for contractors, homeowners, and property managers. Explore the work and choose a useful next step.",
+            "seo_social_description": "Practical home-project guidance for contractors, homeowners, and property managers.",
             "seo_canonical_url": f"{SITE_ORIGIN}/improvements/",
             "seo_robots": "index, follow" if has_published_content else "noindex, follow",
             "seo_indexable": has_published_content,
