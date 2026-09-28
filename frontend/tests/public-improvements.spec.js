@@ -126,6 +126,13 @@ test('launch empty state is purposeful before any search', async ({ page }) => {
   );
   await page.goto('/improvements/');
   await expect(page.getByText('The library is getting ready.')).toBeVisible();
+  const startProject = page.getByRole('link', {
+    name: 'Start a project',
+    exact: true,
+  });
+  await expect(startProject).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await startProject.hover();
+  await expect(startProject).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(
     page.getByText('No published improvements match this search')
   ).toHaveCount(0);

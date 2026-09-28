@@ -334,7 +334,7 @@ export function ImprovementGrid({
           {!hasFilters ? (
             <Link
               to="/start-project"
-              className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-blue-700 px-5 font-bold text-white"
+              className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-blue-700 px-5 font-bold text-white hover:text-white"
             >
               Start a project
             </Link>
