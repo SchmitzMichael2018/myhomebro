@@ -13,7 +13,7 @@ REWRITE_FIELDS = PROPOSAL_FIELDS
 _UNSAFE_CLAIMS = re.compile(
     r"\bguarantee(?:d|s)?\s+(?:of\s+)?payment\b|"
     r"\bpayment\s+(?:is\s+)?guaranteed\b|"
-    r"\b(?:ensures?|promises?)\b.{0,60}\b(?:paid|payment|payout|release)\b|"
+    r"\b(?:ensures?|promises?)\b.{0,60}\b(?:paid|payout|release|payment\b(?!\s+(?:plan|schedule|terms)))|"
     r"\b(?:automatically|always)\s+(?:release|releases|paid|pays)\b|"
     r"\bprevent(?:s|ed)?\s+(?:all\s+)?disputes\b|"
     r"\bescrow\b|\b(?:no|zero)\s+disputes\b",

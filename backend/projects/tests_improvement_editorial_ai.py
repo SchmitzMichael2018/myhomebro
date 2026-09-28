@@ -46,6 +46,10 @@ class ImprovementEditorialAITests(SimpleTestCase):
             with self.subTest(unsafe=unsafe), self.assertRaises(UnsafeEditorialProposal):
                 self.propose("rewrite", {"public_problem": unsafe}, "public_problem")
 
+    def test_allows_process_guidance_about_signing_a_payment_plan(self):
+        text = "- Ensure both parties sign the payment plan to formalize the agreement."
+        self.assertEqual(self.propose("outline", {"public_practical_steps": text}), {"public_practical_steps": text})
+
     def test_rejects_provider_attempt_to_edit_source_or_evidence(self):
         with self.assertRaises(UnsafeEditorialProposal):
             self.propose("rewrite", {"public_evidence_source": "https://example.com/new"}, "public_problem")
