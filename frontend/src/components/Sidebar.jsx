@@ -307,6 +307,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <SubItem to="/app/admin" label="Overview" />
               <SubItem to="/app/admin/requests" label="Requests" />
               <SubItem to="/app/admin/marketplace" label="Marketplace" />
+              <SubItem to="/app/admin/improvements" label="Improvement Library" />
               <SubItem to="/app/admin/maintenance" label="Maintenance" />
               <SubItem to="/app/admin/reimbursements" label="Reimbursements" />
               <SubItem to="/app/admin/reviews" label="Review Moderation" />

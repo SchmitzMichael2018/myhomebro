@@ -1,5 +1,8 @@
+import json
 import struct
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -239,7 +242,8 @@ class ImprovementEditorialWorkflowTests(TestCase):
         self.assertEqual(self.client.post(f"{detail}publish/").status_code, 400)
         self.assertEqual(self.client.post(f"{detail}submit/").status_code, 200)
         self.assertEqual(self.client.post(f"{detail}review/").status_code, 200)
-        self.assertEqual(self.client.post(f"{detail}publish/").status_code, 200)
+        publish = self.client.post(f"{detail}publish/")
+        self.assertEqual(publish.status_code, 200, publish.json())
         public = self.client.get("/api/projects/public/improvements/contractor-practice/qa-payment-plan-editorial/")
         self.assertEqual(public.status_code, 200)
         self.assertEqual(public.json()["viewpoint"], self.article.public_viewpoint)
@@ -284,3 +288,81 @@ class ImprovementEditorialWorkflowTests(TestCase):
         self.assertIn("not a residential-contractor statistic", payment.public_evidence)
         change = ProjectTemplate.objects.get(public_slug="contractor-change-orders")
         self.assertIn("does not show that contractors caused", change.public_evidence)
+
+    def test_staff_assistance_is_proposal_only_and_never_publishes(self):
+        endpoint = "/api/projects/admin/improvements/assist/"
+        context = {
+            "public_title": self.article.public_title,
+            "public_audience": "contractor",
+            "public_problem": self.article.public_problem,
+            "public_evidence": self.article.public_evidence,
+            "public_evidence_source": self.article.public_evidence_source,
+            "public_viewpoint": self.article.public_viewpoint,
+            "public_practical_steps": self.article.public_practical_steps,
+        }
+        payload = {"mode": "rewrite", "section": "public_problem", "article": context}
+        self.assertIn(self.client.post(endpoint, payload, format="json").status_code, (401, 403))
+        nonstaff = get_user_model().objects.create_user(email="nonstaff@example.com", password="not-used")
+        self.client.force_authenticate(nonstaff)
+        self.assertEqual(self.client.post(endpoint, payload, format="json").status_code, 403)
+        self.client.force_authenticate(self.admin)
+        provider = Mock()
+        provider.responses.create.return_value = SimpleNamespace(
+            output_text='{"public_problem":"Contractors need a clear review and payment plan."}'
+        )
+        with patch("projects.ai.improvement_editorial._require_openai_client", return_value=provider):
+            response = self.client.post(endpoint, payload, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["proposal"], {"public_problem": "Contractors need a clear review and payment plan."})
+        self.assertFalse(response.json()["saved"])
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.public_problem, context["public_problem"])
+        self.assertEqual(self.article.public_publication_status, "draft")
+        self.assertEqual(self.client.get("/api/projects/public/improvements/").json()["improvements"], [])
+
+    def test_assistance_rejects_unsupported_claims_and_evidence_rewrites(self):
+        self.client.force_authenticate(self.admin)
+        endpoint = "/api/projects/admin/improvements/assist/"
+        context = {"public_title": "Payment planning", "public_audience": "contractor", "public_viewpoint": "Plan together."}
+        self.assertEqual(self.client.post(endpoint, {"mode": "rewrite", "section": "public_evidence", "article": context}, format="json").status_code, 400)
+        for unsafe in (
+            "Payment is guaranteed for 56% of contractors.",
+            "See https://example.com/invented-study for proof.",
+            "Payment is guaranteed after the milestone.",
+            "According to a study, every project goes smoothly.",
+            "MyHomeBro ensures contractors get paid.",
+        ):
+            provider = Mock()
+            provider.responses.create.return_value = SimpleNamespace(output_text=json.dumps({"public_problem": unsafe}))
+            with patch("projects.ai.improvement_editorial._require_openai_client", return_value=provider):
+                response = self.client.post(endpoint, {"mode": "rewrite", "section": "public_problem", "article": context}, format="json")
+            self.assertEqual(response.status_code, 400)
+            self.assertNotIn("proposal", response.json())
+
+    def test_staff_can_create_save_preview_review_and_publish_separately(self):
+        self.client.force_authenticate(self.admin)
+        endpoint = "/api/projects/admin/improvements/"
+        create = self.client.post(endpoint, {
+            "public_title": "Synthetic editorial draft", "public_slug": "synthetic-editorial-draft",
+            "public_category_slug": "contractor-practice", "public_audience": "contractor",
+            "public_next_action": "sign_up",
+        }, format="json")
+        self.assertEqual(create.status_code, 201)
+        article_id = create.json()["id"]
+        detail = f"{endpoint}{article_id}/"
+        self.assertEqual(create.json()["publication_status"], "draft")
+        self.assertEqual(self.client.get(endpoint).json()["results"][0]["publication_status"], "draft")
+        edit = self.client.patch(detail, {
+            "public_problem": "A synthetic problem.", "public_evidence": "A source-backed observation.",
+            "public_evidence_source": "https://example.com/source", "public_viewpoint": "Plan the next step.",
+            "public_practical_steps": "Discuss scope and review steps.", "public_summary": "A synthetic guide.",
+            "seo_description": "Synthetic editorial test guide.",
+        }, format="json")
+        self.assertEqual(edit.status_code, 200)
+        self.assertEqual(edit.json()["publication_status"], "draft")
+        self.assertEqual(self.client.get(f"{endpoint}preview/synthetic-editorial-draft/").status_code, 200)
+        self.assertEqual(self.client.post(f"{detail}publish/").status_code, 400)
+        self.assertEqual(self.client.post(f"{detail}submit/").status_code, 200)
+        self.assertEqual(self.client.post(f"{detail}review/").status_code, 200)
+        publish = self.client.post(f"{detail}publish/")
+        self.assertEqual(publish.status_code, 200, publish.json())

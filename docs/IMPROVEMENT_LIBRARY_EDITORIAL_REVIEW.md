@@ -10,6 +10,10 @@ Staff-only review URLs after this change and its migrations are deployed:
 
 Manage the drafts at `/app/admin/improvements`. These preview routes require an authenticated staff account. Draft and review-stage articles are not returned from public APIs, public article routes, or the sitemap. An editor must submit, record review, then explicitly publish; an editorial edit returns the article to draft.
 
+In the admin portal, open **Admin Dashboard → Improvement Library** (or use the Improvement Library item in the admin sidebar). Filter the article list by draft, ready for review, published, or archived. Open a draft to edit the problem, evidence/source, Our take, practical steps, action, and metadata; **Save draft** before using **Preview design**. Use **+ New draft** to create another. **Submit for review**, **Record review**, and **Publish reviewed article** are separate actions; unsaved edits block these transitions.
+
+Project Assistant writing help in the editor prepares an outline, narrative draft, or rewrite of a selected narrative section. It uses the current audience, problem, evidence/source, and viewpoint as context, but cannot edit evidence, source links, or numerical claims. A proposal appears in editable review fields and does not enter the article until staff selects **Insert into editor**; inserting still does not save, submit, or publish. Staff should verify all suggested claims and the intended MyHomeBro viewpoint before saving. If AI is unavailable or its output fails safety checks, continue editing manually.
+
 ## Claim and source review before publication
 
 - The payment article cites [Intuit QuickBooks' 2025 U.S. small-business survey](https://quickbooks.intuit.com/r/small-business-data/small-business-late-payments-report-2025/), not a contractor-only sample. Its 56% figure concerns businesses reporting unpaid invoices.
