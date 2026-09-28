@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { ExternalLink, Play } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import api from '../api';
 
@@ -133,9 +134,11 @@ export default function PublicImprovementPage({ preview = false }) {
         </p>
       </LibraryShell>
     );
+  const paymentDesign = item.slug === 'contractor-payment-plan';
   return (
     <LibraryShell>
-      <article className="mx-auto max-w-5xl px-4 pb-24 pt-8 sm:px-6">
+      <div className={paymentDesign ? 'bg-[#f7f4ed]' : ''}>
+      <article className={`mx-auto px-4 pb-24 pt-8 sm:px-6 ${paymentDesign ? 'max-w-6xl' : 'max-w-5xl'}`}>
         {preview ? (
           <div
             role="status"
@@ -160,25 +163,47 @@ export default function PublicImprovementPage({ preview = false }) {
           <span>›</span>
           <span>{item.title}</span>
         </nav>
-        <header className="mt-8">
-          <p className="text-sm font-bold uppercase tracking-[0.16em] text-blue-700">
+        <header className={paymentDesign
+          ? 'relative mt-8 overflow-hidden rounded-[2rem] bg-[#071b34] px-6 py-10 text-white shadow-[0_24px_60px_-30px_rgba(7,27,52,.65)] sm:px-10 lg:px-14 lg:py-16'
+          : 'mt-8'}>
+          <div className={paymentDesign ? 'relative grid gap-10 lg:grid-cols-[1.45fr_.55fr] lg:items-center' : ''}>
+          <div>
+          <p className={`text-sm font-bold uppercase tracking-[0.16em] ${paymentDesign ? 'text-amber-300' : 'text-blue-700'}`}>
+            {paymentDesign ? <span className="sr-only">Contractor field guide: </span> : null}
             {item.audience_label ? `${item.audience_label} · ` : ''}
             {item.category_name} guide
           </p>
-          <h1 className="mt-3 text-4xl font-bold tracking-tight text-slate-950 sm:text-6xl">
+          <h1 className={`mt-3 text-4xl font-black tracking-tight sm:text-6xl ${paymentDesign ? 'max-w-3xl leading-[1.05] text-white' : 'text-slate-950'}`}>
             {item.title}
           </h1>
-          <p className="mt-5 max-w-3xl text-xl leading-8 text-slate-600">
+          <p className={`mt-5 max-w-3xl text-xl leading-8 ${paymentDesign ? 'text-sky-100' : 'text-slate-600'}`}>
             {item.summary}
           </p>
           {item.reviewed_at ? (
-            <p className="mt-3 text-sm text-slate-500">
+            <p className={`mt-3 text-sm ${paymentDesign ? 'text-sky-200' : 'text-slate-500'}`}>
               Last reviewed {new Date(item.reviewed_at).toLocaleDateString()}
             </p>
           ) : null}
+          </div>
+          {paymentDesign ? (
+            <div aria-hidden="true" className="relative hidden rounded-3xl border border-sky-200/40 bg-[#102e4d]/95 p-5 shadow-xl lg:block"
+              style={{ backgroundImage: 'linear-gradient(#b4d2e814 1px, transparent 1px), linear-gradient(90deg, #b4d2e814 1px, transparent 1px)', backgroundSize: '38px 38px' }}>
+              <div className="flex items-center justify-between gap-2 border-b border-sky-200/25 pb-4 text-[10px] font-black uppercase tracking-[.12em] text-amber-300">
+                <span>Project plan</span><span>01 / 03</span>
+              </div>
+              {['Define the work', 'Agree on review points', 'Record the outcome'].map((step, index) => (
+                <div key={step} className="flex items-center gap-3 border-b border-sky-200/15 py-5 last:border-0">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-300/70 text-xs font-black text-amber-300">0{index + 1}</span>
+                  <span className="text-sm font-semibold text-white">{step}</span>
+                </div>
+              ))}
+              <div className="mt-2 h-1 w-24 rounded-full bg-amber-300" />
+            </div>
+          ) : null}
+          </div>
         </header>
         {item.problem ? (
-          <>
+          <div className={paymentDesign ? 'mt-8 rounded-[2rem] border border-[#e7e0d3] bg-white px-6 pb-10 pt-1 shadow-[0_20px_50px_-35px_rgba(7,27,52,.32)] sm:px-10 lg:px-16' : ''}>
             <ContentSection title="The problem" value={item.problem} />
             <section className="mt-10">
               <h2 className="text-2xl font-bold text-slate-950">
@@ -208,8 +233,10 @@ export default function PublicImprovementPage({ preview = false }) {
                 {item.viewpoint}
               </p>
             </section>
+            {paymentDesign ? <PaymentMilestoneExample /> : null}
             <PracticalSteps value={item.practical_steps} />
-            <section className="mt-12 rounded-3xl bg-blue-50 p-6 sm:p-8">
+            <WalkthroughSection video={item.video} previewPlacement={preview && paymentDesign} />
+            <section className={`mt-12 rounded-3xl p-6 sm:p-8 ${paymentDesign ? 'border border-[#e7e0d3] bg-[#f7f4ed]' : 'bg-blue-50'}`}>
               <h2 className="text-2xl font-bold text-slate-950">
                 A useful next step
               </h2>
@@ -227,12 +254,12 @@ export default function PublicImprovementPage({ preview = false }) {
                     editorialTarget(item)
                   )
                 }
-                className="mt-5 min-h-12 rounded-xl bg-blue-700 px-5 font-bold text-white hover:bg-blue-800"
+                className={`mt-5 min-h-12 rounded-xl px-5 font-bold ${paymentDesign ? 'bg-[#071b34] text-white hover:bg-[#153959]' : 'bg-blue-700 text-white hover:bg-blue-800'}`}
               >
                 {editorialActionLabel(item.next_action)}
               </button>
             </section>
-          </>
+          </div>
         ) : (
           <>
             <div className="mt-10 grid gap-4 sm:grid-cols-3">
@@ -375,7 +402,71 @@ export default function PublicImprovementPage({ preview = false }) {
           </section>
         ) : null}
       </article>
+      </div>
     </LibraryShell>
+  );
+}
+
+function PaymentMilestoneExample() {
+  const steps = [
+    ['Scope', 'Agree on the work and what completion means.'],
+    ['Milestone', 'Set the stage and proof before work begins.'],
+    ['Evidence', 'Document the completed work.'],
+    ['Review', 'Give the customer a clear review point.'],
+    ['Outcome', 'Follow the agreement and payment setup.'],
+  ];
+  return (
+    <section className="mt-12" aria-labelledby="payment-example-heading" data-testid="payment-milestone-example">
+      <p className="text-xs font-black uppercase tracking-[.2em] text-blue-800">A simple example</p>
+      <h2 id="payment-example-heading" className="mt-2 text-2xl font-black text-[#071b34]">How one milestone moves forward</h2>
+      <p className="mt-3 max-w-2xl leading-7 text-slate-700">A shared plan makes each review point clearer. It does not guarantee approval or payment release.</p>
+      <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {steps.map(([title, description], index) => (
+          <li key={title} className="relative rounded-2xl border border-[#dfd7c7] bg-[#fbf8f2] p-4">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#071b34] text-xs font-black text-amber-300">0{index + 1}</span>
+            <h3 className="mt-4 font-black text-[#071b34]">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{description}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function WalkthroughSection({ video, previewPlacement }) {
+  if (!video && !previewPlacement) return null;
+  if (!video) return (
+    <section className="mt-12 rounded-3xl border-2 border-dashed border-[#cbbd9d] bg-[#f7f4ed] p-6 sm:p-8" data-testid="walkthrough-placement">
+      <p className="text-xs font-black uppercase tracking-[.2em] text-blue-800">Editorial preview only</p>
+      <h2 className="mt-2 text-2xl font-black text-[#071b34]">See how it works — planned placement</h2>
+      <p className="mt-3 leading-7 text-slate-700">No walkthrough video is attached. This section stays hidden from readers until a real video, poster, and text alternative have been reviewed.</p>
+      <p className="mt-4 text-sm font-semibold text-slate-700">Planned sequence: define the scope → set milestones → document completed work → customer review → payment outcome.</p>
+    </section>
+  );
+  return (
+    <section className="mt-12 overflow-hidden rounded-3xl bg-[#071b34] text-white" aria-labelledby="walkthrough-heading" data-testid="walkthrough-video">
+      <div className="grid md:grid-cols-[1.05fr_.95fr]">
+        <div className="p-6 sm:p-9">
+          <p className="text-xs font-black uppercase tracking-[.2em] text-amber-300">Project walkthrough</p>
+          <h2 id="walkthrough-heading" className="mt-2 text-2xl font-black">See how it works</h2>
+          <h3 className="mt-5 text-xl font-bold">{video.title}</h3>
+          <p className="mt-3 leading-7 text-sky-100">{video.description}</p>
+          <a href={video.url} target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex min-h-12 items-center gap-2 rounded-xl bg-amber-300 px-5 font-black text-[#071b34] hover:bg-amber-200">
+            <Play className="h-5 w-5 fill-current" aria-hidden="true" /> Play walkthrough <span className="sr-only">(opens in a new tab)</span>
+          </a>
+          <a href={video.url} target="_blank" rel="noopener noreferrer" className="mt-4 flex w-fit items-center gap-2 text-sm font-semibold text-sky-100 underline underline-offset-4 hover:text-white">
+            Open video in a new tab <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </a>
+          {video.text_summary ? <p className="mt-6 whitespace-pre-line border-t border-sky-200/25 pt-5 text-sm leading-6 text-sky-100"><strong className="text-white">Text summary:</strong> {video.text_summary}</p> : null}
+          {video.transcript_url ? <a href={video.transcript_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-amber-200 underline underline-offset-4 hover:text-amber-100">Read the transcript <span className="sr-only">(opens in a new tab)</span></a> : null}
+        </div>
+        <a href={video.url} target="_blank" rel="noopener noreferrer" aria-label={`Play ${video.title} (opens in a new tab)`} className="group relative block min-h-64 bg-[#102e4d]">
+          <img src={video.poster_url} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+          <span className="absolute inset-0 bg-[#071b34]/30 transition group-hover:bg-[#071b34]/45" />
+          <span className="absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-amber-300 text-[#071b34] shadow-lg"><Play className="h-7 w-7 fill-current" aria-hidden="true" /></span>
+        </a>
+      </div>
+    </section>
   );
 }
 

@@ -269,6 +269,52 @@ class ImprovementEditorialWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("public_evidence_source", response.json())
 
+    def test_walkthrough_requires_complete_reviewed_metadata_and_text_alternative(self):
+        self.client.force_authenticate(self.admin)
+        detail = f"/api/projects/admin/improvements/{self.article.id}/"
+        preview = f"/api/projects/admin/improvements/preview/{self.article.public_slug}/"
+        self.assertIsNone(self.client.get(preview).json()["video"])
+        incomplete = self.client.patch(detail, {"public_video_url": "https://example.com/watch"}, format="json")
+        self.assertEqual(incomplete.status_code, 200)
+        self.assertIsNone(self.client.get(preview).json()["video"])
+        self.client.post(f"{detail}submit/")
+        self.client.post(f"{detail}review/")
+        refused = self.client.post(f"{detail}publish/")
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("public_video_poster_url", refused.json())
+        self.assertIn("public_video_text_summary", refused.json())
+
+        complete = {
+            "public_video_url": "https://example.com/watch",
+            "public_video_title": "Planning one payment milestone",
+            "public_video_description": "A synthetic walkthrough of scope, proof, review, and outcome.",
+            "public_video_poster_url": "https://example.com/poster.jpg",
+            "public_video_text_summary": "Define scope, set milestones, document work, review, then determine the outcome.",
+        }
+        self.assertEqual(self.client.patch(detail, complete, format="json").status_code, 200)
+        self.assertIsNone(self.client.get(preview).json()["video"])
+        self.assertEqual(self.client.post(f"{detail}submit/").status_code, 200)
+        reviewed = self.client.post(f"{detail}review/")
+        self.assertEqual(reviewed.status_code, 200)
+        self.assertEqual(reviewed.json()["reviewed_by_id"], self.admin.pk)
+        self.assertEqual(self.client.get(preview).json()["video"]["title"], complete["public_video_title"])
+        self.assertEqual(self.client.post(f"{detail}publish/").status_code, 200)
+        public = self.client.get("/api/projects/public/improvements/contractor-practice/qa-payment-plan-editorial/")
+        self.assertEqual(public.json()["video"]["url"], complete["public_video_url"])
+        self.assertEqual(self.client.patch(detail, {"public_video_title": "Revised title"}, format="json").status_code, 200)
+        self.assertIsNone(self.client.get(preview).json()["video"])
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.public_publication_status, "draft")
+        self.assertIsNone(self.article.public_reviewed_at)
+
+    def test_walkthrough_urls_require_https(self):
+        self.client.force_authenticate(self.admin)
+        detail = f"/api/projects/admin/improvements/{self.article.id}/"
+        for field in ("public_video_url", "public_video_poster_url", "public_video_transcript_url"):
+            response = self.client.patch(detail, {field: "http://example.com/media"}, format="json")
+            self.assertEqual(response.status_code, 400)
+            self.assertIn(field, response.json())
+
     def test_seeded_contractor_drafts_have_private_stable_previews(self):
         slugs = [
             "contractor-payment-plan",

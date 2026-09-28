@@ -21,6 +21,23 @@ def category_label(slug):
     return str(slug or "").replace("-", " ").title()
 
 
+def reviewed_video(template):
+    """A walkthrough is visible only after complete metadata receives article review."""
+    if not template.public_reviewed_at or not all((
+        template.public_video_url, template.public_video_title,
+        template.public_video_description, template.public_video_poster_url,
+    )) or not (template.public_video_text_summary or template.public_video_transcript_url):
+        return None
+    return {
+        "url": template.public_video_url,
+        "title": template.public_video_title,
+        "description": template.public_video_description,
+        "poster_url": template.public_video_poster_url,
+        "text_summary": template.public_video_text_summary,
+        "transcript_url": template.public_video_transcript_url,
+    }
+
+
 def serialize_improvement(template, *, detail=False):
     payload = {
         "id": template.pk,
@@ -55,6 +72,7 @@ def serialize_improvement(template, *, detail=False):
             "viewpoint": template.public_viewpoint,
             "practical_steps": template.public_practical_steps,
             "next_action": template.public_next_action,
+            "video": reviewed_video(template),
             "scope": template.default_scope,
             "cost_guidance": template.cost_guidance,
             "tools_guidance": template.tools_guidance,

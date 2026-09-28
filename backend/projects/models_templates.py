@@ -168,6 +168,12 @@ class ProjectTemplate(models.Model):
     public_viewpoint = models.TextField(blank=True, default="")
     public_practical_steps = models.TextField(blank=True, default="")
     public_next_action = models.CharField(max_length=24, choices=PublicAction.choices, blank=True, default="")
+    public_video_url = models.URLField(max_length=500, blank=True, default="")
+    public_video_title = models.CharField(max_length=160, blank=True, default="")
+    public_video_description = models.CharField(max_length=320, blank=True, default="")
+    public_video_poster_url = models.URLField(max_length=500, blank=True, default="")
+    public_video_text_summary = models.TextField(blank=True, default="")
+    public_video_transcript_url = models.URLField(max_length=500, blank=True, default="")
     difficulty = models.CharField(max_length=24, choices=Difficulty.choices, blank=True, default="")
     estimated_duration_min_days = models.PositiveIntegerField(null=True, blank=True)
     estimated_duration_max_days = models.PositiveIntegerField(null=True, blank=True)
@@ -281,6 +287,10 @@ class ProjectTemplate(models.Model):
 
     def clean(self):
         super().clean()
+        for field in ("public_video_url", "public_video_poster_url", "public_video_transcript_url"):
+            value = str(getattr(self, field) or "").strip()
+            if value and not value.lower().startswith("https://"):
+                raise ValidationError({field: "Use a secure HTTPS URL."})
         if self.estimated_duration_min_days and self.estimated_duration_max_days:
             if self.estimated_duration_min_days > self.estimated_duration_max_days:
                 raise ValidationError({"estimated_duration_max_days": "Maximum duration must not be less than minimum duration."})
@@ -318,6 +328,13 @@ class ProjectTemplate(models.Model):
                         errors[field] = "Required before publishing an editorial article."
                 if self.public_evidence and not self.public_evidence_source:
                     errors["public_evidence_source"] = "A source URL is required for evidence claims."
+            if any((self.public_video_url, self.public_video_title, self.public_video_description,
+                    self.public_video_poster_url, self.public_video_text_summary, self.public_video_transcript_url)):
+                for field in ("public_video_url", "public_video_title", "public_video_description", "public_video_poster_url"):
+                    if not str(getattr(self, field) or "").strip():
+                        errors[field] = "Complete the walkthrough details before publication."
+                if not (self.public_video_text_summary.strip() or self.public_video_transcript_url.strip()):
+                    errors["public_video_text_summary"] = "Provide a text summary or transcript link."
             if not self.public_reviewed_at or not self.public_reviewed_by_id:
                 errors["public_reviewed_at"] = "A recorded human review is required before publication."
             if errors:
