@@ -27,6 +27,13 @@ INDEXABLE_ROUTES = {
             "disputes, AI assistance, privacy, and records."
         ),
     },
+    "/san-antonio/": {
+        "title": "San Antonio Home Projects & Contractor Search | MyHomeBro",
+        "description": (
+            "Plan flooring, concrete, or bathroom remodeling projects in San Antonio. "
+            "Save a request, then search, select, and invite contractors when you choose."
+        ),
+    },
 }
 
 
@@ -34,6 +41,8 @@ def canonical_path(path):
     """Return the one public canonical path for a request path."""
     if path == "/":
         return "/"
+    if path.strip("/") == "san-antonio":
+        return "/san-antonio/"
     return "/" + quote(path.strip("/"), safe="/-._~")
 
 

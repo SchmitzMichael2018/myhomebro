@@ -1,9 +1,31 @@
-from django.http import Http404, HttpResponse
+import re
+from urllib.parse import urlencode
+
+from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect
 from django.views.decorators.http import require_GET
 
 from .seo import INDEXABLE_ROUTES, SITE_ORIGIN, improvement_metadata, metadata_for_path
 from .views_frontend import spa
+
+
+_PUBLIC_HANDOFF_KEYS = (
+    "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+    "ref", "source", "qr_source", "campaign",
+)
+_SAFE_HANDOFF_VALUE = re.compile(r"^[a-zA-Z0-9 _./:+-]+$")
+
+
+@require_GET
+def canonical_public_redirect(request, destination):
+    """Canonicalize a slash alias without carrying arbitrary query parameters."""
+    params = []
+    for key in _PUBLIC_HANDOFF_KEYS:
+        value = (request.GET.get(key) or "").strip()
+        if value and len(value) <= 100 and _SAFE_HANDOFF_VALUE.fullmatch(value):
+            params.append((key, value))
+    query = urlencode(params)
+    return HttpResponsePermanentRedirect(f"{destination}?{query}" if query else destination)
 
 
 @require_GET
@@ -13,6 +35,7 @@ def robots_txt(request):
         "Allow: /",
         "Allow: /faq",
         "Allow: /improvements/",
+        "Allow: /san-antonio/",
         "Disallow: /admin/",
         "Disallow: /api/",
         "Disallow: /app/",

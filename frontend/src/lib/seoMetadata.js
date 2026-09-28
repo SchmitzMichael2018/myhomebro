@@ -36,6 +36,22 @@ const ROUTES = {
       'Clear answers about MyHomeBro projects, contractors, payments, refunds, disputes, AI assistance, privacy, and records.',
     index: true,
   },
+  '/san-antonio/': {
+    title: 'San Antonio Home Projects & Contractor Search | MyHomeBro',
+    description: 'Plan flooring, concrete, or bathroom remodeling projects in San Antonio. Save a request, then search, select, and invite contractors when you choose.',
+    socialDescription: 'Plan a San Antonio home project and choose when to search for and invite contractors.',
+    index: true,
+    structuredData: [
+      {
+        '@type': 'WebPage',
+        '@id': `${SITE_ORIGIN}/san-antonio/#webpage`,
+        url: `${SITE_ORIGIN}/san-antonio/`,
+        name: 'San Antonio Home Projects & Contractor Search | MyHomeBro',
+        description: 'Plan a home project in San Antonio, save a request, and manually search for and invite contractors.',
+        isPartOf: { '@id': `${SITE_ORIGIN}/#website` },
+      },
+    ],
+  },
   '/login': { title: 'Log In | MyHomeBro', index: false },
   '/signup': { title: 'Create Your MyHomeBro Account', index: false },
   '/register': { title: 'Create Your MyHomeBro Account', index: false },
@@ -61,6 +77,7 @@ export function normalizeCanonicalPath(pathname = '/') {
   const path = `/${String(pathname)
     .split(/[?#]/, 1)[0]
     .replace(/^\/+|\/+$/g, '')}`;
+  if (path === '/san-antonio') return '/san-antonio/';
   return path === '/' ? '/' : path;
 }
 
