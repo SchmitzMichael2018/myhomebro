@@ -35,4 +35,13 @@ describe('public SEO metadata', () => {
     expect(metadata.canonicalUrl).not.toBe('https://www.myhomebro.com/');
     expect(metadata.title).not.toContain('Secure Escrow Payments');
   });
+
+  it('uses the same slash-canonical San Antonio metadata without attribution parameters', () => {
+    const metadata = resolveSeoMetadata('/san-antonio/?utm_source=example');
+    expect(metadata.canonicalUrl).toBe('https://www.myhomebro.com/san-antonio/');
+    expect(metadata.robots).toBe('index, follow');
+    expect(metadata.structuredData[0]['@type']).toBe('WebPage');
+    expect(metadata.structuredData[0].url).toBe(metadata.canonicalUrl);
+    expect(resolveSeoMetadata('/start-project/').canonicalUrl).toBe('https://www.myhomebro.com/start-project');
+  });
 });

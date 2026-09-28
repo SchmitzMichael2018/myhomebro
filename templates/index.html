@@ -61,6 +61,9 @@
     {% if seo_indexable and seo_canonical_url == "https://www.myhomebro.com/" %}
     <script type="application/ld+json" nonce="{{ csp_nonce }}">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://www.myhomebro.com/#organization","name":"MyHomeBro","url":"https://www.myhomebro.com/","logo":"https://www.myhomebro.com/static/myhomebro_logo.png","description":"Plan DIY projects, connect with contractors, manage agreements, track milestones, make project payments, and keep your home improvements organized with MyHomeBro."},{"@type":"WebSite","@id":"https://www.myhomebro.com/#website","url":"https://www.myhomebro.com/","name":"MyHomeBro","publisher":{"@id":"https://www.myhomebro.com/#organization"}}]}</script>
     {% endif %}
+    {% if seo_canonical_url == "https://www.myhomebro.com/san-antonio/" %}
+    <script type="application/ld+json" data-seo-structured-data nonce="{{ csp_nonce }}">{"@context":"https://schema.org","@type":"WebPage","@id":"https://www.myhomebro.com/san-antonio/#webpage","url":"https://www.myhomebro.com/san-antonio/","name":"San Antonio Home Projects & Contractor Search | MyHomeBro","description":"Plan a home project in San Antonio, save a request, and manually search for and invite contractors.","isPartOf":{"@id":"https://www.myhomebro.com/#website"}}</script>
+    {% endif %}
   </head>
   <body>
     <div id="root" aria-live="polite"></div>

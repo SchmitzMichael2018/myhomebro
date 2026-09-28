@@ -16,6 +16,34 @@ from django.urls import reverse
     },
 )
 class SeoFoundationTests(TestCase):
+    def test_san_antonio_launch_has_server_visible_metadata_and_truthful_schema(self):
+        response = self.client.get("/san-antonio/?utm_source=test")
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn("San Antonio Home Projects &amp; Contractor Search", html)
+        self.assertIn('href="https://www.myhomebro.com/san-antonio/"', html)
+        self.assertIn('content="index, follow"', html)
+        payload = html.split('<script type="application/ld+json"', 1)[1].split('>', 1)[1].split('</script>', 1)[0]
+        schema = json.loads(payload)
+        self.assertEqual(schema["@type"], "WebPage")
+        self.assertNotIn("aggregateRating", payload)
+        self.assertNotIn("offers", payload)
+        self.assertNotIn("utm_source", schema["url"])
+
+    def test_public_launch_and_intake_slash_aliases_are_safe_and_loop_free(self):
+        query = "?utm_source=Local&ref=TEST-1&source=qr&next=%2Fadmin%2F&unsafe=secret"
+        launch = self.client.get(f"/san-antonio{query}")
+        self.assertEqual(launch.status_code, 301)
+        self.assertEqual(launch["Location"], "/san-antonio/?utm_source=Local&ref=TEST-1&source=qr")
+        self.assertEqual(self.client.get(launch["Location"]).status_code, 200)
+        intake = self.client.get(f"/start-project/{query}")
+        self.assertEqual(intake.status_code, 301)
+        self.assertEqual(intake["Location"], "/start-project?utm_source=Local&ref=TEST-1&source=qr")
+        final = self.client.get(intake["Location"])
+        self.assertEqual(final.status_code, 200)
+        self.assertContains(final, 'href="https://www.myhomebro.com/start-project"')
+        self.assertContains(final, 'content="noindex, nofollow"')
+
     def test_homepage_has_complete_search_and_social_metadata(self):
         response = self.client.get(reverse("spa_index"))
 
@@ -88,6 +116,7 @@ class SeoFoundationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Allow: /improvements/", body)
+        self.assertIn("Allow: /san-antonio/", body)
         self.assertIn("Disallow: /admin/", body)
         self.assertIn("Disallow: /api/", body)
         self.assertIn("Disallow: /app/", body)
@@ -101,5 +130,6 @@ class SeoFoundationTests(TestCase):
         self.assertEqual(len(urls), len(set(urls)))
         self.assertIn("https://www.myhomebro.com/", urls)
         self.assertIn("https://www.myhomebro.com/faq", urls)
+        self.assertIn("https://www.myhomebro.com/san-antonio/", urls)
         self.assertIn("https://www.myhomebro.com/legal/privacy-policy/", urls)
         self.assertFalse(any("/app/" in url or "/portal/" in url for url in urls))

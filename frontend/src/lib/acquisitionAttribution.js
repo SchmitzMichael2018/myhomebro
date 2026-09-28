@@ -56,6 +56,7 @@ export async function trackAcquisitionEvent(
 
 export function publicRouteEvent(pathname) {
   if (pathname === '/') return 'landing_view';
+  if (pathname === '/san-antonio/' || pathname === '/san-antonio') return 'landing_view';
   if (pathname === '/faq' || pathname.includes('/guide')) return 'guide_view';
   if (
     pathname === '/improvements' ||

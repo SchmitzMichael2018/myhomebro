@@ -94,6 +94,7 @@ const CustomerPortalActivationPage = lazy(
 const PublicEstimateAppointmentConfirmationPage = lazy(
   () => import('../pages/PublicEstimateAppointmentConfirmationPage.jsx')
 );
+const SanAntonioLaunchPage = lazy(() => import('../pages/SanAntonioLaunchPage.jsx'));
 
 function PortalTokenRedirect() {
   const { token = '' } = useParams();
@@ -147,6 +148,7 @@ export default function PublicRoutes() {
 
         {/* Landing & Auth */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/san-antonio/" element={<SanAntonioLaunchPage />} />
         <Route path="/faq" element={<PublicFaqPage />} />
         <Route
           path="/improvements"
