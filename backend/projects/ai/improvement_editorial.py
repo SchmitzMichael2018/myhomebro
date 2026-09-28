@@ -70,6 +70,7 @@ def propose_article_sections(*, mode, section, context):
         ],
         temperature=0.3,
         max_output_tokens=1200,
+        store=False,
     )
     try:
         result = json.loads(response.output_text or "")

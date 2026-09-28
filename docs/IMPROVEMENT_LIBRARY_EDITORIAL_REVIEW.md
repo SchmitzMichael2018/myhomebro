@@ -12,6 +12,8 @@ Manage the drafts at `/app/admin/improvements`. These preview routes require an 
 
 In the admin portal, open **Admin Dashboard → Improvement Library** (or use the Improvement Library item in the admin sidebar). Filter the article list by draft, ready for review, published, or archived. Open a draft to edit the problem, evidence/source, Our take, practical steps, action, and metadata; **Save draft** before using **Preview design**. Use **+ New draft** to create another. **Submit for review**, **Record review**, and **Publish reviewed article** are separate actions; unsaved edits block these transitions.
 
+For this initial launch, the staff author may also record the review. The review transition stores that staff user's identity and the review timestamp; it does not publish the article. Editorial changes clear the prior review and return the article to draft. A separate-reviewer requirement would be a future policy change, not a control currently enforced by the application.
+
 Project Assistant writing help in the editor prepares an outline, narrative draft, or rewrite of a selected narrative section. It uses the current audience, problem, evidence/source, and viewpoint as context, but cannot edit evidence, source links, or numerical claims. A proposal appears in editable review fields and does not enter the article until staff selects **Insert into editor**; inserting still does not save, submit, or publish. Staff should verify all suggested claims and the intended MyHomeBro viewpoint before saving. If AI is unavailable or its output fails safety checks, continue editing manually.
 
 ## Claim and source review before publication
