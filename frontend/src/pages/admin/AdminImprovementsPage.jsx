@@ -95,9 +95,15 @@ export default function AdminImprovementsPage() {
   const [aiError, setAiError] = useState('');
   const [proposal, setProposal] = useState(null);
   const [proposalBasis, setProposalBasis] = useState('');
+  const [proposalSection, setProposalSection] = useState('');
   const [reviewFlags, setReviewFlags] = useState([]);
   const proposalRequestId = useRef(0);
   const dirty = JSON.stringify(form) !== JSON.stringify(savedForm);
+  const proposalIsStale = Boolean(
+    proposal &&
+      (proposalBasis !== JSON.stringify(form) ||
+        (proposal.section_body && proposalSection !== aiSection))
+  );
   const visibleRows = rows.filter(
     (row) => statusFilter === 'all' || row.publication_status === statusFilter
   );
@@ -134,6 +140,7 @@ export default function AdminImprovementsPage() {
   useEffect(() => {
     proposalRequestId.current += 1;
     setProposal(null);
+    setProposalSection('');
     setAiError('');
     setAiBusy(false);
     load();
@@ -181,15 +188,17 @@ export default function AdminImprovementsPage() {
     setAiError('');
     setProposal(null);
     try {
+      const requestedSection = aiSection;
       const { data } = await api.post('/projects/admin/improvements/assist/', {
         mode,
         section: mode === 'section'
-          ? aiSection.slice(8)
-          : mode === 'rewrite' ? aiSection : undefined,
+          ? requestedSection.slice(8)
+          : mode === 'rewrite' ? requestedSection : undefined,
         article: form,
       });
       if (requestId === proposalRequestId.current) {
         setProposal(data.proposal);
+        setProposalSection(requestedSection);
         setReviewFlags(data.review_flags || []);
         setProposalBasis(JSON.stringify(form));
       }
@@ -205,9 +214,9 @@ export default function AdminImprovementsPage() {
     }
   };
   const insertProposal = () => {
-    if (!proposal || proposalBasis !== JSON.stringify(form)) return;
-    if (proposal.section_body && aiSection.startsWith('section:')) {
-      const sectionId = aiSection.slice(8);
+    if (!proposal || proposalIsStale) return;
+    if (proposal.section_body && proposalSection.startsWith('section:')) {
+      const sectionId = proposalSection.slice(8);
       set('public_sections', form.public_sections.map((item) =>
         item.id === sectionId ? { ...item, body: proposal.section_body } : item
       ));
@@ -416,7 +425,7 @@ export default function AdminImprovementsPage() {
                 error={aiError}
                 proposal={proposal}
                 reviewFlags={reviewFlags}
-                stale={Boolean(proposal && proposalBasis !== JSON.stringify(form))}
+                stale={proposalIsStale}
                 showBrief
                 onBriefChange={(key, value) =>
                   set('public_editorial_brief', {

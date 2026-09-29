@@ -314,9 +314,11 @@ class ProjectTemplate(models.Model):
         for section in self.public_sections:
             if not isinstance(section, dict) or set(section) != {"id", "title", "body"}:
                 raise ValidationError({"public_sections": "Each article section must include only an ID, title, and body."})
-            section_id = str(section.get("id") or "").strip()
-            title = str(section.get("title") or "").strip()
-            body = str(section.get("body") or "").strip()
+            if any(not isinstance(section.get(field), str) for field in ("id", "title", "body")):
+                raise ValidationError({"public_sections": "Section IDs, titles, and body text must be text."})
+            section_id = section["id"].strip()
+            title = section["title"].strip()
+            body = section["body"].strip()
             if (
                 not section_id
                 or len(section_id) > 80

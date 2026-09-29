@@ -105,6 +105,10 @@ test('staff manages ordered sections and applies an unsaved AI section proposal'
   await page.getByRole('button', { name: 'Create selected section' }).click();
   await expect(page.getByTestId('editorial-ai-proposal')).toBeVisible();
   await expect(page.getByLabel('Section text')).toHaveValue('');
+  const sectionSelect = page.getByTestId('improvement-editorial-assistant').getByRole('combobox', { name: 'Section' });
+  await sectionSelect.selectOption('public_problem');
+  await expect(page.getByRole('button', { name: 'Insert into editor' })).toBeDisabled();
+  await sectionSelect.selectOption({ label: 'Outside help' });
   await page.getByTestId('editorial-ai-proposal').getByLabel('Outside help').fill('Staff-edited mediation guidance.');
   await page.getByRole('button', { name: 'Insert into editor' }).click();
   await expect(page.getByLabel('Section text')).toHaveValue('Staff-edited mediation guidance.');

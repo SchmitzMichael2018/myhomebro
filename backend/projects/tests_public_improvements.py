@@ -1,4 +1,5 @@
 import json
+import importlib
 import struct
 from pathlib import Path
 from types import SimpleNamespace
@@ -389,6 +390,28 @@ class ImprovementEditorialWorkflowTests(TestCase):
             404,
         )
 
+    def test_payment_risk_migration_preserves_later_staff_edits(self):
+        balanced = ProjectTemplate.objects.get(public_slug="payment-risk-for-both-sides")
+        balanced.public_summary = "Staff-authored summary that must survive deployment."
+        balanced.save(update_fields=["public_summary"])
+        migration = importlib.import_module(
+            "projects.migrations.0332_improvement_article_sections"
+        )
+
+        migration.revise_payment_risk_draft(
+            SimpleNamespace(get_model=lambda app, model: ProjectTemplate), None
+        )
+
+        balanced.refresh_from_db()
+        self.assertEqual(
+            balanced.public_summary,
+            "Staff-authored summary that must survive deployment.",
+        )
+        self.assertEqual(balanced.public_publication_status, "draft")
+        self.assertEqual(
+            balanced.public_sections[-1]["id"], "when-to-seek-outside-help"
+        )
+
     def test_staff_assistance_is_proposal_only_and_never_publishes(self):
         endpoint = "/api/projects/admin/improvements/assist/"
         context = {
@@ -479,6 +502,13 @@ class ImprovementEditorialWorkflowTests(TestCase):
         )
         self.assertEqual(invalid.status_code, 400)
         self.assertIn("public_sections", invalid.json())
+        non_text = self.client.patch(
+            detail,
+            {"public_sections": [{"id": "unsafe", "title": {"text": "Title"}, "body": ["Body"]}]},
+            format="json",
+        )
+        self.assertEqual(non_text.status_code, 400)
+        self.assertIn("public_sections", non_text.json())
 
         self.assertEqual(self.client.post(f"{detail}submit/").status_code, 200)
         self.assertEqual(self.client.post(f"{detail}review/").status_code, 200)
