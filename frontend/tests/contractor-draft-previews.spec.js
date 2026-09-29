@@ -52,6 +52,12 @@ for (const [slug, ctaTitle, intent, firstStep, lastStep] of guideCases) {
       await expect(page.getByRole('heading', { name: ctaTitle })).toBeVisible();
       await expect(page.getByTestId('contractor-visual-example')).toContainText(firstStep);
       await expect(page.getByTestId('contractor-visual-example')).toContainText(lastStep);
+      if (slug === 'contractor-change-orders') {
+        await expect(page.getByTestId('contractor-visual-example')).toContainText('Document approval');
+      }
+      if (slug === 'contractor-deposit-vs-milestones') {
+        await expect(page.getByRole('heading', { name: 'Our take' }).locator('..')).toContainText('not automatically held or protected');
+      }
       await expect(page.getByTestId('walkthrough-placement')).toBeVisible();
       await expect(page.getByTestId('walkthrough-video')).toHaveCount(0);
       await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow');

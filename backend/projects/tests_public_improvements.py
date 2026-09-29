@@ -342,6 +342,9 @@ class ImprovementEditorialWorkflowTests(TestCase):
             self.client.force_authenticate(user=None)
         payment = ProjectTemplate.objects.get(public_slug="contractor-payment-plan")
         self.assertIn("not a residential-contractor statistic", payment.public_evidence)
+        deposit = ProjectTemplate.objects.get(public_slug="contractor-deposit-vs-milestones")
+        self.assertIn("not automatically held or protected", deposit.public_viewpoint)
+        self.assertIn("not money held through MyHomeBro", deposit.public_viewpoint)
         change = ProjectTemplate.objects.get(public_slug="contractor-change-orders")
         self.assertIn("does not show that contractors caused", change.public_evidence)
 

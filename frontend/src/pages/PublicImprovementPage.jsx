@@ -70,7 +70,7 @@ const contractorGuides = {
       ['Pause', 'Pause the affected work while the new condition is assessed.'],
       ['Document', 'Photograph what is known and note what still needs inspection.'],
       ['Explain options', 'Show the proposed scope, price, and schedule impact.'],
-      ['Approval', 'Record the customer decision in an amendment.'],
+      ['Document approval', 'Record the customer decision in an amendment.'],
       ['Agreed work', 'Continue the extra work only after the change is approved.'],
     ],
     ctaTitle: 'Keep scope changes connected to the agreement',
