@@ -39,6 +39,11 @@ def reviewed_video(template):
 
 
 def serialize_improvement(template, *, detail=False):
+    audiences = template.public_audiences or [template.public_audience]
+    audience_actions = {
+        audience: template.public_audience_actions.get(audience, template.public_next_action)
+        for audience in audiences
+    }
     payload = {
         "id": template.pk,
         "slug": template.public_slug,
@@ -48,6 +53,12 @@ def serialize_improvement(template, *, detail=False):
         "summary": template.public_summary,
         "audience": template.public_audience,
         "audience_label": template.get_public_audience_display(),
+        "audiences": audiences,
+        "audience_labels": [
+            dict(ProjectTemplate.PublicAudience.choices).get(value, value)
+            for value in audiences
+        ],
+        "audience_actions": audience_actions,
         "difficulty": template.difficulty,
         "difficulty_label": template.get_difficulty_display() if template.difficulty else "",
         "estimated_duration_min_days": template.estimated_duration_min_days,
@@ -117,7 +128,9 @@ class PublicImprovementLibraryView(APIView):
         audience = str(request.query_params.get("audience") or "").strip()
         category = str(request.query_params.get("category") or "").strip()
         if audience in ProjectTemplate.PublicAudience.values:
-            queryset = queryset.filter(public_audience=audience)
+            queryset = queryset.filter(
+                Q(public_audiences__icontains=audience) | Q(public_audience=audience)
+            )
         if category:
             queryset = queryset.filter(public_category_slug=category)
         if query:
@@ -132,7 +145,15 @@ class PublicImprovementLibraryView(APIView):
                 | Q(description__icontains=query)
             )
         rows = list(queryset.annotate(
-            launch_order=Case(When(public_audience=ProjectTemplate.PublicAudience.CONTRACTOR, then=Value(0)), default=Value(1), output_field=IntegerField())
+            launch_order=Case(
+                When(
+                    Q(public_audiences__icontains=ProjectTemplate.PublicAudience.CONTRACTOR)
+                    | Q(public_audience=ProjectTemplate.PublicAudience.CONTRACTOR),
+                    then=Value(0),
+                ),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
         ).order_by("launch_order", "-is_featured_public", "-public_published_at", "name", "pk"))
         categories = {}
         for item in all_published.order_by("pk"):
@@ -144,7 +165,10 @@ class PublicImprovementLibraryView(APIView):
         return Response({
             "categories": list(categories.values()),
             "published_count": sum(category["count"] for category in categories.values()),
-            "contractor_published_count": all_published.filter(public_audience=ProjectTemplate.PublicAudience.CONTRACTOR).count(),
+            "contractor_published_count": all_published.filter(
+                Q(public_audiences__icontains=ProjectTemplate.PublicAudience.CONTRACTOR)
+                | Q(public_audience=ProjectTemplate.PublicAudience.CONTRACTOR)
+            ).count(),
             "improvements": [serialize_improvement(item) for item in rows],
         })
 

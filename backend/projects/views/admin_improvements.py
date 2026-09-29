@@ -11,11 +11,12 @@ from rest_framework.views import APIView
 
 from projects.models_templates import ProjectTemplate
 from projects.views.public_improvements import serialize_improvement
-from projects.ai.improvement_editorial import propose_article_sections
+from projects.ai.improvement_editorial import proposal_review_flags, propose_article_sections
 
 
 EDITABLE_FIELDS = (
     "public_title", "public_slug", "public_category_slug", "public_audience",
+    "public_audiences", "public_audience_actions", "public_editorial_brief",
     "public_summary", "public_problem", "public_evidence", "public_evidence_source",
     "public_viewpoint", "public_practical_steps", "public_next_action",
     "public_video_url", "public_video_title", "public_video_description",
@@ -56,6 +57,21 @@ def valid_related_ids(value):
     return isinstance(value, list) and all(isinstance(item, int) and not isinstance(item, bool) and item > 0 for item in value)
 
 
+def sync_legacy_audience_fields(article):
+    audiences = article.public_audiences or [article.public_audience]
+    article.public_audiences = audiences
+    article.public_audience = audiences[0]
+    if not article.public_audience_actions:
+        article.public_audience_actions = {
+            audience: article.public_next_action or ProjectTemplate.PublicAction.CREATE_PROJECT
+            for audience in audiences
+        }
+    article.public_next_action = article.public_audience_actions.get(
+        article.public_audience,
+        article.public_next_action or ProjectTemplate.PublicAction.CREATE_PROJECT,
+    )
+
+
 class AdminImprovementListView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -75,6 +91,7 @@ class AdminImprovementListView(APIView):
             if field in data:
                 setattr(article, field, data[field])
         article.public_publication_status = ProjectTemplate.PublicPublicationStatus.DRAFT
+        sync_legacy_audience_fields(article)
         try:
             article.full_clean()
         except ValidationError as exc:
@@ -102,18 +119,28 @@ class AdminImprovementAssistView(APIView):
             return Response({"detail": "Choose a valid writing action."}, status=400)
         if not isinstance(context, dict) or len(str(context)) > 20000:
             return Response({"detail": "Provide an article draft for assistance."}, status=400)
-        if not str(context.get("public_problem") or context.get("public_title") or "").strip():
-            return Response({"detail": "Enter an article title or problem first."}, status=400)
-        if context.get("public_audience") not in ProjectTemplate.PublicAudience.values:
-            return Response({"detail": "Choose a valid audience."}, status=400)
+        brief = context.get("public_editorial_brief") or {}
+        if not str(context.get("public_problem") or context.get("public_title") or brief.get("idea") or brief.get("problem")).strip():
+            return Response({"detail": "Add an article idea, problem, or title first."}, status=400)
+        audiences = context.get("public_audiences") or [context.get("public_audience")]
+        if not isinstance(audiences, list) or not audiences or any(
+            value not in ProjectTemplate.PublicAudience.values for value in audiences
+        ):
+            return Response({"detail": "Choose at least one valid audience."}, status=400)
         try:
             proposal = propose_article_sections(mode=mode, section=section, context=context)
+            review_flags = proposal_review_flags(proposal)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         except Exception:
             # Provider details, prompts, and credentials must not reach the client.
             return Response({"detail": "Project Assistant is unavailable. Continue editing manually."}, status=503)
-        return Response({"proposal": proposal, "saved": False, "publication_status": None})
+        return Response({
+            "proposal": proposal,
+            "review_flags": review_flags,
+            "saved": False,
+            "publication_status": None,
+        })
 
 
 class AdminImprovementDetailView(APIView):
@@ -144,6 +171,7 @@ class AdminImprovementDetailView(APIView):
         article.public_reviewed_by = None
         article.public_publication_status = ProjectTemplate.PublicPublicationStatus.DRAFT
         article.public_published_at = None
+        sync_legacy_audience_fields(article)
         try:
             article.full_clean()
         except ValidationError as exc:

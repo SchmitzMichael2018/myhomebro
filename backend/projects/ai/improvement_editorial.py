@@ -19,6 +19,15 @@ _UNSAFE_CLAIMS = re.compile(
     r"\bescrow\b|\b(?:no|zero)\s+disputes\b",
     re.IGNORECASE,
 )
+_UNIVERSAL_LEGAL_ADVICE = re.compile(
+    r"\b(?:always|immediately|simply|just)\b.{0,40}\b(?:file|record|pursue)\b.{0,20}\b(?:a\s+)?lien\b|"
+    r"\b(?:lien|lawsuit|small claims|legal action)\b.{0,50}\b(?:guarantees?|ensures?|will)\b",
+    re.IGNORECASE,
+)
+_QUESTIONABLE_CLAIM = re.compile(
+    r"\b(?:lien|lawsuit|small claims|attorney|legal remedy|deposit protection|automatically protected)\b",
+    re.IGNORECASE,
+)
 _UNSAFE_ATTRIBUTION = re.compile(
     r"\b(?:study|survey|report|research|according to|data shows|source says|FTC|Houzz|QuickBooks)\b",
     re.IGNORECASE,
@@ -30,34 +39,46 @@ class UnsafeEditorialProposal(ValueError):
 
 
 def propose_article_sections(*, mode, section, context):
-    if mode not in {"outline", "draft", "rewrite"}:
+    if mode not in {"titles", "outline", "draft", "rewrite"}:
         raise ValueError("Unsupported proposal mode.")
     if mode == "rewrite" and section not in REWRITE_FIELDS:
         raise ValueError("Select a narrative section to rewrite. Evidence and sources require manual editing.")
-    fields = (section,) if mode == "rewrite" else (
-        ("public_practical_steps",) if mode == "outline" else PROPOSAL_FIELDS
-    )
+    fields = (section,) if mode == "rewrite" else {
+        "titles": ("article_titles", "seo_titles"),
+        "outline": ("editorial_outline",),
+        "draft": PROPOSAL_FIELDS,
+    }[mode]
     # The source URL is context only. The provider cannot create or edit evidence or citations.
     user_context = {
         key: str(context.get(key) or "")[:4000]
         for key in (
-            "public_title", "public_audience", "public_problem", "public_evidence",
+            "public_title", "public_problem", "public_evidence",
             "public_evidence_source", "public_viewpoint", "public_summary",
             "public_practical_steps", "public_next_action",
         )
     }
+    user_context["public_audiences"] = [
+        str(value)[:40] for value in (context.get("public_audiences") or [context.get("public_audience")])
+    ]
+    brief = context.get("public_editorial_brief") or {}
+    user_context["editorial_brief"] = {
+        key: str(brief.get(key) or "")[:3000]
+        for key in ("idea", "problem", "readers", "viewpoint", "desired_action", "sources")
+    }
     instructions = (
         "You are MyHomeBro Project Assistant preparing an UNVERIFIED editorial proposal for a staff editor. "
         "Return one JSON object with only the requested field names and string values. "
-        "Use the supplied audience, problem, evidence/source, and existing viewpoint as context. "
+        "Use every supplied audience, the optional brief, problem, evidence/source, and existing viewpoint as context. "
         "Do not claim to have visited or read a source URL. Never invent a citation, source, statistic, "
         "population, date, legal rule, product capability, payment guarantee, escrow guarantee, or dispute outcome. "
         "Do not repeat or rewrite numerical evidence: the editor controls the separate evidence field. "
         "Use no digits, percentages, currency amounts, URLs, or source attributions in your answer. "
-        "Keep any viewpoint provisional and consistent with the supplied MyHomeBro viewpoint; "
-        "if none is supplied, omit the viewpoint field. Use hyphen bullets instead of numbered steps. "
-        "A milestone or deposit is not a guarantee of payment, and payment release can depend on approval "
-        "and disputes. Do not publish, save, or represent this proposal as reviewed."
+        "Create a balanced MyHomeBro viewpoint when requested even if the current viewpoint is empty. "
+        "For multiple audiences, distinguish role-appropriate final actions. Use hyphen bullets instead of numbered steps. "
+        "A deposit is not automatic protection. Do not promise payment or completion. Do not casually recommend liens, "
+        "lawsuits, or other legal remedies as universal steps. Flag uncertainty through cautious wording. "
+        "Do not publish, save, or represent this proposal as reviewed. For title mode return three editable article_titles "
+        "and three editable seo_titles as arrays of strings. For outline mode return editorial_outline as a string."
     )
     client = _require_openai_client()
     response = client.responses.create(
@@ -82,19 +103,45 @@ def propose_article_sections(*, mode, section, context):
         raise UnsafeEditorialProposal("Project Assistant returned an unexpected section.")
     if mode == "rewrite" and set(result) != {section}:
         raise UnsafeEditorialProposal("Project Assistant did not return the selected section.")
-    if mode == "outline" and set(result) != {"public_practical_steps"}:
+    if mode == "titles" and set(result) != {"article_titles", "seo_titles"}:
+        raise UnsafeEditorialProposal("Project Assistant did not return title suggestions.")
+    if mode == "outline" and set(result) != {"editorial_outline"}:
         raise UnsafeEditorialProposal("Project Assistant did not return an outline.")
     if mode == "draft" and not {"public_summary", "public_problem", "public_practical_steps"}.issubset(result):
         raise UnsafeEditorialProposal("Project Assistant did not return a complete narrative draft.")
     proposal = {}
     for key, value in result.items():
-        if key == "public_viewpoint" and not user_context["public_viewpoint"].strip():
-            continue
-        if not isinstance(value, str) or not value.strip() or len(value) > 4000:
+        values = value if isinstance(value, list) else [value]
+        if key in {"article_titles", "seo_titles"} and (
+            len(values) < 2 or len(values) > 6 or any(not isinstance(item, str) for item in values)
+        ):
+            raise UnsafeEditorialProposal("Project Assistant returned invalid title suggestions.")
+        if key not in {"article_titles", "seo_titles"} and not isinstance(value, str):
             raise UnsafeEditorialProposal("Project Assistant returned an invalid section.")
-        if re.search(r"\d|https?://|www\.|\bcited by\b", value, re.IGNORECASE) or _UNSAFE_CLAIMS.search(value) or _UNSAFE_ATTRIBUTION.search(value):
-            raise UnsafeEditorialProposal("Project Assistant returned a claim requiring manual source review.")
-        proposal[key] = value.strip()
+        cleaned = []
+        for item in values:
+            if not item.strip() or len(item) > 4000:
+                raise UnsafeEditorialProposal("Project Assistant returned an invalid section.")
+            if (
+                re.search(r"\d|https?://|www\.|\bcited by\b", item, re.IGNORECASE)
+                or _UNSAFE_CLAIMS.search(item)
+                or _UNSAFE_ATTRIBUTION.search(item)
+                or _UNIVERSAL_LEGAL_ADVICE.search(item)
+            ):
+                raise UnsafeEditorialProposal("Project Assistant returned a claim requiring manual source review.")
+            cleaned.append(item.strip())
+        proposal[key] = cleaned if isinstance(value, list) else cleaned[0]
     if not proposal:
         raise UnsafeEditorialProposal("Project Assistant did not return a usable proposal.")
     return proposal
+
+
+def proposal_review_flags(proposal):
+    text = " ".join(
+        item
+        for value in proposal.values()
+        for item in (value if isinstance(value, list) else [value])
+    )
+    if _QUESTIONABLE_CLAIM.search(text):
+        return ["Review legal or payment-protection language with an appropriate source before use."]
+    return []

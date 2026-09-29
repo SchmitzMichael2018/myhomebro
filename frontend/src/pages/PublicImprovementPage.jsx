@@ -298,20 +298,29 @@ export default function PublicImprovementPage({ preview = false }) {
               <p className="mt-3 leading-7 text-slate-700">
                 {contractorGuide?.ctaDescription || 'Use MyHomeBro to organize the project conversation. Features and payment options depend on the project setup and agreement.'}
               </p>
-              <button
-                type="button"
-                onClick={() =>
-                  act(
-                    item.next_action === 'sign_up'
-                      ? 'signup_started'
-                      : 'hire_pro_clicked',
-                    editorialTarget(item, contractorGuide)
-                  )
-                }
-                className={`mt-5 min-h-12 rounded-xl px-5 font-bold ${contractorGuide ? 'bg-[#071b34] text-white hover:bg-[#153959]' : 'bg-blue-700 text-white hover:bg-blue-800'}`}
-              >
-                {contractorGuide?.ctaLabel || editorialActionLabel(item.next_action)}
-              </button>
+              <div className="mt-5 flex flex-wrap gap-3">
+                {(item.audiences || [item.audience]).map((audience) => {
+                  const action = item.audience_actions?.[audience] || item.next_action;
+                  const label = audience === 'contractor' ? 'Contractor' : audience === 'property_manager' ? 'Property manager' : 'Homeowner';
+                  return (
+                    <button
+                      key={audience}
+                      type="button"
+                      onClick={() =>
+                        act(
+                          action === 'sign_up' ? 'signup_started' : 'hire_pro_clicked',
+                          editorialTarget(item, contractorGuide, audience, action)
+                        )
+                      }
+                      className={`min-h-12 rounded-xl px-5 font-bold ${contractorGuide ? 'bg-[#071b34] text-white hover:bg-[#153959]' : 'bg-blue-700 text-white hover:bg-blue-800'}`}
+                    >
+                      {contractorGuide?.ctaLabel && (item.audiences || []).length === 1
+                        ? contractorGuide.ctaLabel
+                        : `${label}: ${editorialActionLabel(action)}`}
+                    </button>
+                  );
+                })}
+              </div>
             </section>
           </div>
         ) : (
@@ -545,18 +554,22 @@ function editorialActionLabel(action) {
   );
 }
 
-function editorialTarget(item, contractorGuide) {
+function editorialTarget(item, contractorGuide, audience, action) {
+  const selectedAudience = audience || item.audience || item.public_audience;
+  const selectedAction = action || item.next_action || 'create_project';
   const context = new URLSearchParams({
     source: 'improvement_library',
     template_id: String(item.id),
     article: item.slug,
-    cta: item.next_action || 'create_project',
+    audience: selectedAudience,
+    cta: selectedAction,
   });
   if (contractorGuide?.intent) context.set('intent', contractorGuide.intent);
-  if (item.next_action === 'sign_up') {
+  if (selectedAction === 'sign_up') {
     const continuation = new URLSearchParams({
       source: 'improvement_library',
       article: item.slug,
+      audience: selectedAudience,
       cta: 'sign_up',
     });
     if (contractorGuide?.intent) continuation.set('intent', contractorGuide.intent);
@@ -572,11 +585,11 @@ function editorialTarget(item, contractorGuide) {
       if (current.has(key)) continuation.set(key, current.get(key));
     }
     context.set('next', `${item.canonical_path}?${continuation}`);
-    if ((item.audience || item.public_audience) === 'contractor')
+    if (selectedAudience === 'contractor')
       return `/signup?${context}`;
     context.set(
       'role',
-      (item.audience || item.public_audience) === 'property_manager'
+      selectedAudience === 'property_manager'
         ? 'property_manager'
         : 'customer'
     );
