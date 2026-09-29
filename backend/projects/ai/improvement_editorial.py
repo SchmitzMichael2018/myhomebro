@@ -39,14 +39,27 @@ class UnsafeEditorialProposal(ValueError):
 
 
 def propose_article_sections(*, mode, section, context):
-    if mode not in {"titles", "outline", "draft", "rewrite"}:
+    if mode not in {"titles", "outline", "draft", "rewrite", "section"}:
         raise ValueError("Unsupported proposal mode.")
     if mode == "rewrite" and section not in REWRITE_FIELDS:
         raise ValueError("Select a narrative section to rewrite. Evidence and sources require manual editing.")
+    selected_section = None
+    if mode == "section":
+        selected_section = next(
+            (
+                item
+                for item in context.get("public_sections") or []
+                if isinstance(item, dict) and str(item.get("id")) == str(section)
+            ),
+            None,
+        )
+        if selected_section is None:
+            raise ValueError("Select an article section for writing help.")
     fields = (section,) if mode == "rewrite" else {
         "titles": ("article_titles", "seo_titles"),
         "outline": ("editorial_outline",),
         "draft": PROPOSAL_FIELDS,
+        "section": ("section_body",),
     }[mode]
     # The source URL is context only. The provider cannot create or edit evidence or citations.
     user_context = {
@@ -65,6 +78,11 @@ def propose_article_sections(*, mode, section, context):
         key: str(brief.get(key) or "")[:3000]
         for key in ("idea", "problem", "readers", "viewpoint", "desired_action", "sources")
     }
+    if selected_section:
+        user_context["selected_section"] = {
+            "title": str(selected_section.get("title") or "")[:160],
+            "body": str(selected_section.get("body") or "")[:4000],
+        }
     instructions = (
         "You are MyHomeBro Project Assistant preparing an UNVERIFIED editorial proposal for a staff editor. "
         "Return one JSON object with only the requested field names and string values. "
@@ -77,6 +95,7 @@ def propose_article_sections(*, mode, section, context):
         "For multiple audiences, distinguish role-appropriate final actions. Use hyphen bullets instead of numbered steps. "
         "A deposit is not automatic protection. Do not promise payment or completion. Do not casually recommend liens, "
         "lawsuits, or other legal remedies as universal steps. Flag uncertainty through cautious wording. "
+        "For section mode, return only section_body text for the selected section title and context. "
         "Do not publish, save, or represent this proposal as reviewed. For title mode return three editable article_titles "
         "and three editable seo_titles as arrays of strings. For outline mode return editorial_outline as a string."
     )
@@ -102,6 +121,8 @@ def propose_article_sections(*, mode, section, context):
     if set(result) - set(fields):
         raise UnsafeEditorialProposal("Project Assistant returned an unexpected section.")
     if mode == "rewrite" and set(result) != {section}:
+        raise UnsafeEditorialProposal("Project Assistant did not return the selected section.")
+    if mode == "section" and set(result) != {"section_body"}:
         raise UnsafeEditorialProposal("Project Assistant did not return the selected section.")
     if mode == "titles" and set(result) != {"article_titles", "seo_titles"}:
         raise UnsafeEditorialProposal("Project Assistant did not return title suggestions.")

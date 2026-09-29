@@ -37,9 +37,16 @@ export default function ImprovementEditorialAssistant({
   onInsert,
   onDiscard,
 }) {
-  const selectedIsEmpty = !String(form?.[section] || '').trim();
+  const selectedArticleSection = section.startsWith('section:')
+    ? form?.public_sections?.find((item) => item.id === section.slice(8))
+    : null;
+  const selectedIsEmpty = !String(
+    selectedArticleSection?.body ?? form?.[section] ?? ''
+  ).trim();
   const directSuggestions = proposal?.article_titles || proposal?.seo_titles;
-  const insertable = proposal && Object.keys(proposal).some((key) => assistedArticleFields[key]);
+  const insertable = proposal && Object.keys(proposal).some(
+    (key) => assistedArticleFields[key] || key === 'section_body'
+  );
 
   return (
     <section
@@ -97,9 +104,14 @@ export default function ImprovementEditorialAssistant({
             {Object.entries(assistedArticleFields).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
             ))}
+            {(form.public_sections || []).map((item) => (
+              <option key={item.id} value={`section:${item.id}`}>
+                {item.title || 'Untitled article section'}
+              </option>
+            ))}
           </select>
         </label>
-        <button type="button" className={buttonClass} disabled={busy} onClick={() => onRequest('rewrite')}>
+        <button type="button" className={buttonClass} disabled={busy} onClick={() => onRequest(selectedArticleSection ? 'section' : 'rewrite')}>
           {selectedIsEmpty ? 'Create selected section' : 'Rewrite selected section'}
         </button>
       </div>
@@ -138,7 +150,11 @@ export default function ImprovementEditorialAssistant({
                 </>
               ) : (
                 <label className="block font-bold">
-                  {assistedArticleFields[key] || (key === 'editorial_outline' ? 'Article outline' : key)}
+                  {assistedArticleFields[key] || (key === 'editorial_outline'
+                    ? 'Article outline'
+                    : key === 'section_body'
+                      ? selectedArticleSection?.title || 'Article section'
+                      : key)}
                   <textarea
                     rows={key === 'public_practical_steps' || key === 'editorial_outline' ? 8 : 4}
                     value={value}

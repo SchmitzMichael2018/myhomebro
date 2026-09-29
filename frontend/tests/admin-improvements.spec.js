@@ -28,6 +28,8 @@ const article = {
     'Agree on deliverables and review steps before work starts.',
   practical_steps: '1. Define the scope.\n2. Set review steps.',
   public_practical_steps: '1. Define the scope.\n2. Set review steps.',
+  sections: [],
+  public_sections: [],
   next_action: 'sign_up',
   public_next_action: 'sign_up',
   seo_title: 'The job is done. Where’s the payment? | MyHomeBro',
@@ -44,6 +46,7 @@ const article = {
 };
 
 async function setup(page) {
+  let currentArticle = { ...article };
   await page.addInitScript(() =>
     localStorage.setItem('access', 'synthetic-admin-token')
   );
@@ -56,14 +59,72 @@ async function setup(page) {
   await page.route('**/api/projects/admin/improvements/**', (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/admin/improvements/'))
-      return route.fulfill({ status: 200, json: { results: [article] } });
+      return route.fulfill({ status: 200, json: { results: [currentArticle] } });
     if (url.pathname.includes('/preview/'))
-      return route.fulfill({ status: 200, json: article });
-    if (route.request().method() === 'PATCH')
-      return route.fulfill({ status: 200, json: article });
-    return route.fulfill({ status: 200, json: article });
+      return route.fulfill({ status: 200, json: currentArticle });
+    if (route.request().method() === 'PATCH') {
+      currentArticle = {
+        ...currentArticle,
+        ...route.request().postDataJSON(),
+        sections: route.request().postDataJSON().public_sections,
+      };
+      return route.fulfill({ status: 200, json: currentArticle });
+    }
+    return route.fulfill({ status: 200, json: currentArticle });
   });
 }
+
+test('staff manages ordered sections and applies an unsaved AI section proposal', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 3600 });
+  await setup(page);
+  let proposalRequests = 0;
+  await page.route('**/api/projects/admin/improvements/assist/', (route) => {
+    proposalRequests += 1;
+    expect(route.request().postDataJSON()).toMatchObject({
+      mode: 'section',
+      article: { public_sections: [{ title: 'Outside help' }] },
+    });
+    expect(route.request().postDataJSON().section).toMatch(/^section-/);
+    return route.fulfill({
+      status: 200,
+      json: {
+        proposal: {
+          section_body: 'Mediation may help when a disagreement remains unresolved.',
+        },
+        saved: false,
+      },
+    });
+  });
+
+  await page.goto('/app/admin/improvements/42');
+  await page.getByRole('button', { name: 'Add section' }).click();
+  await page.getByLabel('Section title').fill('Outside help');
+  await page.getByLabel('Section text').focus();
+  await page.getByRole('button', { name: 'Create selected section' }).click();
+  await expect(page.getByTestId('editorial-ai-proposal')).toBeVisible();
+  await expect(page.getByLabel('Section text')).toHaveValue('');
+  await page.getByTestId('editorial-ai-proposal').getByLabel('Outside help').fill('Staff-edited mediation guidance.');
+  await page.getByRole('button', { name: 'Insert into editor' }).click();
+  await expect(page.getByLabel('Section text')).toHaveValue('Staff-edited mediation guidance.');
+
+  await page.getByRole('button', { name: 'Add section' }).click();
+  const titles = page.getByLabel('Section title');
+  const bodies = page.getByLabel('Section text');
+  await titles.nth(1).fill('Final section');
+  await bodies.nth(1).fill('Final body.');
+  await page.getByRole('button', { name: 'Move Final section up' }).click();
+  await expect(titles.nth(0)).toHaveValue('Final section');
+  await page.getByRole('button', { name: 'Remove Outside help' }).click();
+  await expect(page.getByLabel('Section title')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await page.getByRole('link', { name: 'Preview design' }).click();
+  await expect(page.getByRole('heading', { name: 'Final section' })).toBeVisible();
+  await expect(page.getByText('Final body.')).toBeVisible();
+  expect(proposalRequests).toBe(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+});
 
 test('admin can edit editorial sections and preview an unpublished article', async ({
   page,

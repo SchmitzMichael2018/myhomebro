@@ -18,7 +18,7 @@ EDITABLE_FIELDS = (
     "public_title", "public_slug", "public_category_slug", "public_audience",
     "public_audiences", "public_audience_actions", "public_editorial_brief",
     "public_summary", "public_problem", "public_evidence", "public_evidence_source",
-    "public_viewpoint", "public_practical_steps", "public_next_action",
+    "public_viewpoint", "public_practical_steps", "public_sections", "public_next_action",
     "public_video_url", "public_video_title", "public_video_description",
     "public_video_poster_url", "public_video_text_summary", "public_video_transcript_url",
     "seo_title", "seo_description", "is_featured_public",
@@ -117,7 +117,7 @@ class AdminImprovementAssistView(APIView):
         section = request.data.get("section")
         if not isinstance(mode, str) or (section is not None and not isinstance(section, str)):
             return Response({"detail": "Choose a valid writing action."}, status=400)
-        if not isinstance(context, dict) or len(str(context)) > 20000:
+        if not isinstance(context, dict) or len(str(context)) > 100000:
             return Response({"detail": "Provide an article draft for assistance."}, status=400)
         brief = context.get("public_editorial_brief") or {}
         if not str(context.get("public_problem") or context.get("public_title") or brief.get("idea") or brief.get("problem")).strip():

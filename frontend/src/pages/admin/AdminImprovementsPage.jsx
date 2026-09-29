@@ -18,6 +18,7 @@ const initial = {
   public_evidence_source: '',
   public_viewpoint: '',
   public_practical_steps: '',
+  public_sections: [],
   public_next_action: 'sign_up',
   public_video_url: '',
   public_video_title: '',
@@ -182,7 +183,9 @@ export default function AdminImprovementsPage() {
     try {
       const { data } = await api.post('/projects/admin/improvements/assist/', {
         mode,
-        section: mode === 'rewrite' ? aiSection : undefined,
+        section: mode === 'section'
+          ? aiSection.slice(8)
+          : mode === 'rewrite' ? aiSection : undefined,
         article: form,
       });
       if (requestId === proposalRequestId.current) {
@@ -203,6 +206,14 @@ export default function AdminImprovementsPage() {
   };
   const insertProposal = () => {
     if (!proposal || proposalBasis !== JSON.stringify(form)) return;
+    if (proposal.section_body && aiSection.startsWith('section:')) {
+      const sectionId = aiSection.slice(8);
+      set('public_sections', form.public_sections.map((item) =>
+        item.id === sectionId ? { ...item, body: proposal.section_body } : item
+      ));
+      setProposal(null);
+      return;
+    }
     const insertable = Object.fromEntries(
       Object.entries(proposal).filter(([key]) => key in assistedFields)
     );
@@ -224,6 +235,30 @@ export default function AdminImprovementsPage() {
   const applyProposalValue = (key, value) => {
     if (proposalBasis !== JSON.stringify(form)) return;
     set(key, value);
+    setProposal(null);
+  };
+  const addSection = () => {
+    const id = `section-${Date.now()}`;
+    set('public_sections', [...form.public_sections, { id, title: '', body: '' }]);
+    setAiSection(`section:${id}`);
+    setProposal(null);
+  };
+  const updateSection = (id, key, value) => set(
+    'public_sections',
+    form.public_sections.map((item) =>
+      item.id === id ? { ...item, [key]: value } : item
+    )
+  );
+  const moveSection = (index, direction) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= form.public_sections.length) return;
+    const next = [...form.public_sections];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    set('public_sections', next);
+  };
+  const removeSection = (id) => {
+    set('public_sections', form.public_sections.filter((item) => item.id !== id));
+    if (aiSection === `section:${id}`) setAiSection('public_problem');
     setProposal(null);
   };
   useEffect(() => {
@@ -453,6 +488,55 @@ export default function AdminImprovementsPage() {
                   </div>
                 </fieldset>
               ))}
+              <fieldset className="rounded-xl border border-white/10 p-4" data-testid="article-sections-editor">
+                <legend className="px-2 text-lg font-bold text-amber-200">
+                  Additional article sections
+                </legend>
+                <p className="mb-4 text-sm leading-6 text-sky-100">
+                  Saved sections appear after Practical steps in this order.
+                  Project Assistant proposals stay unsaved until you insert and save them.
+                </p>
+                <div className="space-y-4">
+                  {form.public_sections.map((section, index) => (
+                    <section key={section.id} className="rounded-xl border border-white/15 bg-white/5 p-4" data-testid="article-section-row">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                        <label className="min-w-0 flex-1 font-bold">
+                          Section title
+                          <input
+                            value={section.title}
+                            onChange={(event) => updateSection(section.id, 'title', event.target.value)}
+                            className="mt-1 min-h-11 w-full rounded-lg border border-slate-500 bg-white p-3 font-normal text-slate-950"
+                          />
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" className={buttonClass} disabled={index === 0} onClick={() => moveSection(index, -1)} aria-label={`Move ${section.title || 'untitled section'} up`}>
+                            Move up
+                          </button>
+                          <button type="button" className={buttonClass} disabled={index === form.public_sections.length - 1} onClick={() => moveSection(index, 1)} aria-label={`Move ${section.title || 'untitled section'} down`}>
+                            Move down
+                          </button>
+                          <button type="button" className="min-h-11 rounded-xl border border-rose-300/50 px-4 py-2 font-bold text-rose-100 hover:bg-rose-950/50" onClick={() => removeSection(section.id)} aria-label={`Remove ${section.title || 'untitled section'}`}>
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      <label className="mt-3 block font-bold">
+                        Section text
+                        <textarea
+                          rows={7}
+                          value={section.body}
+                          onFocus={() => setAiSection(`section:${section.id}`)}
+                          onChange={(event) => updateSection(section.id, 'body', event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-500 bg-white p-3 font-normal text-slate-950"
+                        />
+                      </label>
+                    </section>
+                  ))}
+                </div>
+                <button type="button" className={`${buttonClass} mt-4`} onClick={addSection}>
+                  Add section
+                </button>
+              </fieldset>
               <fieldset className="rounded-xl border border-white/10 p-4">
                 <legend className="px-2 text-lg font-bold text-amber-200">Audiences and final actions</legend>
                 <p className="mb-3 text-sm text-sky-100">Select at least one audience. Each role can have its own final action.</p>
