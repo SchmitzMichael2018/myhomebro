@@ -170,6 +170,7 @@ class ProjectTemplate(models.Model):
     public_evidence_source = models.URLField(blank=True, default="")
     public_viewpoint = models.TextField(blank=True, default="")
     public_practical_steps = models.TextField(blank=True, default="")
+    public_sections = models.JSONField(blank=True, default=list)
     public_next_action = models.CharField(max_length=24, choices=PublicAction.choices, blank=True, default="")
     public_video_url = models.URLField(max_length=500, blank=True, default="")
     public_video_title = models.CharField(max_length=160, blank=True, default="")
@@ -307,6 +308,28 @@ class ProjectTemplate(models.Model):
                 for item in self.public_faqs
             ):
                 raise ValidationError({"public_faqs": "FAQs must be a list of question/answer objects."})
+        if not isinstance(self.public_sections, list) or len(self.public_sections) > 20:
+            raise ValidationError({"public_sections": "Article sections must be an ordered list of no more than 20 sections."})
+        section_ids = set()
+        for section in self.public_sections:
+            if not isinstance(section, dict) or set(section) != {"id", "title", "body"}:
+                raise ValidationError({"public_sections": "Each article section must include only an ID, title, and body."})
+            if any(not isinstance(section.get(field), str) for field in ("id", "title", "body")):
+                raise ValidationError({"public_sections": "Section IDs, titles, and body text must be text."})
+            section_id = section["id"].strip()
+            title = section["title"].strip()
+            body = section["body"].strip()
+            if (
+                not section_id
+                or len(section_id) > 80
+                or section_id in section_ids
+                or not title
+                or len(title) > 160
+                or not body
+                or len(body) > 12000
+            ):
+                raise ValidationError({"public_sections": "Each article section needs a unique ID, a title, and body text."})
+            section_ids.add(section_id)
         if self.public_slug:
             valid_audiences = set(self.PublicAudience.values)
             audiences = self.public_audiences or ([self.public_audience] if self.public_audience else [])

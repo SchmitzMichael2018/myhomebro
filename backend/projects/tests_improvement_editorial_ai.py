@@ -16,6 +16,9 @@ class ImprovementEditorialAITests(SimpleTestCase):
         "public_evidence": "A qualified survey result stays here.",
         "public_evidence_source": "https://example.com/verified-source",
         "public_viewpoint": "Agree on review steps up front.",
+        "public_sections": [
+            {"id": "outside-help", "title": "When to seek outside help.", "body": ""}
+        ],
     }
 
     def propose(self, mode, result, section=None):
@@ -53,6 +56,14 @@ class ImprovementEditorialAITests(SimpleTestCase):
         with patch("projects.ai.improvement_editorial._require_openai_client", return_value=provider):
             result = propose_article_sections(mode="rewrite", section="public_viewpoint", context=context)
         self.assertEqual(result["public_viewpoint"], "Use a balanced review process for both roles.")
+
+    def test_proposes_editable_text_for_selected_article_section(self):
+        proposal = {"section_body": "Consider mediation when a disagreement remains unresolved."}
+        self.assertEqual(self.propose("section", proposal, "outside-help"), proposal)
+        with self.assertRaises(ValueError):
+            propose_article_sections(
+                mode="section", section="missing-section", context=self.context
+            )
 
     def test_rejects_invented_citations_numbers_and_payment_promises(self):
         for unsafe in (

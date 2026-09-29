@@ -82,6 +82,7 @@ def serialize_improvement(template, *, detail=False):
             "evidence_source": template.public_evidence_source,
             "viewpoint": template.public_viewpoint,
             "practical_steps": template.public_practical_steps,
+            "sections": template.public_sections,
             "next_action": template.public_next_action,
             "video": reviewed_video(template),
             "scope": template.default_scope,

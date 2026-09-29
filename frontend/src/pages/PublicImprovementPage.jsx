@@ -290,6 +290,9 @@ export default function PublicImprovementPage({ preview = false }) {
             </section>
             {contractorGuide ? <ContractorVisualExample guide={contractorGuide} /> : null}
             <PracticalSteps value={item.practical_steps} />
+            {(item.sections || []).map((section) => (
+              <ContentSection key={section.id} title={section.title} value={section.body} />
+            ))}
             <WalkthroughSection video={item.video} previewPlacement={preview && Boolean(contractorGuide)} previewSequence={contractorGuide?.walkthroughSequence} />
             <section className={`mt-12 rounded-3xl p-6 sm:p-8 ${contractorGuide ? 'border border-[#e7e0d3] bg-[#f7f4ed]' : 'bg-blue-50'}`}>
               <h2 className="text-2xl font-bold text-slate-950">
@@ -351,6 +354,9 @@ export default function PublicImprovementPage({ preview = false }) {
                 <ContentSection key={key} title={title} value={item[key]} />
               ) : null
             )}
+            {(item.sections || []).map((section) => (
+              <ContentSection key={section.id} title={section.title} value={section.body} />
+            ))}
             {item.materials ? (
               <ContentSection
                 title="Materials to consider"

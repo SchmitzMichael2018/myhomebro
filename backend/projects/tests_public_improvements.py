@@ -1,4 +1,5 @@
 import json
+import importlib
 import struct
 from pathlib import Path
 from types import SimpleNamespace
@@ -368,9 +369,47 @@ class ImprovementEditorialWorkflowTests(TestCase):
         )
         self.assertIn("Homeowners:", balanced.public_practical_steps)
         self.assertIn("Contractors:", balanced.public_practical_steps)
+        self.assertIn("scope and payment milestones", balanced.public_viewpoint)
+        self.assertIn("does not guarantee payment", balanced.public_viewpoint)
+        self.assertIn(
+            "does not guarantee payment, prove that work is complete, provide escrow protection",
+            balanced.public_viewpoint,
+        )
+        self.assertEqual(
+            balanced.public_sections[0]["title"], "When to seek outside help."
+        )
+        outside_help = balanced.public_sections[0]["body"]
+        self.assertIn("mediation", outside_help)
+        self.assertIn("applicable agreement", outside_help)
+        self.assertIn("small claims court where eligible", outside_help)
+        self.assertIn("deadlines, liens, substantial losses, or alleged fraud", outside_help)
+        self.assertIn("not binding arbitration", outside_help)
+        self.assertIn("does not replace a court decision", outside_help)
         self.assertEqual(
             self.client.get("/api/projects/public/improvements/project-planning/payment-risk-for-both-sides/").status_code,
             404,
+        )
+
+    def test_payment_risk_migration_preserves_later_staff_edits(self):
+        balanced = ProjectTemplate.objects.get(public_slug="payment-risk-for-both-sides")
+        balanced.public_summary = "Staff-authored summary that must survive deployment."
+        balanced.save(update_fields=["public_summary"])
+        migration = importlib.import_module(
+            "projects.migrations.0332_improvement_article_sections"
+        )
+
+        migration.revise_payment_risk_draft(
+            SimpleNamespace(get_model=lambda app, model: ProjectTemplate), None
+        )
+
+        balanced.refresh_from_db()
+        self.assertEqual(
+            balanced.public_summary,
+            "Staff-authored summary that must survive deployment.",
+        )
+        self.assertEqual(balanced.public_publication_status, "draft")
+        self.assertEqual(
+            balanced.public_sections[-1]["id"], "when-to-seek-outside-help"
         )
 
     def test_staff_assistance_is_proposal_only_and_never_publishes(self):
@@ -404,6 +443,81 @@ class ImprovementEditorialWorkflowTests(TestCase):
         self.assertEqual(self.article.public_problem, context["public_problem"])
         self.assertEqual(self.article.public_publication_status, "draft")
         self.assertEqual(self.client.get("/api/projects/public/improvements/").json()["improvements"], [])
+
+        section_context = {
+            **context,
+            "public_sections": [
+                {"id": "outside-help", "title": "When to seek outside help.", "body": ""}
+            ],
+        }
+        provider.responses.create.return_value = SimpleNamespace(
+            output_text='{"section_body":"Mediation may help with an unresolved disagreement."}'
+        )
+        with patch("projects.ai.improvement_editorial._require_openai_client", return_value=provider):
+            section_response = self.client.post(
+                endpoint,
+                {"mode": "section", "section": "outside-help", "article": section_context},
+                format="json",
+            )
+        self.assertEqual(section_response.status_code, 200)
+        self.assertEqual(
+            section_response.json()["proposal"],
+            {"section_body": "Mediation may help with an unresolved disagreement."},
+        )
+        self.assertFalse(section_response.json()["saved"])
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.public_sections, [])
+        self.assertEqual(self.article.public_publication_status, "draft")
+
+    def test_staff_can_save_reorder_remove_and_publish_sections_without_losing_legacy_content(self):
+        self.client.force_authenticate(self.admin)
+        detail = f"/api/projects/admin/improvements/{self.article.id}/"
+        original_problem = self.article.public_problem
+        sections = [
+            {"id": "second", "title": "Second section", "body": "Second body."},
+            {"id": "first", "title": "First section", "body": "First body."},
+        ]
+        saved = self.client.patch(detail, {"public_sections": sections}, format="json")
+        self.assertEqual(saved.status_code, 200, saved.json())
+        self.assertEqual(saved.json()["sections"], sections)
+        self.assertEqual(saved.json()["public_sections"], sections)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.public_problem, original_problem)
+        self.assertEqual(self.article.public_sections, sections)
+        preview = self.client.get(
+            "/api/projects/admin/improvements/preview/qa-payment-plan-editorial/"
+        )
+        self.assertEqual(preview.json()["sections"], sections)
+
+        remaining = [sections[1]]
+        removed = self.client.patch(
+            detail, {"public_sections": remaining}, format="json"
+        )
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(removed.json()["sections"], remaining)
+        invalid = self.client.patch(
+            detail,
+            {"public_sections": [{"id": "blank", "title": "", "body": ""}]},
+            format="json",
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("public_sections", invalid.json())
+        non_text = self.client.patch(
+            detail,
+            {"public_sections": [{"id": "unsafe", "title": {"text": "Title"}, "body": ["Body"]}]},
+            format="json",
+        )
+        self.assertEqual(non_text.status_code, 400)
+        self.assertIn("public_sections", non_text.json())
+
+        self.assertEqual(self.client.post(f"{detail}submit/").status_code, 200)
+        self.assertEqual(self.client.post(f"{detail}review/").status_code, 200)
+        self.assertEqual(self.client.post(f"{detail}publish/").status_code, 200)
+        public = self.client.get(
+            "/api/projects/public/improvements/contractor-practice/qa-payment-plan-editorial/"
+        )
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual(public.json()["sections"], remaining)
 
     def test_assistance_rejects_unsupported_claims_and_evidence_rewrites(self):
         self.client.force_authenticate(self.admin)
