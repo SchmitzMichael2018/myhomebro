@@ -15,6 +15,72 @@ const sections = [
   ['Common issues to avoid', 'common_mistakes'],
 ];
 
+const contractorGuides = {
+  'contractor-payment-plan': {
+    plan: [
+      ['Plan', [0, 1]],
+      ['Review', [2, 3]],
+      ['Outcome', [4]],
+    ],
+    exampleTitle: 'How one milestone moves forward',
+    exampleIntro: 'The three project-plan phases group five concrete steps. A shared plan makes each review point clearer; it does not guarantee approval or payment release.',
+    exampleSteps: [
+      ['Scope', 'Agree on the work and what completion means.'],
+      ['Milestone', 'Set the stage and proof before work begins.'],
+      ['Evidence', 'Document the completed work.'],
+      ['Customer review', 'Give the customer a clear review point.'],
+      ['Payment outcome', 'Follow the agreement and payment setup.'],
+    ],
+    ctaTitle: 'Set up your project and payment milestones',
+    ctaDescription: 'Start a contractor account, then define scope, proof, and review points in an agreement. Payment availability and release depend on the project setup and agreement.',
+    ctaLabel: 'Sign up to plan milestones',
+    intent: 'payment_milestones',
+    walkthroughSequence: 'define the scope → set milestones → document completed work → customer review → payment outcome',
+  },
+  'contractor-deposit-vs-milestones': {
+    plan: [
+      ['Plan', [0, 1]],
+      ['Review', [2, 3]],
+      ['Outcome', [4]],
+    ],
+    exampleTitle: 'Where a startup amount fits',
+    exampleIntro: 'An early material cost belongs in a complete schedule—not in place of one. The agreed terms and local rules determine what is appropriate.',
+    exampleSteps: [
+      ['Startup need', 'Explain what an upfront amount would cover, such as a custom-order material.'],
+      ['Payment schedule', 'Record every later stage and when it would be due.'],
+      ['Work proof', 'Capture the agreed deliverable and evidence at each stage.'],
+      ['Customer review', 'Give the customer the agreed opportunity to review progress.'],
+      ['Final payment step', 'Identify remaining items and the final step in the agreement.'],
+    ],
+    ctaTitle: 'Plan the whole payment schedule',
+    ctaDescription: 'Start a contractor account and put any startup amount alongside the scope, later milestones, and customer review points. Funding and release options depend on the agreement and payment setup.',
+    ctaLabel: 'Sign up to plan payments',
+    intent: 'payment_schedule',
+    walkthroughSequence: 'explain the startup need → set the full schedule → document work → customer review → final payment step',
+  },
+  'contractor-change-orders': {
+    plan: [
+      ['Discover', [0, 1]],
+      ['Decide', [2, 3]],
+      ['Continue', [4]],
+    ],
+    exampleTitle: 'When a hidden condition changes the job',
+    exampleIntro: 'Use the finding to make a specific decision before extra work proceeds. An amendment records agreement; it does not guarantee payment or prevent every dispute.',
+    exampleSteps: [
+      ['Pause', 'Pause the affected work while the new condition is assessed.'],
+      ['Document', 'Photograph what is known and note what still needs inspection.'],
+      ['Explain options', 'Show the proposed scope, price, and schedule impact.'],
+      ['Approval', 'Record the customer decision in an amendment.'],
+      ['Agreed work', 'Continue the extra work only after the change is approved.'],
+    ],
+    ctaTitle: 'Keep scope changes connected to the agreement',
+    ctaDescription: 'Start a contractor account to organize the original scope and document proposed changes for customer review before extra work proceeds.',
+    ctaLabel: 'Sign up to document changes',
+    intent: 'scope_changes',
+    walkthroughSequence: 'pause affected work → document the finding → explain options → record approval → continue agreed work',
+  },
+};
+
 export default function PublicImprovementPage({ preview = false }) {
   const { categorySlug, improvementSlug, publicSlug } = useParams();
   const navigate = useNavigate();
@@ -134,11 +200,11 @@ export default function PublicImprovementPage({ preview = false }) {
         </p>
       </LibraryShell>
     );
-  const paymentDesign = item.slug === 'contractor-payment-plan';
+  const contractorGuide = contractorGuides[item.slug];
   return (
-    <LibraryShell>
-      <div className={paymentDesign ? 'bg-[#f7f4ed]' : ''}>
-      <article className={`mx-auto px-4 pb-24 pt-8 sm:px-6 ${paymentDesign ? 'max-w-6xl' : 'max-w-5xl'}`}>
+    <LibraryShell showBrandText>
+      <div className={contractorGuide ? 'bg-[#f7f4ed]' : ''}>
+      <article className={`mx-auto px-4 pb-24 pt-8 sm:px-6 ${contractorGuide ? 'max-w-6xl' : 'max-w-5xl'}`}>
         {preview ? (
           <div
             role="status"
@@ -148,6 +214,9 @@ export default function PublicImprovementPage({ preview = false }) {
             public page.
           </div>
         ) : null}
+        <Link to="/improvements/" className="mb-4 inline-flex min-h-11 items-center font-bold text-blue-800 underline-offset-4 hover:underline focus-visible:underline" data-testid="article-back-to-library">
+          ← Back to Improvement Library
+        </Link>
         <nav
           aria-label="Breadcrumb"
           data-testid="improvement-breadcrumbs"
@@ -163,47 +232,33 @@ export default function PublicImprovementPage({ preview = false }) {
           <span>›</span>
           <span>{item.title}</span>
         </nav>
-        <header className={paymentDesign
+        <header className={contractorGuide
           ? 'relative mt-8 overflow-hidden rounded-[2rem] bg-[#071b34] px-6 py-10 text-white shadow-[0_24px_60px_-30px_rgba(7,27,52,.65)] sm:px-10 lg:px-14 lg:py-16'
           : 'mt-8'}>
-          <div className={paymentDesign ? 'relative grid gap-10 lg:grid-cols-[1.45fr_.55fr] lg:items-center' : ''}>
+          <div className={contractorGuide ? 'relative grid gap-10 lg:grid-cols-[1.45fr_.55fr] lg:items-center' : ''}>
           <div>
-          <p className={`text-sm font-bold uppercase tracking-[0.16em] ${paymentDesign ? 'text-amber-300' : 'text-blue-700'}`}>
-            {paymentDesign ? <span className="sr-only">Contractor field guide: </span> : null}
+          <p className={`text-sm font-bold uppercase tracking-[0.16em] ${contractorGuide ? 'text-amber-300' : 'text-blue-700'}`}>
+            {contractorGuide ? <span className="sr-only">Contractor field guide: </span> : null}
             {item.audience_label ? `${item.audience_label} · ` : ''}
             {item.category_name} guide
           </p>
-          <h1 className={`mt-3 text-4xl font-black tracking-tight sm:text-6xl ${paymentDesign ? 'max-w-3xl leading-[1.05] text-white' : 'text-slate-950'}`}>
+          <h1 className={`mt-3 text-4xl font-black tracking-tight sm:text-6xl ${contractorGuide ? 'max-w-3xl leading-[1.05] text-white' : 'text-slate-950'}`}>
             {item.title}
           </h1>
-          <p className={`mt-5 max-w-3xl text-xl leading-8 ${paymentDesign ? 'text-sky-100' : 'text-slate-600'}`}>
+          <p className={`mt-5 max-w-3xl text-xl leading-8 ${contractorGuide ? 'text-sky-100' : 'text-slate-600'}`}>
             {item.summary}
           </p>
           {item.reviewed_at ? (
-            <p className={`mt-3 text-sm ${paymentDesign ? 'text-sky-200' : 'text-slate-500'}`}>
+            <p className={`mt-3 text-sm ${contractorGuide ? 'text-sky-200' : 'text-slate-500'}`}>
               Last reviewed {new Date(item.reviewed_at).toLocaleDateString()}
             </p>
           ) : null}
           </div>
-          {paymentDesign ? (
-            <div aria-hidden="true" className="relative hidden rounded-3xl border border-sky-200/40 bg-[#102e4d]/95 p-5 shadow-xl lg:block"
-              style={{ backgroundImage: 'linear-gradient(#b4d2e814 1px, transparent 1px), linear-gradient(90deg, #b4d2e814 1px, transparent 1px)', backgroundSize: '38px 38px' }}>
-              <div className="flex items-center justify-between gap-2 border-b border-sky-200/25 pb-4 text-[10px] font-black uppercase tracking-[.12em] text-amber-300">
-                <span>Project plan</span><span>01 / 03</span>
-              </div>
-              {['Define the work', 'Agree on review points', 'Record the outcome'].map((step, index) => (
-                <div key={step} className="flex items-center gap-3 border-b border-sky-200/15 py-5 last:border-0">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-300/70 text-xs font-black text-amber-300">0{index + 1}</span>
-                  <span className="text-sm font-semibold text-white">{step}</span>
-                </div>
-              ))}
-              <div className="mt-2 h-1 w-24 rounded-full bg-amber-300" />
-            </div>
-          ) : null}
+          {contractorGuide ? <BlueprintPlan guide={contractorGuide} /> : null}
           </div>
         </header>
         {item.problem ? (
-          <div className={paymentDesign ? 'mt-8 rounded-[2rem] border border-[#e7e0d3] bg-white px-6 pb-10 pt-1 shadow-[0_20px_50px_-35px_rgba(7,27,52,.32)] sm:px-10 lg:px-16' : ''}>
+          <div className={contractorGuide ? 'mt-8 rounded-[2rem] border border-[#e7e0d3] bg-white px-6 pb-10 pt-1 shadow-[0_20px_50px_-35px_rgba(7,27,52,.32)] sm:px-10 lg:px-16' : ''}>
             <ContentSection title="The problem" value={item.problem} />
             <section className="mt-10">
               <h2 className="text-2xl font-bold text-slate-950">
@@ -233,16 +288,15 @@ export default function PublicImprovementPage({ preview = false }) {
                 {item.viewpoint}
               </p>
             </section>
-            {paymentDesign ? <PaymentMilestoneExample /> : null}
+            {contractorGuide ? <ContractorVisualExample guide={contractorGuide} /> : null}
             <PracticalSteps value={item.practical_steps} />
-            <WalkthroughSection video={item.video} previewPlacement={preview && paymentDesign} />
-            <section className={`mt-12 rounded-3xl p-6 sm:p-8 ${paymentDesign ? 'border border-[#e7e0d3] bg-[#f7f4ed]' : 'bg-blue-50'}`}>
+            <WalkthroughSection video={item.video} previewPlacement={preview && Boolean(contractorGuide)} previewSequence={contractorGuide?.walkthroughSequence} />
+            <section className={`mt-12 rounded-3xl p-6 sm:p-8 ${contractorGuide ? 'border border-[#e7e0d3] bg-[#f7f4ed]' : 'bg-blue-50'}`}>
               <h2 className="text-2xl font-bold text-slate-950">
-                A useful next step
+                {contractorGuide?.ctaTitle || 'A useful next step'}
               </h2>
               <p className="mt-3 leading-7 text-slate-700">
-                Use MyHomeBro to organize the project conversation. Features and
-                payment options depend on the project setup and agreement.
+                {contractorGuide?.ctaDescription || 'Use MyHomeBro to organize the project conversation. Features and payment options depend on the project setup and agreement.'}
               </p>
               <button
                 type="button"
@@ -251,12 +305,12 @@ export default function PublicImprovementPage({ preview = false }) {
                     item.next_action === 'sign_up'
                       ? 'signup_started'
                       : 'hire_pro_clicked',
-                    editorialTarget(item)
+                    editorialTarget(item, contractorGuide)
                   )
                 }
-                className={`mt-5 min-h-12 rounded-xl px-5 font-bold ${paymentDesign ? 'bg-[#071b34] text-white hover:bg-[#153959]' : 'bg-blue-700 text-white hover:bg-blue-800'}`}
+                className={`mt-5 min-h-12 rounded-xl px-5 font-bold ${contractorGuide ? 'bg-[#071b34] text-white hover:bg-[#153959]' : 'bg-blue-700 text-white hover:bg-blue-800'}`}
               >
-                {editorialActionLabel(item.next_action)}
+                {contractorGuide?.ctaLabel || editorialActionLabel(item.next_action)}
               </button>
             </section>
           </div>
@@ -407,21 +461,32 @@ export default function PublicImprovementPage({ preview = false }) {
   );
 }
 
-function PaymentMilestoneExample() {
-  const steps = [
-    ['Scope', 'Agree on the work and what completion means.'],
-    ['Milestone', 'Set the stage and proof before work begins.'],
-    ['Evidence', 'Document the completed work.'],
-    ['Review', 'Give the customer a clear review point.'],
-    ['Outcome', 'Follow the agreement and payment setup.'],
-  ];
+function BlueprintPlan({ guide }) {
   return (
-    <section className="mt-12" aria-labelledby="payment-example-heading" data-testid="payment-milestone-example">
+    <div role="group" aria-label="Project plan in three phases" className="relative rounded-3xl border border-sky-200/40 bg-[#102e4d]/95 p-5 shadow-xl"
+      style={{ backgroundImage: 'linear-gradient(#b4d2e814 1px, transparent 1px), linear-gradient(90deg, #b4d2e814 1px, transparent 1px)', backgroundSize: '38px 38px' }}>
+      <div className="flex items-center justify-between gap-2 border-b border-sky-200/25 pb-4 text-[10px] font-black uppercase tracking-[.12em] text-amber-300">
+        <span>Project plan</span><span>3 phases</span>
+      </div>
+      {guide.plan.map(([phase, stepIndexes], index) => (
+        <div key={phase} className="flex items-start gap-3 border-b border-sky-200/15 py-5 last:border-0">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-300/70 text-xs font-black text-amber-300">0{index + 1}</span>
+          <span className="text-sm text-white"><strong className="block">{phase}</strong><span className="mt-1 block text-xs leading-5 text-sky-100">{stepIndexes.map((stepIndex) => guide.exampleSteps[stepIndex][0]).join(' + ')}</span></span>
+        </div>
+      ))}
+      <div className="mt-2 h-1 w-24 rounded-full bg-amber-300" />
+    </div>
+  );
+}
+
+function ContractorVisualExample({ guide }) {
+  return (
+    <section className="mt-12" aria-labelledby="contractor-example-heading" data-testid="contractor-visual-example">
       <p className="text-xs font-black uppercase tracking-[.2em] text-blue-800">A simple example</p>
-      <h2 id="payment-example-heading" className="mt-2 text-2xl font-black text-[#071b34]">How one milestone moves forward</h2>
-      <p className="mt-3 max-w-2xl leading-7 text-slate-700">A shared plan makes each review point clearer. It does not guarantee approval or payment release.</p>
+      <h2 id="contractor-example-heading" className="mt-2 text-2xl font-black text-[#071b34]">{guide.exampleTitle}</h2>
+      <p className="mt-3 max-w-2xl leading-7 text-slate-700">{guide.exampleIntro}</p>
       <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {steps.map(([title, description], index) => (
+        {guide.exampleSteps.map(([title, description], index) => (
           <li key={title} className="relative rounded-2xl border border-[#dfd7c7] bg-[#fbf8f2] p-4">
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#071b34] text-xs font-black text-amber-300">0{index + 1}</span>
             <h3 className="mt-4 font-black text-[#071b34]">{title}</h3>
@@ -433,14 +498,14 @@ function PaymentMilestoneExample() {
   );
 }
 
-function WalkthroughSection({ video, previewPlacement }) {
+function WalkthroughSection({ video, previewPlacement, previewSequence }) {
   if (!video && !previewPlacement) return null;
   if (!video) return (
     <section className="mt-12 rounded-3xl border-2 border-dashed border-[#cbbd9d] bg-[#f7f4ed] p-6 sm:p-8" data-testid="walkthrough-placement">
       <p className="text-xs font-black uppercase tracking-[.2em] text-blue-800">Editorial preview only</p>
       <h2 className="mt-2 text-2xl font-black text-[#071b34]">See how it works — planned placement</h2>
       <p className="mt-3 leading-7 text-slate-700">No walkthrough video is attached. This section stays hidden from readers until a real video, poster, and text alternative have been reviewed.</p>
-      <p className="mt-4 text-sm font-semibold text-slate-700">Planned sequence: define the scope → set milestones → document completed work → customer review → payment outcome.</p>
+      {previewSequence ? <p className="mt-4 text-sm font-semibold text-slate-700">Planned sequence: {previewSequence}.</p> : null}
     </section>
   );
   return (
@@ -480,19 +545,21 @@ function editorialActionLabel(action) {
   );
 }
 
-function editorialTarget(item) {
+function editorialTarget(item, contractorGuide) {
   const context = new URLSearchParams({
     source: 'improvement_library',
     template_id: String(item.id),
     article: item.slug,
     cta: item.next_action || 'create_project',
   });
+  if (contractorGuide?.intent) context.set('intent', contractorGuide.intent);
   if (item.next_action === 'sign_up') {
     const continuation = new URLSearchParams({
       source: 'improvement_library',
       article: item.slug,
       cta: 'sign_up',
     });
+    if (contractorGuide?.intent) continuation.set('intent', contractorGuide.intent);
     const current = new URLSearchParams(window.location.search);
     for (const key of [
       'utm_source',

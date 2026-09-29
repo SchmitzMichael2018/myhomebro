@@ -84,7 +84,7 @@ test('admin can edit editorial sections and preview an unpublished article', asy
   await page.getByRole('link', { name: 'Preview design' }).click();
   await expect(page.getByText('Editorial preview · draft.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Our take' })).toBeVisible();
-  await expect(page.getByTestId('payment-milestone-example')).toContainText('How one milestone moves forward');
+  await expect(page.getByTestId('contractor-visual-example')).toContainText('How one milestone moves forward');
   await expect(page.getByTestId('walkthrough-placement')).toContainText('No walkthrough video is attached');
   await expect(page.getByTestId('walkthrough-video')).toHaveCount(0);
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
@@ -145,7 +145,7 @@ test('published article without a video has no walkthrough or editorial placehol
   );
   await page.goto(article.canonical_path);
   await expect(page.getByRole('heading', { level: 1, name: article.title })).toBeVisible();
-  await expect(page.getByTestId('payment-milestone-example')).toBeVisible();
+  await expect(page.getByTestId('contractor-visual-example')).toBeVisible();
   await expect(page.getByTestId('walkthrough-video')).toHaveCount(0);
   await expect(page.getByTestId('walkthrough-placement')).toHaveCount(0);
 });

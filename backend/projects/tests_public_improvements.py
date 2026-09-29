@@ -329,11 +329,16 @@ class ImprovementEditorialWorkflowTests(TestCase):
             self.assertTrue(article.public_viewpoint)
             self.assertEqual(article.related_public_templates.count(), 2)
             self.assertNotIn(slug, self.client.get("/sitemap.xml").content.decode())
+            self.assertEqual(
+                self.client.get(f"/api/projects/public/improvements/contractor-practice/{slug}/").status_code,
+                404,
+            )
             self.assertIn(self.client.get(f"/api/projects/admin/improvements/preview/{slug}/").status_code, (401, 403))
             self.client.force_authenticate(self.admin)
             preview = self.client.get(f"/api/projects/admin/improvements/preview/{slug}/")
             self.assertEqual(preview.status_code, 200)
             self.assertEqual(preview.json()["preview_path"], f"/app/admin/improvements/preview/{slug}")
+            self.assertIsNone(preview.json()["video"])
             self.client.force_authenticate(user=None)
         payment = ProjectTemplate.objects.get(public_slug="contractor-payment-plan")
         self.assertIn("not a residential-contractor statistic", payment.public_evidence)

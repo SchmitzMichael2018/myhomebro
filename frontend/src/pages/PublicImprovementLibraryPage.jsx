@@ -345,16 +345,16 @@ export function ImprovementGrid({
   );
 }
 
-export function LibraryShell({ children }) {
+export function LibraryShell({ children, showBrandText = false }) {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b border-slate-200 bg-white">
         <nav
           aria-label="Main navigation"
-          className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"
+          className={`mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 ${showBrandText ? 'pt-14 sm:pt-3 sm:pr-48' : ''}`}
         >
           <Link to="/" aria-label="MyHomeBro home">
-            <BrandLogo height={48} showText={false} />
+            <BrandLogo height={48} showText={showBrandText} />
           </Link>
           <div className="flex flex-wrap items-center gap-4 text-sm font-bold text-slate-800">
             <Link className="hover:text-blue-700" to="/improvements/">
