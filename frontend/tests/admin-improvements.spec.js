@@ -68,6 +68,7 @@ async function setup(page) {
 test('admin can edit editorial sections and preview an unpublished article', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1024, height: 2500 });
   await setup(page);
   await page.goto('/app/admin/improvements/42');
   await expect(
@@ -83,34 +84,93 @@ test('admin can edit editorial sections and preview an unpublished article', asy
   await page.getByRole('link', { name: 'Preview design' }).click();
   await expect(page.getByText('Editorial preview · draft.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Our take' })).toBeVisible();
+  await expect(page.getByTestId('contractor-visual-example')).toContainText('How one milestone moves forward');
+  await expect(page.getByTestId('walkthrough-placement')).toContainText('No walkthrough video is attached');
+  await expect(page.getByTestId('walkthrough-video')).toHaveCount(0);
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
     'content',
     'noindex, nofollow'
   );
-  await page.screenshot({
+  await page.locator('article').screenshot({
     path: 'test-results/improvement-contractor-preview-desktop.png',
-    fullPage: true,
   });
 });
 
 test('contractor article preview remains readable at 390px', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 390, height: 3300 });
   await setup(page);
   await page.goto(article.preview_path);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Practical steps' })
   ).toBeVisible();
+  await expect(page.getByTestId('walkthrough-placement')).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth
   );
   expect(overflow).toBe(false);
-  await page.screenshot({
+  await page.locator('article').screenshot({
     path: 'test-results/improvement-contractor-preview-mobile.png',
-    fullPage: true,
   });
+});
+
+test('reviewed walkthrough renders play, poster, and text alternative', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/projects/admin/improvements/preview/**', (route) =>
+    route.fulfill({ status: 200, json: {
+      ...article,
+      video: {
+        url: 'https://example.com/watch',
+        title: 'Plan the payment conversation',
+        description: 'A synthetic project walkthrough.',
+        poster_url: 'https://example.com/poster.jpg',
+        text_summary: 'Define scope, set milestones, document work, review, then determine the outcome.',
+        transcript_url: 'https://example.com/transcript',
+      },
+    } })
+  );
+  await page.goto(article.preview_path);
+  await expect(page.getByTestId('walkthrough-video')).toBeVisible();
+  await expect(page.getByTestId('walkthrough-placement')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Play walkthrough/ })).toHaveAttribute('href', 'https://example.com/watch');
+  await expect(page.getByRole('link', { name: /Read the transcript/ })).toHaveAttribute('href', 'https://example.com/transcript');
+  await expect(page.getByTestId('walkthrough-video')).toContainText('Text summary:');
+});
+
+test('published article without a video has no walkthrough or editorial placeholder', async ({ page }) => {
+  await page.route('**/api/projects/public/improvements/contractor-practice/contractor-payment-plan/', (route) =>
+    route.fulfill({ status: 200, json: { ...article, publication_status: 'published', video: null } })
+  );
+  await page.goto(article.canonical_path);
+  await expect(page.getByRole('heading', { level: 1, name: article.title })).toBeVisible();
+  await expect(page.getByTestId('contractor-visual-example')).toBeVisible();
+  await expect(page.getByTestId('walkthrough-video')).toHaveCount(0);
+  await expect(page.getByTestId('walkthrough-placement')).toHaveCount(0);
+});
+
+test('staff can enter video metadata without publishing', async ({ page }) => {
+  await setup(page);
+  let saved = null;
+  await page.route('**/api/projects/admin/improvements/42/', (route) => {
+    if (route.request().method() === 'PATCH') saved = route.request().postDataJSON();
+    return route.fulfill({ status: 200, json: article });
+  });
+  await page.goto('/app/admin/improvements/42');
+  await page.getByLabel('Video URL (HTTPS)').fill('https://example.com/watch');
+  await page.getByLabel('Video title').fill('Plan one milestone');
+  await page.getByLabel('Short video description').fill('A short synthetic walkthrough.');
+  await page.getByLabel('Thumbnail or poster image URL (HTTPS)').fill('https://example.com/poster.jpg');
+  await page.getByLabel('Text summary').fill('Scope, milestones, proof, review, and outcome.');
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  expect(saved).toMatchObject({
+    public_video_url: 'https://example.com/watch',
+    public_video_title: 'Plan one milestone',
+    public_video_poster_url: 'https://example.com/poster.jpg',
+    public_video_text_summary: 'Scope, milestones, proof, review, and outcome.',
+  });
+  await expect(page.getByText('Status: Draft')).toBeVisible();
 });
 
 test('staff can filter statuses and review an AI rewrite before inserting or saving', async ({

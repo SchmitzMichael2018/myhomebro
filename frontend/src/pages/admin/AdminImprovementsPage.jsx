@@ -14,6 +14,12 @@ const initial = {
   public_viewpoint: '',
   public_practical_steps: '',
   public_next_action: 'sign_up',
+  public_video_url: '',
+  public_video_title: '',
+  public_video_description: '',
+  public_video_poster_url: '',
+  public_video_text_summary: '',
+  public_video_transcript_url: '',
   seo_title: '',
   seo_description: '',
   is_featured_public: false,
@@ -44,6 +50,17 @@ const fieldGroups = [
     [
       ['seo_title', 'SEO title'],
       ['seo_description', 'SEO description'],
+    ],
+  ],
+  [
+    'Walkthrough video (optional)',
+    [
+      ['public_video_url', 'Video URL (HTTPS)'],
+      ['public_video_title', 'Video title'],
+      ['public_video_description', 'Short video description'],
+      ['public_video_poster_url', 'Thumbnail or poster image URL (HTTPS)'],
+      ['public_video_text_summary', 'Text summary'],
+      ['public_video_transcript_url', 'Transcript link (HTTPS)'],
     ],
   ],
 ];
@@ -308,6 +325,14 @@ export default function AdminImprovementsPage() {
                     {group}
                   </legend>
                   <div className="grid gap-4">
+                    {group === 'Walkthrough video (optional)' ? (
+                      <p className="text-sm leading-6 text-sky-100">
+                        Add a real video and poster only when ready. A text
+                        summary or transcript is required before publication.
+                        The section stays hidden until editorial review is
+                        recorded; no video is attached to these drafts yet.
+                      </p>
+                    ) : null}
                     {fields.map(([key, label]) => (
                       <label key={key} className="block">
                         <span className="mb-1 block font-bold text-sky-50">
@@ -320,6 +345,8 @@ export default function AdminImprovementsPage() {
                           'public_practical_steps',
                           'public_summary',
                           'seo_description',
+                          'public_video_description',
+                          'public_video_text_summary',
                         ].includes(key) ? (
                           <textarea
                             rows={key === 'public_practical_steps' ? 7 : 4}
@@ -330,7 +357,9 @@ export default function AdminImprovementsPage() {
                         ) : (
                           <input
                             type={
-                              key === 'public_evidence_source' ? 'url' : 'text'
+                              ['public_evidence_source', 'public_video_url',
+                                'public_video_poster_url', 'public_video_transcript_url'].includes(key)
+                                ? 'url' : 'text'
                             }
                             value={form[key]}
                             onChange={(event) => set(key, event.target.value)}
