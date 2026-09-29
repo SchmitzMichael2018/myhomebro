@@ -244,7 +244,7 @@ test('outline and draft proposals remain unsaved until staff accepts them', asyn
     const proposal =
       mode === 'outline'
         ? {
-            public_practical_steps:
+            editorial_outline:
               '- Discuss the scope.\n- Agree on review steps.',
           }
         : {
@@ -256,13 +256,13 @@ test('outline and draft proposals remain unsaved until staff accepts them', asyn
     return route.fulfill({ status: 200, json: { proposal, saved: false } });
   });
   await page.goto('/app/admin/improvements/42');
-  await page.getByRole('button', { name: 'Generate outline' }).click();
+  await page.getByRole('button', { name: 'Outline this article' }).click();
   await expect(page.getByTestId('editorial-ai-proposal')).toBeVisible();
   await expect(page.getByLabel('4. Practical steps')).toHaveValue(
     article.public_practical_steps
   );
   await page.getByRole('button', { name: 'Discard proposal' }).click();
-  await page.getByRole('button', { name: 'Generate article draft' }).click();
+  await page.getByRole('button', { name: 'Draft article sections' }).click();
   await expect(page.getByTestId('editorial-ai-proposal')).toBeVisible();
   await expect(page.getByLabel('1. Recognizable problem')).toHaveValue(
     article.public_problem
@@ -275,4 +275,87 @@ test('outline and draft proposals remain unsaved until staff accepts them', asyn
     page.getByRole('button', { name: 'Submit for review' })
   ).toBeDisabled();
   expect(requestedModes).toEqual(['outline', 'draft']);
+});
+
+test('multi-audience payment-risk draft uses brief-first AI and the floating assistant without saving', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1800 });
+  await setup(page);
+  const requests = [];
+  let saves = 0;
+  await page.route('**/api/projects/admin/improvements/', (route) => {
+    if (route.request().method() === 'POST') saves += 1;
+    return route.fulfill({ status: 200, json: { results: [article] } });
+  });
+  await page.route('**/api/projects/admin/improvements/assist/', (route) => {
+    const payload = route.request().postDataJSON();
+    requests.push(payload);
+    const proposal = {
+      titles: {
+        article_titles: [
+          'When either side of a home project faces payment risk',
+          'A fair payment plan for homeowners and contractors',
+          'Protecting trust before work and payment begin',
+        ],
+        seo_titles: [
+          'Home Project Payment Risk for Both Sides',
+          'Homeowner and Contractor Payment Planning',
+          'Fair Home Project Payment Steps',
+        ],
+      },
+      outline: {
+        editorial_outline:
+          '- The homeowner risk when paid work is not completed\n- The contractor risk when agreed work is completed but unpaid\n- Shared documentation and review points\n- Separate final actions for each role',
+      },
+      rewrite: {
+        public_viewpoint:
+          'Neither payment nor completion should depend on assumptions. Homeowners and contractors should document scope, review points, concerns, and the next decision without treating a deposit as automatic protection or promising an outcome.',
+      },
+    }[payload.mode] || {
+      public_summary: 'A balanced guide to payment and performance risk.',
+      public_problem: 'Either side can carry risk when scope, proof, review, and payment expectations are unclear.',
+      public_viewpoint: 'Use shared records and explicit review points.',
+      public_practical_steps: '- Homeowners: confirm scope and review evidence before the next decision.\n- Contractors: document agreed work and request review through the recorded process.',
+    };
+    return route.fulfill({ status: 200, json: { proposal, review_flags: [], saved: false } });
+  });
+
+  await page.goto('/app/admin/improvements');
+  await page.getByLabel('Article idea').fill('Both sides of home-project payment risk');
+  await page.getByLabel('Problem to solve').fill('A homeowner can pay without receiving agreed work, while a contractor can complete agreed work and struggle to get paid.');
+  await page.getByLabel('Homeowners').check();
+  await expect(page.getByLabel('Contractors')).toBeChecked();
+  await expect(page.getByLabel('Homeowners')).toBeChecked();
+
+  await page.getByRole('button', { name: 'Suggest titles' }).click();
+  await page.getByRole('button', { name: 'Use suggestion' }).first().click();
+  await expect(page.getByLabel('Article title')).toHaveValue(
+    'When either side of a home project faces payment risk'
+  );
+  await page.getByRole('button', { name: 'Outline this article' }).click();
+  await expect(page.getByLabel('Article outline')).toContainText('homeowner risk');
+  await page.getByRole('button', { name: 'Discard proposal' }).click();
+
+  await page.getByLabel('Section').selectOption('public_viewpoint');
+  await expect(page.getByRole('button', { name: 'Create selected section' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create selected section' }).click();
+  await page.getByRole('button', { name: 'Insert into editor' }).click();
+  await expect(page.getByLabel('3. MyHomeBro viewpoint — Our take')).toContainText('Neither payment nor completion');
+  expect(saves).toBe(0);
+
+  await page.getByTestId('assistant-dock-open-button').click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Unsaved');
+  await expect(page.getByTestId('assistant-desktop-dock').getByRole('button', { name: 'Suggest titles' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/improvement-editor-ai-desktop.png', fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('assistant-mobile-sheet')).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
+  await page.screenshot({ path: 'test-results/improvement-editor-ai-mobile.png', fullPage: true });
+
+  expect(requests[0].article.public_audiences).toEqual(['contractor', 'homeowner']);
+  expect(requests[0].article.public_editorial_brief.idea).toContain('payment risk');
+  expect(saves).toBe(0);
 });

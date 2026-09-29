@@ -162,6 +162,9 @@ class ProjectTemplate(models.Model):
     public_title = models.CharField(max_length=255, blank=True, default="")
     public_intro = models.TextField(blank=True, default="")
     public_audience = models.CharField(max_length=24, choices=PublicAudience.choices, default=PublicAudience.HOMEOWNER, db_index=True)
+    public_audiences = models.JSONField(blank=True, default=list)
+    public_audience_actions = models.JSONField(blank=True, default=dict)
+    public_editorial_brief = models.JSONField(blank=True, default=dict)
     public_problem = models.TextField(blank=True, default="")
     public_evidence = models.TextField(blank=True, default="")
     public_evidence_source = models.URLField(blank=True, default="")
@@ -304,6 +307,23 @@ class ProjectTemplate(models.Model):
                 for item in self.public_faqs
             ):
                 raise ValidationError({"public_faqs": "FAQs must be a list of question/answer objects."})
+        if self.public_slug:
+            valid_audiences = set(self.PublicAudience.values)
+            audiences = self.public_audiences or ([self.public_audience] if self.public_audience else [])
+            if (
+                not isinstance(audiences, list)
+                or not audiences
+                or any(value not in valid_audiences for value in audiences)
+                or len(set(audiences)) != len(audiences)
+            ):
+                raise ValidationError({"public_audiences": "Select at least one valid audience."})
+            if not isinstance(self.public_audience_actions, dict) or any(
+                audience not in valid_audiences or action not in self.PublicAction.values
+                for audience, action in self.public_audience_actions.items()
+            ):
+                raise ValidationError({"public_audience_actions": "Choose a valid action for each audience."})
+            if not isinstance(self.public_editorial_brief, dict):
+                raise ValidationError({"public_editorial_brief": "Provide a valid article brief."})
         if self.public_publication_status == self.PublicPublicationStatus.PUBLISHED:
             errors = {}
             required = {

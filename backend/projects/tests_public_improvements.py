@@ -202,9 +202,20 @@ class PublicImprovementLibraryTests(TestCase):
 
     def test_audience_and_category_filters_never_reveal_drafts(self):
         self.published.public_audience = "contractor"
+        self.published.public_audiences = ["contractor", "homeowner"]
+        self.published.public_audience_actions = {
+            "contractor": "sign_up",
+            "homeowner": "create_project",
+        }
         self.published.save()
         response = self.client.get("/api/projects/public/improvements/?audience=contractor&category=bathroom")
         self.assertEqual([row["id"] for row in response.json()["improvements"]], [self.published.id])
+        homeowner = self.client.get("/api/projects/public/improvements/?audience=homeowner&category=bathroom")
+        homeowner_ids = [row["id"] for row in homeowner.json()["improvements"]]
+        self.assertIn(self.published.id, homeowner_ids)
+        self.assertNotIn(self.draft.id, homeowner_ids)
+        multi_audience_row = next(row for row in homeowner.json()["improvements"] if row["id"] == self.published.id)
+        self.assertEqual(multi_audience_row["audience_actions"]["homeowner"], "create_project")
         self.assertEqual(response.json()["published_count"], 2)
         self.assertNotIn(self.draft.id, [row["id"] for row in response.json()["improvements"]])
 
@@ -348,11 +359,26 @@ class ImprovementEditorialWorkflowTests(TestCase):
         change = ProjectTemplate.objects.get(public_slug="contractor-change-orders")
         self.assertIn("does not show that contractors caused", change.public_evidence)
 
+        balanced = ProjectTemplate.objects.get(public_slug="payment-risk-for-both-sides")
+        self.assertEqual(balanced.public_publication_status, "draft")
+        self.assertEqual(balanced.public_audiences, ["contractor", "homeowner"])
+        self.assertEqual(
+            balanced.public_audience_actions,
+            {"contractor": "sign_up", "homeowner": "create_project"},
+        )
+        self.assertIn("Homeowners:", balanced.public_practical_steps)
+        self.assertIn("Contractors:", balanced.public_practical_steps)
+        self.assertEqual(
+            self.client.get("/api/projects/public/improvements/project-planning/payment-risk-for-both-sides/").status_code,
+            404,
+        )
+
     def test_staff_assistance_is_proposal_only_and_never_publishes(self):
         endpoint = "/api/projects/admin/improvements/assist/"
         context = {
             "public_title": self.article.public_title,
             "public_audience": "contractor",
+            "public_audiences": ["contractor", "homeowner"],
             "public_problem": self.article.public_problem,
             "public_evidence": self.article.public_evidence,
             "public_evidence_source": self.article.public_evidence_source,
@@ -404,6 +430,8 @@ class ImprovementEditorialWorkflowTests(TestCase):
         create = self.client.post(endpoint, {
             "public_title": "Synthetic editorial draft", "public_slug": "synthetic-editorial-draft",
             "public_category_slug": "contractor-practice", "public_audience": "contractor",
+            "public_audiences": ["contractor", "homeowner"],
+            "public_audience_actions": {"contractor": "sign_up", "homeowner": "create_project"},
             "public_next_action": "sign_up",
         }, format="json")
         self.assertEqual(create.status_code, 201)

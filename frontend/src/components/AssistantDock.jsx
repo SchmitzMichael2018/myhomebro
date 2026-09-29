@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Circle
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
 import { saferAssistantActionLabel } from "./ProjectAssistantExperience.jsx";
 import ProjectAssistantQuickCapture from "./ProjectAssistantQuickCapture.jsx";
+import ImprovementEditorialAssistant from "./ImprovementEditorialAssistant.jsx";
 import { buildAiContext } from "../lib/aiContext.js";
 import { checkJobHealth } from "../lib/jobHealthMonitor.js";
 import { draftCheckIn, draftSignatureFollowUp, draftMilestoneUpdate } from "../lib/actionDrafter.js";
@@ -739,6 +740,7 @@ function DesktopAssistantDock({
   const hasBriefing = Array.isArray(context?.briefingItems) && context.briefingItems.length > 0;
   const hasHealthFlags = Array.isArray(healthFlags) && healthFlags.length > 0;
   const isCustomerCreate = context?.workspace_mode === "customer_create";
+  const editorialAssistant = context?.editorial_assistant;
 
   // Scroll to top whenever the dock opens, so panels are always visible first.
   useEffect(() => {
@@ -807,7 +809,17 @@ function DesktopAssistantDock({
                 onNavigate={(route) => { navigate(route); onClose(); }}
               />
               {isCustomerCreate ? <CustomerCreateDockSummary context={context} onAction={onAction} /> : null}
-              <StartWithAIAssistant
+              {editorialAssistant ? (
+                <ImprovementEditorialAssistant
+                  {...editorialAssistant}
+                  onRequest={(mode) => onAction?.({ type: 'request', mode })}
+                  onSectionChange={(section) => onAction?.({ type: 'section', section })}
+                  onProposalChange={(key, value, index) => onAction?.({ type: 'proposal', key, value, index })}
+                  onApplyValue={(key, value) => onAction?.({ type: 'apply_value', key, value })}
+                  onInsert={() => onAction?.({ type: 'insert' })}
+                  onDiscard={() => onAction?.({ type: 'discard' })}
+                />
+              ) : <StartWithAIAssistant
                 key={`${context?.workspace_mode || context?.page || "general"}:${
                   context?.current_route || ""
                 }`}
@@ -816,7 +828,7 @@ function DesktopAssistantDock({
                 onAction={onAction}
                 onClose={onClose}
                 hideContextHeader={isCustomerCreate || hasBriefing || hasHealthFlags}
-              />
+              />}
             </div>
           )}
         </div>
@@ -830,8 +842,28 @@ function MobileAssistantSheet({ open, onClose, title, context, onAction }) {
   const isMarketing = String(context?.workspace_mode || context?.workspace || context?.page || "") === "marketing";
   const isCustomerCreate = String(context?.workspace_mode || context?.workspace || context?.page || "") === "customer_create";
   const isAgreementWizard = String(context?.workspace_mode || context?.workspace || context?.page || "") === "agreement_wizard";
+  const editorialAssistant = context?.editorial_assistant;
   useEffect(() => { setShowQuickCapture(false); }, [context?.context_revision, isMarketing]);
   if (!open) return null;
+  if (editorialAssistant) return (
+    <div className="mhb-operational-overlay fixed inset-0 z-50 flex flex-col bg-white xl:hidden" data-testid="assistant-mobile-sheet">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <div><div className="text-xs font-black uppercase tracking-wider text-slate-500">Project Assistant</div><div className="text-sm font-black text-slate-900">{title}</div></div>
+        <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <ImprovementEditorialAssistant
+          {...editorialAssistant}
+          onRequest={(mode) => onAction?.({ type: 'request', mode })}
+          onSectionChange={(section) => onAction?.({ type: 'section', section })}
+          onProposalChange={(key, value, index) => onAction?.({ type: 'proposal', key, value, index })}
+          onApplyValue={(key, value) => onAction?.({ type: 'apply_value', key, value })}
+          onInsert={() => onAction?.({ type: 'insert' })}
+          onDiscard={() => onAction?.({ type: 'discard' })}
+        />
+      </div>
+    </div>
+  );
   return (
     <div className="mhb-operational-overlay fixed inset-0 z-50 flex flex-col bg-white xl:hidden" data-testid="assistant-mobile-sheet">
       {isCustomerCreate ? <>

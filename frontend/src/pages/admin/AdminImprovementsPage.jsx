@@ -1,12 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import api from '../../api';
+import { useAssistantDock } from '../../components/AssistantDock.jsx';
+import ImprovementEditorialAssistant from '../../components/ImprovementEditorialAssistant.jsx';
 
 const initial = {
   public_title: '',
   public_slug: '',
   public_category_slug: 'contractor-practice',
   public_audience: 'contractor',
+  public_audiences: ['contractor'],
+  public_audience_actions: { contractor: 'sign_up' },
+  public_editorial_brief: {},
   public_summary: '',
   public_problem: '',
   public_evidence: '',
@@ -66,16 +71,16 @@ const fieldGroups = [
 ];
 const buttonClass =
   'min-h-11 rounded-xl border border-white/20 bg-white/10 px-4 py-2 font-bold text-white hover:bg-white/20 disabled:opacity-50';
-const assistedFields = {
-  public_summary: 'Short summary',
-  public_problem: 'Problem',
-  public_viewpoint: 'Our take',
-  public_practical_steps: 'Practical steps',
-};
+const audiences = [
+  ['contractor', 'Contractors'],
+  ['homeowner', 'Homeowners'],
+  ['property_manager', 'Property Managers'],
+];
 
 export default function AdminImprovementsPage() {
   const { articleId } = useParams();
   const navigate = useNavigate();
+  const { updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState(initial);
   const [savedForm, setSavedForm] = useState(initial);
@@ -89,6 +94,7 @@ export default function AdminImprovementsPage() {
   const [aiError, setAiError] = useState('');
   const [proposal, setProposal] = useState(null);
   const [proposalBasis, setProposalBasis] = useState('');
+  const [reviewFlags, setReviewFlags] = useState([]);
   const proposalRequestId = useRef(0);
   const dirty = JSON.stringify(form) !== JSON.stringify(savedForm);
   const visibleRows = rows.filter(
@@ -181,6 +187,7 @@ export default function AdminImprovementsPage() {
       });
       if (requestId === proposalRequestId.current) {
         setProposal(data.proposal);
+        setReviewFlags(data.review_flags || []);
         setProposalBasis(JSON.stringify(form));
       }
     } catch (caught) {
@@ -196,9 +203,60 @@ export default function AdminImprovementsPage() {
   };
   const insertProposal = () => {
     if (!proposal || proposalBasis !== JSON.stringify(form)) return;
-    setForm((current) => ({ ...current, ...proposal }));
+    const insertable = Object.fromEntries(
+      Object.entries(proposal).filter(([key]) => key in assistedFields)
+    );
+    setForm((current) => ({ ...current, ...insertable }));
     setProposal(null);
   };
+  const assistedFields = {
+    public_summary: true,
+    public_problem: true,
+    public_viewpoint: true,
+    public_practical_steps: true,
+  };
+  const updateProposal = (key, value, index) => setProposal((current) => {
+    if (index === undefined) return { ...current, [key]: value };
+    const next = [...current[key]];
+    next[index] = value;
+    return { ...current, [key]: next };
+  });
+  const applyProposalValue = (key, value) => {
+    if (proposalBasis !== JSON.stringify(form)) return;
+    set(key, value);
+    setProposal(null);
+  };
+  useEffect(() => {
+    updateAssistantContext({
+      workspace_mode: 'admin',
+      page: 'admin',
+      article_id: articleId || null,
+      article_title: form.public_title || 'Unsaved Improvement Library draft',
+      unsaved_changes: dirty,
+      editorial_assistant: {
+        form,
+        section: aiSection,
+        busy: aiBusy,
+        error: aiError,
+        proposal,
+        reviewFlags,
+        stale: Boolean(proposal && proposalBasis !== JSON.stringify(form)),
+        unsaved: dirty,
+      },
+    });
+  }, [articleId, form, dirty, aiSection, aiBusy, aiError, proposal, proposalBasis, reviewFlags, updateAssistantContext]);
+  useEffect(() => {
+    const handler = (action) => {
+      if (action.type === 'request') requestProposal(action.mode);
+      if (action.type === 'section') setAiSection(action.section);
+      if (action.type === 'proposal') updateProposal(action.key, action.value, action.index);
+      if (action.type === 'apply_value') applyProposalValue(action.key, action.value);
+      if (action.type === 'insert') insertProposal();
+      if (action.type === 'discard') setProposal(null);
+    };
+    updateAssistantOnAction(handler);
+    return () => updateAssistantOnAction(null);
+  }, [aiSection, form, proposal, proposalBasis, updateAssistantOnAction]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <main className="min-h-screen bg-[#071b34] p-4 text-white sm:p-8">
       <div className="mx-auto max-w-7xl">
@@ -315,6 +373,30 @@ export default function AdminImprovementsPage() {
                 </span>
               ) : null}
             </div>
+            <div className="mt-6">
+              <ImprovementEditorialAssistant
+                form={form}
+                section={aiSection}
+                busy={aiBusy}
+                error={aiError}
+                proposal={proposal}
+                reviewFlags={reviewFlags}
+                stale={Boolean(proposal && proposalBasis !== JSON.stringify(form))}
+                showBrief
+                onBriefChange={(key, value) =>
+                  set('public_editorial_brief', {
+                    ...form.public_editorial_brief,
+                    [key]: value,
+                  })
+                }
+                onSectionChange={setAiSection}
+                onRequest={requestProposal}
+                onProposalChange={updateProposal}
+                onApplyValue={applyProposalValue}
+                onInsert={insertProposal}
+                onDiscard={() => setProposal(null)}
+              />
+            </div>
             <div className="mt-6 grid gap-7">
               {fieldGroups.map(([group, fields]) => (
                 <fieldset
@@ -371,36 +453,59 @@ export default function AdminImprovementsPage() {
                   </div>
                 </fieldset>
               ))}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label>
-                  <span className="mb-1 block font-bold">Audience</span>
-                  <select
-                    value={form.public_audience}
-                    onChange={(event) =>
-                      set('public_audience', event.target.value)
-                    }
-                    className="min-h-11 w-full rounded-lg bg-white p-2 text-slate-950"
-                  >
-                    <option value="contractor">Contractors</option>
-                    <option value="homeowner">Homeowners</option>
-                    <option value="property_manager">Property Managers</option>
-                  </select>
-                </label>
-                <label>
-                  <span className="mb-1 block font-bold">5. Next action</span>
-                  <select
-                    value={form.public_next_action}
-                    onChange={(event) =>
-                      set('public_next_action', event.target.value)
-                    }
-                    className="min-h-11 w-full rounded-lg bg-white p-2 text-slate-950"
-                  >
-                    <option value="sign_up">Sign up</option>
-                    <option value="create_project">Create a project</option>
-                    <option value="request_help">Request help</option>
-                  </select>
-                </label>
-              </div>
+              <fieldset className="rounded-xl border border-white/10 p-4">
+                <legend className="px-2 text-lg font-bold text-amber-200">Audiences and final actions</legend>
+                <p className="mb-3 text-sm text-sky-100">Select at least one audience. Each role can have its own final action.</p>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {audiences.map(([value, label]) => {
+                    const checked = form.public_audiences.includes(value);
+                    return (
+                      <div key={value} className="rounded-lg border border-white/10 p-3">
+                        <label className="flex items-center gap-3 font-bold">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              const next = event.target.checked
+                                ? [...form.public_audiences, value]
+                                : form.public_audiences.filter((item) => item !== value);
+                              const nextActions = { ...form.public_audience_actions };
+                              if (event.target.checked) nextActions[value] = nextActions[value] || (value === 'contractor' ? 'sign_up' : 'create_project');
+                              else delete nextActions[value];
+                              setForm((current) => ({
+                                ...current,
+                                public_audiences: next,
+                                public_audience: next[0] || current.public_audience,
+                                public_audience_actions: nextActions,
+                                public_next_action: nextActions[next[0]] || current.public_next_action,
+                              }));
+                            }}
+                          />
+                          {label}
+                        </label>
+                        {checked ? (
+                          <label className="mt-3 block text-sm font-bold">
+                            Final action
+                            <select
+                              value={form.public_audience_actions[value] || 'create_project'}
+                              onChange={(event) => set('public_audience_actions', {
+                                ...form.public_audience_actions,
+                                [value]: event.target.value,
+                              })}
+                              className="mt-1 min-h-11 w-full rounded-lg bg-white p-2 text-slate-950"
+                            >
+                              <option value="sign_up">Sign up</option>
+                              <option value="create_project">Create a project</option>
+                              <option value="request_help">Request help</option>
+                            </select>
+                          </label>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+                {!form.public_audiences.length ? <p role="alert" className="mt-3 text-rose-200">Select at least one audience.</p> : null}
+              </fieldset>
               <label className="flex items-center gap-3">
                 <input
                   type="checkbox"
@@ -442,121 +547,6 @@ export default function AdminImprovementsPage() {
                 </div>
               </fieldset>
             </div>
-            <section
-              className="mt-7 rounded-xl border border-sky-300/40 bg-sky-950/60 p-4"
-              aria-labelledby="editor-assistant-title"
-            >
-              <h3 id="editor-assistant-title" className="text-lg font-bold">
-                Project Assistant writing help
-              </h3>
-              <p className="mt-2 text-sm text-sky-100">
-                Proposals are advisory and unsaved. Evidence, source links,
-                numerical claims, and publication stay under staff control.
-              </p>
-              <div className="mt-4 flex flex-wrap items-end gap-3">
-                <button
-                  type="button"
-                  className={buttonClass}
-                  disabled={aiBusy}
-                  onClick={() => requestProposal('outline')}
-                >
-                  Generate outline
-                </button>
-                <button
-                  type="button"
-                  className={buttonClass}
-                  disabled={aiBusy}
-                  onClick={() => requestProposal('draft')}
-                >
-                  Generate article draft
-                </button>
-                <label className="text-sm font-bold">
-                  Section to rewrite
-                  <select
-                    value={aiSection}
-                    onChange={(event) => setAiSection(event.target.value)}
-                    className="mt-1 block min-h-11 rounded-lg bg-white p-2 text-slate-950"
-                  >
-                    {Object.entries(assistedFields).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className={buttonClass}
-                  disabled={aiBusy}
-                  onClick={() => requestProposal('rewrite')}
-                >
-                  Rewrite selected section
-                </button>
-              </div>
-              {aiBusy ? (
-                <p role="status" className="mt-4">
-                  Preparing a proposal…
-                </p>
-              ) : null}
-              {aiError ? (
-                <p role="alert" className="mt-4 text-rose-200">
-                  {aiError}
-                </p>
-              ) : null}
-              {proposal ? (
-                <div
-                  className="mt-5 rounded-xl border border-amber-200/40 bg-slate-900/70 p-4"
-                  data-testid="editorial-ai-proposal"
-                >
-                  <h4 className="font-bold text-amber-200">
-                    Review the proposed text
-                  </h4>
-                  <p className="mt-1 text-sm text-sky-100">
-                    Edit below, then insert into the editor. Inserting does not
-                    save or publish.
-                  </p>
-                  {Object.entries(proposal).map(([key, value]) => (
-                    <label key={key} className="mt-4 block font-bold">
-                      {assistedFields[key]}
-                      <textarea
-                        rows={key === 'public_practical_steps' ? 7 : 4}
-                        value={value}
-                        onChange={(event) =>
-                          setProposal((current) => ({
-                            ...current,
-                            [key]: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-lg bg-white p-3 font-normal text-slate-950"
-                      />
-                    </label>
-                  ))}
-                  {proposalBasis !== JSON.stringify(form) ? (
-                    <p className="mt-3 text-sm text-amber-200">
-                      The article changed after this proposal. Generate a fresh
-                      proposal before inserting.
-                    </p>
-                  ) : null}
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={insertProposal}
-                      disabled={proposalBasis !== JSON.stringify(form)}
-                      className="min-h-11 rounded-xl bg-amber-300 px-4 font-bold text-slate-950 disabled:opacity-50"
-                    >
-                      Insert into editor
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProposal(null)}
-                      className={buttonClass}
-                    >
-                      Discard proposal
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </section>
             <div className="mt-8 flex flex-wrap gap-3">
               <button
                 type="button"
