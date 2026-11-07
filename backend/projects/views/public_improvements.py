@@ -1,14 +1,17 @@
 from django.db.models import Case, IntegerField, Q, Value, When
+from django.db import DatabaseError
 from django.http import Http404
 from rest_framework import serializers
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from projects.models_templates import ProjectTemplate
 from projects.services.diy_planner import clean_text
 from projects.services.public_improvement_planner import build_public_plan_preview
+from projects.services.public_plan_admission import reserve_public_plan_slot
 
 
 DEFAULT_SOCIAL_IMAGE = "/static/social/myhomebro-default-1200x630.png"
@@ -207,7 +210,13 @@ class PublicImprovementDetailView(APIView):
         return Response(serialize_improvement(template, detail=True))
 
 
-class PublicImprovementPlanThrottle(AnonRateThrottle):
+class PublicPlanAdmissionUnavailable(APIException):
+    status_code = 503
+    default_detail = "Project planning is temporarily unavailable. Please try again shortly."
+    default_code = "planning_unavailable"
+
+
+class PublicImprovementPlanThrottle(BaseThrottle):
     scope = "public_improvement_plan"
     rate = "6/hour"
 
@@ -216,6 +225,18 @@ class PublicImprovementPlanThrottle(AnonRateThrottle):
         # operation. A trusted deployment proxy must normalize REMOTE_ADDR to
         # preserve per-client limits; otherwise its clients share one bucket.
         return request.META.get("REMOTE_ADDR") or "unknown"
+
+    def allow_request(self, request, view):
+        try:
+            self.retry_after = reserve_public_plan_slot(self.get_ident(request))
+        except DatabaseError:
+            # An absent migration or unavailable database must never bypass the
+            # admission limit and invoke the paid planning provider.
+            raise PublicPlanAdmissionUnavailable() from None
+        return self.retry_after is None
+
+    def wait(self):
+        return self.retry_after
 
 
 class PublicImprovementPlanSerializer(serializers.Serializer):

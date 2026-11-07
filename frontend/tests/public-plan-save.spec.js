@@ -161,14 +161,140 @@ test('failed save keeps the reviewed plan available for retry', async ({
   expect(calls.saves()).toBe(2);
 });
 
-test('email verification in another tab points back to the original private plan', async ({ page, context }) => {
+test('email verification in another tab points back to the original private plan', async ({
+  page,
+  context,
+}) => {
   await setup(page);
-  await context.route('**/api/accounts/auth/verification/status/', (route) => route.fulfill({ json: { email_verified: true, phone_verified: true, role: 'customer', continuation: '/portal?workspace=diy-planner&action=create&planning_draft=1' } }));
+  await context.route('**/api/accounts/auth/verification/status/', (route) =>
+    route.fulfill({
+      json: {
+        email_verified: true,
+        phone_verified: true,
+        role: 'customer',
+        continuation:
+          '/portal?workspace=diy-planner&action=create&planning_draft=1',
+      },
+    })
+  );
   const verificationTab = await context.newPage();
-  await verificationTab.goto('/verify-account?verification_session=mock-session');
-  await expect(verificationTab.getByTestId('planning-return-original-tab')).toBeVisible();
-  await expect(verificationTab.getByTestId('verification-resume')).toHaveAttribute('href', '/portal');
+  await verificationTab.goto(
+    '/verify-account?verification_session=mock-session'
+  );
+  await expect(
+    verificationTab.getByTestId('planning-return-original-tab')
+  ).toBeVisible();
+  await expect(
+    verificationTab.getByTestId('verification-resume')
+  ).toHaveAttribute('href', '/portal');
   await page.goto('/verify-account?verification_session=mock-session');
-  await expect(page.getByTestId('verification-resume')).toHaveAttribute('href', '/portal?workspace=diy-planner&action=create&planning_draft=1');
-  await expect(page.getByTestId('verification-resume')).toHaveText('Sign in and save your plan');
+  await expect(page.getByTestId('verification-resume')).toHaveAttribute(
+    'href',
+    '/portal?workspace=diy-planner&action=create&planning_draft=1'
+  );
+  await expect(page.getByTestId('verification-resume')).toHaveText(
+    'Sign in and save your plan'
+  );
+});
+
+for (const code of [
+  'email_verification_required',
+  'account_verification_required',
+]) {
+  test(`existing account ${code} resumes the current plan rather than old registration intent`, async ({
+    page,
+  }) => {
+    await setup(page);
+    await page.route('**/api/auth/login/', (route) =>
+      route.fulfill({
+        status: 403,
+        json: {
+          code,
+          verification_session: 'existing-session',
+          continuation: '',
+          email_verified: code === 'account_verification_required',
+        },
+      })
+    );
+    await page.route('**/api/accounts/auth/verification/status/', (route) =>
+      route.fulfill({
+        json: {
+          email_verified: true,
+          phone_verified: true,
+          role: 'customer',
+          continuation: '',
+        },
+      })
+    );
+    await page.goto(
+      '/portal?workspace=diy-planner&action=create&planning_draft=1'
+    );
+    await page
+      .getByTestId('customer-portal-login-email-input')
+      .fill('homeowner@example.com');
+    await page
+      .getByTestId('customer-portal-login-password-input')
+      .fill('test-password-not-a-real-secret');
+    await page.getByTestId('customer-portal-login-button').click();
+    const resume = page.getByTestId('continue-account-verification');
+    await expect(resume).toBeVisible();
+    if (code === 'account_verification_required')
+      await expect(
+        page.getByTestId('resend-verification-email-button')
+      ).toHaveCount(0);
+    await resume.click();
+    await expect(page.getByTestId('verification-resume')).toHaveAttribute(
+      'href',
+      '/portal?workspace=diy-planner&action=create&planning_draft=1'
+    );
+    await expect(page.getByTestId('verification-resume')).toHaveText(
+      'Sign in and save your plan'
+    );
+  });
+}
+
+test('phone verification confirmation keeps a reviewed plan when account registration intent is empty', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route('**/api/accounts/auth/verification/status/', (route) =>
+    route.fulfill({
+      json: {
+        email_verified: true,
+        phone_verified: false,
+        role: 'customer',
+        continuation: '',
+      },
+    })
+  );
+  await page.route(
+    '**/api/accounts/auth/verification/confirm-phone/',
+    (route) =>
+      route.fulfill({
+        json: {
+          email_verified: true,
+          phone_verified: true,
+          role: 'customer',
+          continuation: '',
+          access: 'test-access',
+        },
+      })
+  );
+  await page.route('**/api/projects/customer-portal/account/', (route) =>
+    route.fulfill({
+      json: {
+        ...portal,
+        account: { ...portal.account, portal_token: 'customer-token' },
+      },
+    })
+  );
+  await page.goto('/verify-account?verification_session=existing-session');
+  await page.getByTestId('phone-verification-code').fill('123456');
+  await page
+    .getByRole('button', { name: 'Verify mobile and continue', exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    /\/portal\/customer-token\?workspace=diy-planner&action=create&planning_draft=1/
+  );
+  await expect(page.getByTestId('diy-public-plan-review')).toBeVisible();
 });
