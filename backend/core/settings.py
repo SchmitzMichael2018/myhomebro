@@ -606,6 +606,13 @@ CSRF_COOKIE_SAMESITE = get_env_var("CSRF_COOKIE_SAMESITE", "Lax")
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# Never infer client-IP trust from request headers. PythonAnywhere mode is an
+# explicit, verified ingress contract; see docs/operations/PUBLIC_PLANNING_CLIENT_IP.md.
+PUBLIC_PLANNING_CLIENT_IP_SOURCE = get_env_var("PUBLIC_PLANNING_CLIENT_IP_SOURCE", "direct").strip().lower()
+PUBLIC_PLANNING_PYTHONANYWHERE_INGRESS_VERIFIED = get_bool(
+    "PUBLIC_PLANNING_PYTHONANYWHERE_INGRESS_VERIFIED", default=False,
+)
+
 # Begin with a deliberately short production HSTS window. This protects repeat
 # visits from HTTPS downgrade attacks while keeping the first rollout quickly
 # reversible. Increase only after HTTPS is verified for every intended host.

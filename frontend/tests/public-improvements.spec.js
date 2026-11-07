@@ -228,3 +228,50 @@ test('improvement CTAs remain usable on a mobile viewport', async ({
   await expect(page.getByTestId('get-contractor-help')).toBeVisible();
   await expect(page.getByTestId('improvement-breadcrumbs')).toBeVisible();
 });
+
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`bathroom planning references and nonnumeric timing are readable at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const hub = {
+      ...improvement,
+      slug: 'bathroom-remodel-planning',
+      title: 'Bathroom Remodel Planning',
+      canonical_path: '/improvements/bathroom/bathroom-remodel-planning/',
+      difficulty: 'advanced',
+      difficulty_label: 'Advanced',
+      estimated_duration_min_days: null,
+      estimated_duration_max_days: null,
+      sections: [
+        {
+          id: 'schedule-assumptions',
+          title: 'Build a schedule for your scope',
+          body: 'Separate planning and purchasing time from active construction. Required inspections and cure times affect the schedule.',
+        },
+        {
+          id: 'san-antonio-checks',
+          title: 'Planning in the San Antonio area',
+          body: 'Confirm which authority handles the property. Start with [Residential inspections](https://www.sa.gov/Directory/Departments/DSD/Constructing/Residential/Inspections) and [IB 130](https://docsonline.sanantonio.gov/FileUploads/DSD/IB130.pdf).',
+        },
+      ],
+    };
+    await page.route('**/api/projects/attribution/track/', (route) =>
+      route.fulfill({ status: 201, json: { recorded: true } })
+    );
+    await page.route('**/api/projects/public/improvements/**', (route) =>
+      route.fulfill({ status: 200, json: hub })
+    );
+    await page.goto(hub.canonical_path);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(hub.title);
+    await expect(page.getByText('Estimated duration', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Build a schedule for your scope' })).toBeVisible();
+    const source = page.getByRole('link', { name: 'Residential inspections', exact: true });
+    await expect(source).toHaveAttribute('href', 'https://www.sa.gov/Directory/Departments/DSD/Constructing/Residential/Inspections');
+    await expect(source).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(page.getByRole('link', { name: 'IB 130', exact: true })).toHaveAttribute('href', 'https://docsonline.sanantonio.gov/FileUploads/DSD/IB130.pdf');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.screenshot({ path: `test-results/bathroom-planning-sources-${viewport.width}.png`, fullPage: true });
+  });
+}

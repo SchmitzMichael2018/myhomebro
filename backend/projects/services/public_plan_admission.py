@@ -2,7 +2,9 @@
 
 import logging
 from datetime import timedelta
+from ipaddress import ip_address
 
+from django.conf import settings
 from django.db import DatabaseError, IntegrityError, transaction
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
@@ -14,6 +16,48 @@ logger = logging.getLogger(__name__)
 ADMISSION_SLOTS = 6
 ADMISSION_WINDOW = timedelta(hours=1)
 EXPIRED_SLOT_CLEANUP_BATCH = 100
+
+
+class PublicPlanClientIPUnavailable(ValueError):
+    """The deployment cannot establish its configured trusted client identity."""
+
+
+def _canonical_ip(value):
+    if not isinstance(value, str) or len(value) > 64 or "%" in value:
+        raise PublicPlanClientIPUnavailable("Missing or invalid client IP.")
+    try:
+        address = ip_address(value.strip())
+    except ValueError:
+        raise PublicPlanClientIPUnavailable("Missing or invalid client IP.") from None
+    # Do not give IPv4-mapped IPv6 and the corresponding IPv4 separate buckets.
+    return str(getattr(address, "ipv4_mapped", None) or address)
+
+
+def public_plan_client_ip(request):
+    """Resolve identity only under the explicitly verified hosting contract.
+
+    PythonAnywhere overwrites X-Real-IP with its inbound peer and guarantees only
+    the final X-Forwarded-For item. Never use that mode on a directly reachable
+    origin or infer trust from Host, an arbitrary header, or a private IP range.
+    See https://help.pythonanywhere.com/pages/WebAppClientIPAddresses/.
+    """
+    peer = _canonical_ip(request.META.get("REMOTE_ADDR"))
+    source = getattr(settings, "PUBLIC_PLANNING_CLIENT_IP_SOURCE", "direct")
+    if source == "direct":
+        return peer
+    if source != "pythonanywhere" or getattr(
+        settings, "PUBLIC_PLANNING_PYTHONANYWHERE_INGRESS_VERIFIED", False,
+    ) is not True:
+        raise PublicPlanClientIPUnavailable("Client-IP trust configuration is not verified.")
+    client = _canonical_ip(request.META.get("HTTP_X_REAL_IP"))
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded is not None:
+        if not isinstance(forwarded, str) or len(forwarded) > 4096:
+            raise PublicPlanClientIPUnavailable("Invalid trusted proxy metadata.")
+        # All earlier values can be supplied by a malicious client. Ignore them.
+        if _canonical_ip(forwarded.rsplit(",", 1)[-1]) != client:
+            raise PublicPlanClientIPUnavailable("Inconsistent trusted proxy metadata.")
+    return client
 
 
 def _slot_expirations(keys):

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import SourceLinkedText from '../components/improvements/SourceLinkedText.jsx';
 import { ExternalLink, Play } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import api from '../api';
@@ -326,7 +327,7 @@ export default function PublicImprovementPage({ preview = false }) {
             {contractorGuide ? <ContractorVisualExample guide={contractorGuide} /> : null}
             <PracticalSteps value={item.practical_steps} />
             {(item.sections || []).map((section) => (
-              <ContentSection key={section.id} title={section.title} value={section.body} />
+              <ContentSection key={section.id} title={section.title} value={section.body} sourceLinks />
             ))}
             <WalkthroughSection video={item.video} previewPlacement={preview && Boolean(contractorGuide)} previewSequence={contractorGuide?.walkthroughSequence} />
             <section className={`mt-12 rounded-3xl p-6 sm:p-8 ${contractorGuide ? 'border border-[#e7e0d3] bg-[#f7f4ed]' : 'bg-blue-50'}`}>
@@ -390,7 +391,7 @@ export default function PublicImprovementPage({ preview = false }) {
               ) : null
             )}
             {(item.sections || []).map((section) => (
-              <ContentSection key={section.id} title={section.title} value={section.body} />
+              <ContentSection key={section.id} title={section.title} value={section.body} sourceLinks />
             ))}
             {item.materials ? (
               <ContentSection
@@ -649,12 +650,12 @@ function Fact({ label, value }) {
     </div>
   );
 }
-function ContentSection({ title, value }) {
+function ContentSection({ title, value, sourceLinks = false }) {
   return (
     <section className="mt-10">
       <h2 className="text-2xl font-bold text-slate-950">{title}</h2>
       <p className="mt-3 whitespace-pre-line leading-8 text-slate-700">
-        {value}
+        {sourceLinks ? <SourceLinkedText text={value} /> : value}
       </p>
     </section>
   );

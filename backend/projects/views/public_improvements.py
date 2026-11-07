@@ -1,6 +1,7 @@
 from django.db.models import Case, IntegerField, Q, Value, When
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.http import Http404
+from django.utils.decorators import method_decorator
 from rest_framework import serializers
 from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny
@@ -10,8 +11,12 @@ from rest_framework.views import APIView
 
 from projects.models_templates import ProjectTemplate
 from projects.services.diy_planner import clean_text
-from projects.services.public_improvement_planner import build_public_plan_preview
-from projects.services.public_plan_admission import reserve_public_plan_slot
+from projects.services.public_improvement_planner import GuideSafetyReferenceError, build_public_plan_preview
+from projects.services.public_plan_admission import (
+    PublicPlanClientIPUnavailable,
+    public_plan_client_ip,
+    reserve_public_plan_slot,
+)
 
 
 DEFAULT_SOCIAL_IMAGE = "/static/social/myhomebro-default-1200x630.png"
@@ -221,17 +226,14 @@ class PublicImprovementPlanThrottle(BaseThrottle):
     rate = "6/hour"
 
     def get_ident(self, request):
-        # Never trust caller-supplied X-Forwarded-For chains for a paid public
-        # operation. A trusted deployment proxy must normalize REMOTE_ADDR to
-        # preserve per-client limits; otherwise its clients share one bucket.
-        return request.META.get("REMOTE_ADDR") or "unknown"
+        return public_plan_client_ip(request)
 
     def allow_request(self, request, view):
         try:
             self.retry_after = reserve_public_plan_slot(self.get_ident(request))
-        except DatabaseError:
-            # An absent migration or unavailable database must never bypass the
-            # admission limit and invoke the paid planning provider.
+        except (DatabaseError, PublicPlanClientIPUnavailable):
+            # Unverified client identity, an absent migration, or unavailable
+            # database must never bypass admission and invoke a paid provider.
             raise PublicPlanAdmissionUnavailable() from None
         return self.retry_after is None
 
@@ -258,6 +260,7 @@ class PublicImprovementPlanSerializer(serializers.Serializer):
         return attrs
 
 
+@method_decorator(transaction.non_atomic_requests, name="dispatch")
 class PublicImprovementPlanView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -275,6 +278,11 @@ class PublicImprovementPlanView(APIView):
         inputs.setdefault("title", clean_text(template.public_title or template.name, 200))
         try:
             preview = build_public_plan_preview(template, inputs)
+        except GuideSafetyReferenceError:
+            raise serializers.ValidationError({
+                "detail": "This guide's safety references need editorial review before a plan can be generated. "
+                          "Please try another guide or contact support.",
+            })
         except (TypeError, ValueError):
             raise serializers.ValidationError({
                 "detail": "This plan preview is too large. Shorten your answers and generate a new preview.",
