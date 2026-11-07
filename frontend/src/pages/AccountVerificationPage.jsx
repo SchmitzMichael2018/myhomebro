@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { setTokens } from '../api';
 import logo from '../assets/myhomebro_logo.png';
-import { customerContinuationDestination } from '../lib/universalRegistration.js';
+import { readPublicPlanningDraft } from '../lib/publicPlanningDraft.js';
+import { customerContinuationDestination, customerPortalLoginDestination } from '../lib/universalRegistration.js';
 
 export default function AccountVerificationPage() {
   const [params] = useSearchParams();
@@ -35,6 +36,11 @@ export default function AccountVerificationPage() {
       const { data } = await api.post('/accounts/auth/verification/confirm-phone/', { verification_session: session, code });
       if (data.access) setTokens(data.access, data.refresh || null, true);
       sessionStorage.removeItem('mhb-verification-session');
+      setState(data);
+      if (String(data.continuation || '').includes('planning_draft=1') && !readPublicPlanningDraft()) {
+        setMessage('Your account is verified. Return to the original tab where you prepared your plan, then continue verification there to sign in and save it. Your private preview is kept in that tab.');
+        return;
+      }
       if (data.role === 'contractor') return navigate(data.continuation || '/onboarding');
       const portal = await api.get('/projects/customer-portal/account/');
       const token = portal.data?.account?.portal_token || '';
@@ -62,6 +68,10 @@ export default function AccountVerificationPage() {
         <button disabled={busy} onClick={requestCode} className="mt-5 w-full rounded-xl border border-sky-300/40 px-4 py-3 font-bold">Send verification code</button>
         <form onSubmit={confirm} className="mt-4 space-y-3"><label className="block text-sm font-semibold">Six-digit code<input data-testid="phone-verification-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-white" required /></label><button disabled={busy || code.length !== 6} className="w-full rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">Verify mobile and continue</button></form>
       </> : null}
+      {state?.email_verified && state?.phone_verified ? <div className="mt-5 space-y-3">
+        {String(state.continuation || '').includes('planning_draft=1') && !readPublicPlanningDraft() ? <p role="status" data-testid="planning-return-original-tab" className="rounded-xl border border-amber-300/40 p-4 text-sm text-amber-100">Your account is verified. Return to the original planning tab and continue verification there to sign in and save your plan. Your private preview is kept in that tab. If you closed it, prepare a new preview from the guide.</p> : null}
+        <Link data-testid="verification-resume" to={state.role === 'contractor' ? '/login' : customerPortalLoginDestination(String(state.continuation || '').includes('planning_draft=1') && !readPublicPlanningDraft() ? '' : state.continuation)} className="block rounded-xl bg-amber-400 px-4 py-3 text-center font-bold text-slate-950">{readPublicPlanningDraft() ? 'Sign in and save your plan' : 'Continue to your account'}</Link>
+      </div> : null}
       {message ? <p className="mt-4 text-sm text-sky-100" role="status">{message}</p> : null}
       {!session ? <Link to="/login" className="mt-5 block text-center text-amber-300">Sign in to resume verification</Link> : null}
     </section>

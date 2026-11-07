@@ -1,10 +1,14 @@
 from django.db.models import Case, IntegerField, Q, Value, When
 from django.http import Http404
+from rest_framework import serializers
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from projects.models_templates import ProjectTemplate
+from projects.services.diy_planner import clean_text
+from projects.services.public_improvement_planner import build_public_plan_preview
 
 
 DEFAULT_SOCIAL_IMAGE = "/static/social/myhomebro-default-1200x630.png"
@@ -201,3 +205,59 @@ class PublicImprovementDetailView(APIView):
         if template is None:
             raise Http404("Published improvement not found.")
         return Response(serialize_improvement(template, detail=True))
+
+
+class PublicImprovementPlanThrottle(AnonRateThrottle):
+    scope = "public_improvement_plan"
+    rate = "6/hour"
+
+    def get_ident(self, request):
+        # Never trust caller-supplied X-Forwarded-For chains for a paid public
+        # operation. A trusted deployment proxy must normalize REMOTE_ADDR to
+        # preserve per-client limits; otherwise its clients share one bucket.
+        return request.META.get("REMOTE_ADDR") or "unknown"
+
+
+class PublicImprovementPlanSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200, required=False)
+    desired_outcome = serializers.CharField(max_length=2000)
+    existing_conditions = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+    additional_context = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+    confidence_notes = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        unknown = set(self.initial_data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError("Only project planning answers may be submitted.")
+        for name, value in attrs.items():
+            attrs[name] = clean_text(value, self.fields[name].max_length)
+        for name in ("title", "desired_outcome"):
+            if name in attrs and not attrs[name]:
+                raise serializers.ValidationError({name: "Enter a description using plain text."})
+        return attrs
+
+
+class PublicImprovementPlanView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [PublicImprovementPlanThrottle]
+
+    def post(self, request, category_slug, improvement_slug):
+        template = published_improvements().filter(
+            public_category_slug=category_slug, public_slug=improvement_slug,
+        ).first()
+        if template is None:
+            raise Http404("Published improvement not found.")
+        serializer = PublicImprovementPlanSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        inputs = dict(serializer.validated_data)
+        inputs.setdefault("title", clean_text(template.public_title or template.name, 200))
+        try:
+            preview = build_public_plan_preview(template, inputs)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({
+                "detail": "This plan preview is too large. Shorten your answers and generate a new preview.",
+            })
+        response = Response(preview)
+        response["Cache-Control"] = "private, no-store"
+        return response

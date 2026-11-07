@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from django.core import signing
 from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
@@ -20,6 +21,11 @@ from projects.models_diy_planner import (
     DIYProjectPhase, DIYProjectProgressEntry, DIYProjectRequestLink, DIYProjectTask,
 )
 from projects.services.diy_planner import apply_plan_proposal, build_plan_proposal
+from projects.services.public_improvement_planner import (
+    PREVIEW_TOKEN_MAX_LENGTH,
+    read_public_plan_preview,
+    save_public_plan_preview,
+)
 from projects.services.ai.project_drafter import classify_type_subtype
 from projects.views.customer_portal import _primary_homeowner_for_email, _unsign_portal_token
 
@@ -48,6 +54,19 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
                   "target_budget_min", "target_budget_max", "target_completion_date", "confidence_notes",
                   "design_notes", "additional_context", "status", "property_id", "source_template_id"]
         extra_kwargs = {"status": {"required": False}, "desired_outcome": {"required": True}}
+
+
+class PublicPlanSaveSerializer(serializers.Serializer):
+    preview_token = serializers.CharField(max_length=PREVIEW_TOKEN_MAX_LENGTH, trim_whitespace=False)
+    confirm = serializers.BooleanField()
+    property_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if set(self.initial_data) - set(self.fields):
+            raise serializers.ValidationError("Regenerate the preview to change the reviewed project answers or plan.")
+        if not attrs["confirm"]:
+            raise serializers.ValidationError({"confirm": "Review and confirm the suggested plan before saving."})
+        return attrs
 
 
 class PhaseSerializer(serializers.ModelSerializer):
@@ -136,6 +155,8 @@ class DIYProjectListCreateView(APIView):
         email = portal_email(token)
         if not email:
             return Response({"detail": "Invalid portal link."}, status=403)
+        if "preview_token" in request.data:
+            return self._save_preview(request, email)
         serializer = ProjectWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = dict(serializer.validated_data)
@@ -182,6 +203,32 @@ class DIYProjectListCreateView(APIView):
                     in {ProjectTemplate.Difficulty.ADVANCED, ProjectTemplate.Difficulty.PROFESSIONAL},
                 )
         return Response(serialize_project(row, detail=True), status=201)
+
+    def _save_preview(self, request, email):
+        serializer = PublicPlanSaveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            snapshot = read_public_plan_preview(serializer.validated_data["preview_token"])
+        except signing.SignatureExpired:
+            return Response({"detail": "This plan preview has expired. Generate a new preview before saving."}, status=400)
+        except (signing.BadSignature, KeyError, TypeError, ValueError):
+            return Response({"detail": "This plan preview is invalid. Generate a new preview before saving."}, status=400)
+        template = get_object_or_404(
+            ProjectTemplate,
+            pk=snapshot["source_template_id"],
+            public_publication_status=ProjectTemplate.PublicPublicationStatus.PUBLISHED,
+            is_active=True,
+        )
+        profile = None
+        property_id = serializer.validated_data.get("property_id")
+        if property_id is not None:
+            profile = get_object_or_404(PropertyProfile, pk=property_id, customer_email__iexact=email)
+        row, created = save_public_plan_preview(
+            email=email, snapshot=snapshot, template=template, property_profile=profile,
+        )
+        response = Response(serialize_project(row, detail=True), status=201 if created else 200)
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 class DIYProjectDetailView(APIView):

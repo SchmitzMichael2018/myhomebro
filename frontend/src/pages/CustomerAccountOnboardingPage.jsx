@@ -4,7 +4,7 @@ import { CheckCircle2, Home, Lock, Mail, ShieldCheck } from 'lucide-react';
 
 import api, { extractApiErrorMessage, setTokens } from '../api';
 import logo from '../assets/myhomebro_logo.png';
-import { customerContinuationDestination } from '../lib/universalRegistration.js';
+import { customerContinuationDestination, customerPortalLoginDestination } from '../lib/universalRegistration.js';
 import TurnstileWidget from '../components/TurnstileWidget.jsx';
 import { TURNSTILE_CONFIGURED, TURNSTILE_STATE } from '../components/turnstileState.js';
 
@@ -256,12 +256,7 @@ export default function CustomerAccountOnboardingPage() {
 
   const openExistingPortal = () => {
     const email = loginForm.email.trim().toLowerCase();
-    const roleQuery = isPropertyManager ? '&role=property_manager' : '';
-    navigate(
-      email
-        ? `/portal?email=${encodeURIComponent(email)}${roleQuery}`
-        : '/portal'
-    );
+    navigate(customerPortalLoginDestination(requestedNext, email, isPropertyManager ? 'property_manager' : ''));
   };
 
   const submitProperty = async (event) => {
@@ -315,7 +310,7 @@ export default function CustomerAccountOnboardingPage() {
             </div>
           </Link>
           <Link
-            to="/portal"
+            to={customerPortalLoginDestination(requestedNext)}
             className="rounded-xl border border-white/16 px-4 py-2 text-sm font-semibold text-sky-50 hover:bg-white/8"
           >
             Customer Log In
