@@ -94,6 +94,24 @@ class BathroomImprovementLaunchTests(TestCase):
         self.assertIn("bathroom:replace_faucet", vanity_related)
         self.assertIn("remodel:bathroom_remodel", vanity_related)
 
+    def test_refined_hub_retains_review_gate_and_explicit_inspection_checkpoints(self):
+        hub = self.templates().get(benchmark_match_key="remodel:bathroom_remodel")
+        self.assertEqual(hub.public_publication_status, "ready_for_review")
+        self.assertIsNone(hub.public_reviewed_at)
+        self.assertIsNone(hub.public_reviewed_by_id)
+        self.assertIsNone(hub.public_published_at)
+        self.assertIsNone(hub.estimated_duration_min_days)
+        self.assertIsNone(hub.estimated_duration_max_days)
+        self.assertIn("before covering", hub.milestones.get(sort_order=5).description)
+        self.assertIn("pre-cover", hub.milestones.get(sort_order=7).description)
+        self.assertIn("before 1978", hub.safety_guidance)
+        self.assertIn("Do not disturb suspected asbestos", hub.safety_guidance)
+        sections = {section["id"]: section for section in hub.public_sections}
+        self.assertIn("ready-to-start", sections)
+        self.assertIn("schedule-assumptions", sections)
+        self.assertIn("https://docsonline.sanantonio.gov/FileUploads/DSD/IB130.pdf", sections["san-antonio-checks"]["body"])
+        self.assertIn("https://www.epa.gov/", sections["safety-sources"]["body"])
+
     def test_review_queue_content_is_not_public_or_indexable(self):
         library = self.client.get("/api/projects/public/improvements/")
         sitemap = self.client.get("/sitemap.xml").content.decode()

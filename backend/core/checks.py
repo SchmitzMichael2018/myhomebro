@@ -15,6 +15,27 @@ from core.async_readiness import (
 
 
 @register(Tags.security)
+def public_planning_client_ip_check(app_configs, **kwargs):
+    source = getattr(settings, "PUBLIC_PLANNING_CLIENT_IP_SOURCE", "direct")
+    if source not in {"direct", "pythonanywhere"}:
+        return [Error(
+            "Public planning client-IP source is not supported.",
+            hint="Set PUBLIC_PLANNING_CLIENT_IP_SOURCE to direct or pythonanywhere.",
+            id="core.E131",
+        )]
+    if source == "pythonanywhere" and getattr(
+        settings, "PUBLIC_PLANNING_PYTHONANYWHERE_INGRESS_VERIFIED", False,
+    ) is not True:
+        return [Error(
+            "Public planning cannot trust PythonAnywhere headers until ingress is verified.",
+            hint="Verify that every request reaches the app through PythonAnywhere's header-overwriting edge, "
+                 "with no direct origin route; then set PUBLIC_PLANNING_PYTHONANYWHERE_INGRESS_VERIFIED=true.",
+            id="core.E132",
+        )]
+    return []
+
+
+@register(Tags.security)
 def public_site_url_deploy_check(app_configs, **kwargs):
     if str(getattr(settings, "DEPLOYMENT_ENVIRONMENT", "")).lower() not in {"production", "staging"}:
         return []

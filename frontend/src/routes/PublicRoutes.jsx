@@ -46,6 +46,9 @@ const PublicImprovementCategoryPage = lazy(
 const PublicImprovementPage = lazy(
   () => import('../pages/PublicImprovementPage.jsx')
 );
+const PublicImprovementPlannerPage = lazy(
+  () => import('../pages/PublicImprovementPlannerPage.jsx')
+);
 
 // Optional: your /invoice/:token router page
 const InvoicePage = lazy(() => import('../pages/InvoicePage.jsx'));
@@ -161,6 +164,10 @@ export default function PublicRoutes() {
         <Route
           path="/improvements/:categorySlug/:improvementSlug"
           element={<PublicImprovementPage />}
+        />
+        <Route
+          path="/improvements/:categorySlug/:improvementSlug/plan"
+          element={<PublicImprovementPlannerPage />}
         />
         <Route path="/login" element={<LoginForm />} />
         <Route path="/signup" element={<SignUpForm />} />

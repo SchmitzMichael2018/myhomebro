@@ -1,8 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { ArrowLeft, Hammer, Image, Plus, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api';
 import { useGuidedVideo } from '../guided-video/GuidedVideoProvider';
+import {
+  readPublicPlanningDraft,
+  clearPublicPlanningDraft,
+} from '../lib/publicPlanningDraft.js';
 
 export const participation = [
   ['DO_IT_MYSELF', 'Doing Myself'],
@@ -55,6 +65,10 @@ export default function DIYProjectPlanner({
   const [projects, setProjects] = useState([]);
   const [selected, setSelected] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [planningDraft, setPlanningDraft] = useState(null);
+  const [planningDraftError, setPlanningDraftError] = useState('');
+  const [savedPublicPlan, setSavedPublicPlan] = useState(false);
+  const savingPublicPlan = useRef(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -128,6 +142,14 @@ export default function DIYProjectPlanner({
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') === 'create') {
       setCreating(true);
+      if (params.get('planning_draft') === '1') {
+        const draft = readPublicPlanningDraft();
+        setPlanningDraft(draft);
+        if (!draft)
+          setPlanningDraftError(
+            'Your suggested plan is unavailable or has expired. Return to the guide to prepare it again, or start a new private project below.'
+          );
+      }
       const sourceTemplateId = params.get('template_id');
       if (sourceTemplateId) {
         setNewProject((current) => ({
@@ -167,6 +189,44 @@ export default function DIYProjectPlanner({
         error?.response?.data?.detail || 'Could not create this DIY project.'
       );
     } finally {
+      setBusy(false);
+    }
+  };
+  const savePublicPlan = async () => {
+    if (!planningDraft || savingPublicPlan.current) return;
+    savingPublicPlan.current = true;
+    setBusy(true);
+    setPlanningDraftError('');
+    try {
+      const { data } = await api.post(`${base}/`, {
+        preview_token: planningDraft.preview_token,
+        confirm: true,
+      });
+      clearPublicPlanningDraft();
+      setPlanningDraft(null);
+      setSelected(data);
+      setCreating(false);
+      setSavedPublicPlan(true);
+      setSection('plan');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('planning_draft');
+      url.searchParams.delete('action');
+      url.searchParams.set('project', data.id);
+      url.searchParams.set('section', 'plan');
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${url.pathname}${url.search}${url.hash}`
+      );
+      toast.success('Plan saved privately. No contractors were contacted.');
+      loadList().catch(() => {});
+    } catch (error) {
+      setPlanningDraftError(
+        error?.response?.data?.detail ||
+          'Could not save your plan. Your preview is still here; try again.'
+      );
+    } finally {
+      savingPublicPlan.current = false;
       setBusy(false);
     }
   };
@@ -447,7 +507,98 @@ export default function DIYProjectPlanner({
             </button>
           </div>
         </section>
-        {creating ? (
+        {planningDraftError ? (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-300/40 bg-slate-900 p-4 text-amber-100"
+          >
+            {planningDraftError}{' '}
+            <a
+              href={planningDraft?.guide_path || '/improvements/'}
+              className="font-bold underline"
+            >
+              Return to guide library
+            </a>
+          </p>
+        ) : null}
+        {creating && planningDraft ? (
+          <section
+            data-testid="diy-public-plan-review"
+            className="rounded-3xl border border-slate-700 bg-slate-900 p-5 text-white"
+          >
+            <h2 className="text-2xl font-bold">Review and save your plan</h2>
+            <h3 className="mt-4 text-xl font-bold">
+              {planningDraft.inputs.title}
+            </h3>
+            <p className="mt-2">{planningDraft.inputs.desired_outcome}</p>
+            <p className="mt-3 text-sm text-amber-100">{safetyCopy}</p>
+            <p className="mt-3 text-slate-300">
+              {planningDraft.proposal.summary}
+            </p>
+            {planningDraft.proposal.phases.map((phase) => (
+              <div
+                key={phase.client_id}
+                className="mt-4 rounded-xl border border-slate-700 p-4"
+              >
+                <h4 className="font-bold">{phase.title}</h4>
+                <p className="mt-1 text-sm text-slate-300">
+                  {phase.description}
+                </p>
+                <ul className="mt-2 list-disc space-y-2 pl-5">
+                  {phase.tasks.map((task) => (
+                    <li key={task.client_id}>
+                      <strong>{task.title}</strong>
+                      <p className="text-sm text-slate-300">
+                        {task.description}
+                      </p>
+                      {task.professional_review_recommended ? (
+                        <p className="text-sm text-amber-200">
+                          Professional review recommended
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            {planningDraft.proposal.warnings?.map((warning, index) => (
+              <p key={index} className="mt-3 text-sm text-amber-100">
+                {warning.message}
+              </p>
+            ))}
+            <p className="mt-4 text-sm text-slate-300">
+              Saving creates your private project with these suggested tasks.
+              You can edit the plan and choose DIY or professional help
+              afterward. No contractors will be contacted.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                data-testid="diy-public-plan-save"
+                type="button"
+                disabled={busy}
+                onClick={savePublicPlan}
+                className="min-h-11 rounded-xl bg-amber-300 px-5 py-3 font-bold text-slate-950"
+              >
+                {busy ? 'Saving…' : 'Save this private plan'}
+              </button>
+              <a
+                href={`${planningDraft.guide_path.replace(/\/$/, '')}/plan`}
+                className="inline-flex min-h-11 items-center font-bold text-amber-200"
+              >
+                Edit before saving
+              </a>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setCreating(false)}
+                className="min-h-11 rounded-xl border border-slate-600 px-4 py-2"
+              >
+                Not now
+              </button>
+            </div>
+          </section>
+        ) : null}
+        {creating && !planningDraft ? (
           <form
             data-testid="diy-project-create-form"
             onSubmit={createProject}
@@ -684,6 +835,42 @@ export default function DIYProjectPlanner({
 
   return (
     <div data-testid="diy-project-workspace" className="space-y-4">
+      {savedPublicPlan ? (
+        <section
+          data-testid="diy-public-plan-saved"
+          className="rounded-2xl border border-emerald-300/40 bg-slate-900 p-5 text-white"
+        >
+          <h2 className="text-xl font-bold">
+            Your plan is saved. Choose your next step.
+          </h2>
+          <p className="mt-2 text-slate-300">
+            Keep planning yourself or prepare a reviewable request for
+            professional help. Nothing is sent until you choose to send it.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSection('plan');
+                setSavedPublicPlan(false);
+              }}
+              className="min-h-11 rounded-xl bg-amber-300 px-4 py-2 font-bold text-slate-950"
+            >
+              Continue with DIY
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSection('get-help');
+                setSavedPublicPlan(false);
+              }}
+              className="min-h-11 rounded-xl border border-sky-300 px-4 py-2 font-bold"
+            >
+              Explore professional help
+            </button>
+          </div>
+        </section>
+      ) : null}
       <button
         onClick={() => {
           setSelected(null);

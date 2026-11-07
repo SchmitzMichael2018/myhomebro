@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import SourceLinkedText from '../components/improvements/SourceLinkedText.jsx';
 import { ExternalLink, Play } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import api from '../api';
@@ -85,17 +86,23 @@ export default function PublicImprovementPage({ preview = false }) {
   const { categorySlug, improvementSlug, publicSlug } = useParams();
   const navigate = useNavigate();
   const [item, setItem] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    setItem(null);
+    setLoadError('');
     const source = preview
       ? api
-          .get(`/projects/admin/improvements/preview/${publicSlug}/`)
+          .get(`/projects/admin/improvements/preview/${publicSlug}/`, { signal: controller.signal })
           .then((response) => response.data)
       : fetch(
-          `/api/projects/public/improvements/${categorySlug}/${improvementSlug}/`
+          `/api/projects/public/improvements/${categorySlug}/${improvementSlug}/`,
+          { signal: controller.signal }
         ).then((response) =>
-          response.ok ? response.json() : Promise.reject()
+          response.ok ? response.json() : Promise.reject(new Error(response.status === 404 ? 'unavailable' : 'load'))
         );
     source.then((value) => {
       if (!active) return;
@@ -157,11 +164,18 @@ export default function PublicImprovementPage({ preview = false }) {
           objectId: value.id,
           metadata: { category: value.category_slug },
         });
+    }).catch((error) => {
+      if (!active) return;
+      setItem(null);
+      setLoadError(error?.message === 'unavailable' || error?.response?.status === 404
+        ? 'This project guide is not available. Choose another guide from the library.'
+        : 'We could not load this project guide. Please try again.');
     });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [categorySlug, improvementSlug, publicSlug, preview]);
+  }, [categorySlug, improvementSlug, publicSlug, preview, reload]);
 
   const act = (eventType, target) => {
     trackAcquisitionEvent(eventType, window.location, {
@@ -169,14 +183,14 @@ export default function PublicImprovementPage({ preview = false }) {
       objectId: item.id,
       metadata: { category: item.category_slug },
     });
-    sessionStorage.setItem(
-      'mhb-improvement-intent',
-      JSON.stringify({
-        eventType,
-        templateId: item.id,
-        path: item.canonical_path,
-      })
-    );
+    try {
+      sessionStorage.setItem(
+        'mhb-improvement-intent',
+        JSON.stringify({ eventType, templateId: item.id, path: item.canonical_path })
+      );
+    } catch {
+      // Attribution is optional; disabled storage must not block these actions.
+    }
     const params = new URLSearchParams(window.location.search);
     const destination = new URL(target, window.location.origin);
     for (const key of [
@@ -191,6 +205,20 @@ export default function PublicImprovementPage({ preview = false }) {
     }
     navigate(`${destination.pathname}${destination.search}`);
   };
+
+  if (loadError)
+    return (
+      <LibraryShell>
+        <section className="mx-auto max-w-5xl px-4 py-16">
+          <h1 className="text-3xl font-bold text-slate-950">Project guide unavailable</h1>
+          <p role="alert" className="mt-4 text-slate-700">{loadError}</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button type="button" onClick={() => setReload((value) => value + 1)} className="min-h-12 rounded-xl bg-blue-700 px-5 font-bold text-white">Try again</button>
+            <Link to="/improvements/" className="inline-flex min-h-12 items-center rounded-xl border border-slate-300 px-5 font-bold text-blue-800">Browse project guides</Link>
+          </div>
+        </section>
+      </LibraryShell>
+    );
 
   if (!item)
     return (
@@ -257,6 +285,14 @@ export default function PublicImprovementPage({ preview = false }) {
           {contractorGuide ? <BlueprintPlan guide={contractorGuide} /> : null}
           </div>
         </header>
+        {!preview && !item.problem ? (
+          <section className="mt-8 rounded-3xl border border-blue-200 bg-blue-50 p-6 sm:p-8">
+            <h2 className="text-2xl font-bold text-slate-950">Start with a plan for your project.</h2>
+            <p className="mt-3 max-w-2xl leading-7 text-slate-700">Answer a few questions and review a suggested plan before saving it. Then choose DIY, expert guidance, or professional help.</p>
+            <Link to={`${item.canonical_path.replace(/\/$/, '')}/plan${window.location.search}`} data-testid="plan-this-project" className="mt-5 inline-flex min-h-14 items-center justify-center rounded-xl bg-blue-700 px-6 font-bold text-white hover:bg-blue-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">Plan this project</Link>
+            <p className="mt-3 text-sm text-slate-600">Preview without an account. Nothing is saved or sent automatically.</p>
+          </section>
+        ) : null}
         {item.problem ? (
           <div className={contractorGuide ? 'mt-8 rounded-[2rem] border border-[#e7e0d3] bg-white px-6 pb-10 pt-1 shadow-[0_20px_50px_-35px_rgba(7,27,52,.32)] sm:px-10 lg:px-16' : ''}>
             <ContentSection title="The problem" value={item.problem} />
@@ -291,7 +327,7 @@ export default function PublicImprovementPage({ preview = false }) {
             {contractorGuide ? <ContractorVisualExample guide={contractorGuide} /> : null}
             <PracticalSteps value={item.practical_steps} />
             {(item.sections || []).map((section) => (
-              <ContentSection key={section.id} title={section.title} value={section.body} />
+              <ContentSection key={section.id} title={section.title} value={section.body} sourceLinks />
             ))}
             <WalkthroughSection video={item.video} previewPlacement={preview && Boolean(contractorGuide)} previewSequence={contractorGuide?.walkthroughSequence} />
             <section className={`mt-12 rounded-3xl p-6 sm:p-8 ${contractorGuide ? 'border border-[#e7e0d3] bg-[#f7f4ed]' : 'bg-blue-50'}`}>
@@ -355,7 +391,7 @@ export default function PublicImprovementPage({ preview = false }) {
               ) : null
             )}
             {(item.sections || []).map((section) => (
-              <ContentSection key={section.id} title={section.title} value={section.body} />
+              <ContentSection key={section.id} title={section.title} value={section.body} sourceLinks />
             ))}
             {item.materials ? (
               <ContentSection
@@ -614,12 +650,12 @@ function Fact({ label, value }) {
     </div>
   );
 }
-function ContentSection({ title, value }) {
+function ContentSection({ title, value, sourceLinks = false }) {
   return (
     <section className="mt-10">
       <h2 className="text-2xl font-bold text-slate-950">{title}</h2>
       <p className="mt-3 whitespace-pre-line leading-8 text-slate-700">
-        {value}
+        {sourceLinks ? <SourceLinkedText text={value} /> : value}
       </p>
     </section>
   );
