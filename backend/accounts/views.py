@@ -163,6 +163,8 @@ class ContractorRegistrationView(APIView):
     def _mark_referral_visit_registered(request, user, *, role):
         from projects.services.attribution import associate_account
         associate_account(request, user, role=role)
+        from accounts.services.signup_alerts import queue_signup_alert
+        queue_signup_alert(user)
 
 
 class CustomerRegistrationView(APIView):

@@ -125,6 +125,21 @@ class User(AbstractBaseUser, PermissionsMixin):
         return bool(self.email_verified_at and self.phone_verified_at)
 
 
+class AdminSignupSMS(models.Model):
+    """One owner notification per newly registered account, not a broadcast."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="admin_signup_sms")
+    recipient = models.CharField(max_length=32)
+    status = models.CharField(max_length=16, default="pending", db_index=True, choices=[
+        ("pending", "Pending"), ("sending", "Sending"),
+        ("sent", "Accepted by SMS provider"), ("failed", "Failed"), ("blocked", "Blocked"),
+    ])
+    attempts = models.PositiveIntegerField(default=0)
+    reason_code = models.CharField(max_length=64, blank=True, default="")
+    provider_sid = models.CharField(max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+
 class ContractorWelcomeEmail(models.Model):
     """One durable welcome delivery per contractor; never backfilled implicitly."""
 

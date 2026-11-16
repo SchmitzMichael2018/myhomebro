@@ -460,6 +460,9 @@ PDF_QUEUE_NAME = get_env_var("PDF_QUEUE_NAME", "pdf").strip() or "pdf"
 PDF_ASYNC_ENABLED = get_bool("PDF_ASYNC_ENABLED", default=False)
 PDF_SYNC_FALLBACK_ENABLED = get_bool("PDF_SYNC_FALLBACK_ENABLED", default=False)
 CELERY_NOTIFICATIONS_ENABLED = get_bool("CELERY_NOTIFICATIONS_ENABLED", default=False)
+ADMIN_SIGNUP_SMS_ENABLED = get_bool("ADMIN_SIGNUP_SMS_ENABLED", default=False)
+# Owner-only destination; never accept a notification recipient from signup input.
+ADMIN_SIGNUP_SMS_TO = get_env_var("ADMIN_SIGNUP_SMS_TO", "").strip()
 CELERY_SCHEDULED_JOBS_ENABLED = get_bool("CELERY_SCHEDULED_JOBS_ENABLED", default=False)
 CONTINGENCY_AUTO_REFUND_GRACE_DAYS = int(get_env_var("CONTINGENCY_AUTO_REFUND_GRACE_DAYS", "5"))
 MARKETPLACE_FIRST_REMINDER_DAYS = int(get_env_var("MARKETPLACE_FIRST_REMINDER_DAYS", "2"))
