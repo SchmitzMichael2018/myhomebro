@@ -1,0 +1,16 @@
+Hi {{ first_name }},
+
+Welcome to MyHomeBro! Your account is ready. Here are a few ways to get started:
+
+1. Complete your business profile. Add your business details, services, and service area.
+2. Connect Stripe. Follow the account setup steps to prepare to accept customer payments. If you've already connected it, you're ahead of the game.
+3. Create your first project. Start with a customer you already work with, then use the Agreement Wizard to organize the scope and milestones.
+4. Keep the details together. Use your project workspace for agreements, documents, and progress updates. Project Assistant can help you draft and organize; review its suggestions before using them.
+
+Finish setting up your account:
+{{ dashboard_url }}
+
+Need a hand? Reply to this email or contact {{ support_email }}.
+
+Michael
+Founder, MyHomeBro LLC

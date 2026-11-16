@@ -125,6 +125,20 @@ class User(AbstractBaseUser, PermissionsMixin):
         return bool(self.email_verified_at and self.phone_verified_at)
 
 
+class ContractorWelcomeEmail(models.Model):
+    """One durable welcome delivery per contractor; never backfilled implicitly."""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="contractor_welcome_email")
+    status = models.CharField(max_length=16, default="pending", choices=[
+        ("pending", "Pending"), ("sending", "Sending"),
+        ("sent", "Accepted by mail provider"), ("failed", "Failed"),
+    ], db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    attempted_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+
 class PhoneVerificationChallenge(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="phone_verification_challenges")
     phone_number_e164 = models.CharField(max_length=32, db_index=True)

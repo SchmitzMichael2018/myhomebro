@@ -2,7 +2,20 @@
 # accounts/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import AccountSecurityEvent, PhoneVerificationChallenge, User
+from .models import AccountSecurityEvent, ContractorWelcomeEmail, PhoneVerificationChallenge, User
+
+@admin.register(ContractorWelcomeEmail)
+class ContractorWelcomeEmailAdmin(admin.ModelAdmin):
+    list_display = ("user", "status", "attempts", "created_at", "attempted_at", "sent_at")
+    list_filter = ("status",)
+    search_fields = ("user__email",)
+    readonly_fields = ("user", "status", "attempts", "created_at", "attempted_at", "sent_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
