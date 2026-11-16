@@ -1,10 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-async function fillStartProjectContact(page, overrides = {}) {
-  await page.getByTestId("start-project-contact-name").fill(overrides.name || "Landing Prospect");
-  await page.getByTestId("start-project-contact-email").fill(overrides.email || "landing@example.com");
-  await page.getByTestId("start-project-contact-phone").fill(overrides.phone || "555-444-2222");
-  await page.getByTestId("start-project-contact-submit").click();
+async function waitForProjectPlanner(page) {
+  await expect(page).toHaveURL(/\/start-project\/[^/?]+$/);
 }
 
 test("start-project page redirects when the API returns a legacy share_token response", async ({
@@ -25,8 +22,7 @@ test("start-project page redirects when the API returns a legacy share_token res
   });
 
   await page.goto("/start-project", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("start-project-contact-form")).toBeVisible();
-  await fillStartProjectContact(page);
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/legacy-share-token$/);
 });
 
@@ -49,7 +45,6 @@ test("start-project page logs backend failures and shows a helpful error", async
 
   await page.goto("/start-project", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Start your project request" })).toBeVisible();
-  await fillStartProjectContact(page);
 
   await expect(page.getByText("Failed to create intake draft.").first()).toBeVisible({
     timeout: 15000,
@@ -113,11 +108,7 @@ test("start-project fresh CTA opens project idea even with stale intake browser 
   });
 
   await page.goto("/start-project", { waitUntil: "domcontentloaded" });
-  await fillStartProjectContact(page, {
-    name: "Fresh Start Prospect",
-    email: "fresh@example.com",
-    phone: "555-222-3333",
-  });
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/fresh-start-token$/);
   await expect(page.getByRole("heading", { name: "Tell us about the project" })).toBeVisible();
   await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("");
@@ -178,15 +169,9 @@ test("landing intake mobile layout keeps progress and actions compact", async ({
   });
 
   await page.goto("/start-project", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("start-project-contact-form")).toBeVisible();
-  await expect(page.getByText("If you already have an account, we'll link this request to it.")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBeTruthy();
 
-  await fillStartProjectContact(page, {
-    name: "Mobile Prospect",
-    email: "mobile@example.com",
-    phone: "555-606-7777",
-  });
+  await waitForProjectPlanner(page);
   await expect(page.getByTestId("public-intake-step-rail")).toBeVisible();
   await expect(page.getByTestId("public-intake-ai-explanation")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBeTruthy();
@@ -401,12 +386,7 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(loginMenu.getByRole("button", { name: "Contractors: Sign Up" })).toBeVisible();
 
   await page.getByTestId("landing-start-project-intake-button").click();
-  await expect(page.getByTestId("start-project-contact-form")).toBeVisible();
-  await fillStartProjectContact(page, {
-    name: "Branch Prospect",
-    email: "branch@example.com",
-    phone: "555-444-2222",
-  });
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/landing-token$/);
   await expect(page.getByTestId("public-intake-shell")).toBeVisible();
   await expect(page.getByText("Project Intake", { exact: true })).toBeVisible();
@@ -747,11 +727,7 @@ test("public intake contractor search supports explicit specialty search from pr
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("landing-start-project-intake-button").click();
-  await fillStartProjectContact(page, {
-    name: "Search Prospect",
-    email: "search@example.com",
-    phone: "555-444-1111",
-  });
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/landing-token-search$/);
   await page.getByTestId("public-intake-accomplishment-text").fill("Remove kitchen cabinets and install quartz countertops.");
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
@@ -895,11 +871,7 @@ test("public intake contractor search resets stale query when project context ch
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("landing-start-project-intake-button").click();
-  await fillStartProjectContact(page, {
-    name: "Stale Search Prospect",
-    email: "stale-search@example.com",
-    phone: "555-444-3333",
-  });
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/landing-token-stale-search$/);
   await page.getByTestId("public-intake-accomplishment-text").fill("Install a new plumbing pipe under the sink.");
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
@@ -1036,11 +1008,7 @@ test("public intake flooring contractor search does not include stale electrical
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("landing-start-project-intake-button").click();
-  await fillStartProjectContact(page, {
-    name: "Flooring Search Prospect",
-    email: "flooring-search@example.com",
-    phone: "555-444-5555",
-  });
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/landing-token-flooring-search$/);
   await page.getByTestId("public-intake-accomplishment-text").fill(
     "Install new flooring in the living room. Ignore an old electric search term."
@@ -1171,11 +1139,7 @@ test("public intake bedroom extension overrides stale flooring and patio classif
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("landing-start-project-intake-button").click();
-  await fillStartProjectContact(page, {
-    name: "Bedroom Extension Prospect",
-    email: "bedroom-extension@example.com",
-    phone: "555-444-7777",
-  });
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/landing-token-bedroom-extension$/);
   await page.getByTestId("public-intake-accomplishment-text").fill("Bedroom Extension");
   await page.getByTestId("public-intake-generate-structure").click();
@@ -1323,11 +1287,7 @@ test("public intake description helper refines the project idea before generatin
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("landing-start-project-intake-button").click();
-  await fillStartProjectContact(page, {
-    name: "Refine Prospect",
-    email: "refine@example.com",
-    phone: "555-444-9999",
-  });
+  await waitForProjectPlanner(page);
   await expect(page).toHaveURL(/\/start-project\/landing-token-refine$/);
   await expect(page.getByTestId("public-intake-main-card")).toBeVisible();
   await expect(page.getByTestId("public-intake-improve-description-button")).toBeDisabled();

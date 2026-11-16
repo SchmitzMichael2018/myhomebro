@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 
-const PASSWORD = "MyHomeBroQA!2026";
+const PASSWORD = process.env.MHB_QA_PASSWORD || "";
 const CONTRACTOR_EMAIL = "info+contractor@myhomebro.com";
 const API_BASE = (process.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "") + "/api";
 const screenshotDir = path.resolve("../docs/audit-screenshots/intake-estimate-agreement-flow");
@@ -120,12 +120,6 @@ async function contractorBidRowForOpportunity(page, opportunityId) {
 
 async function startIntakeFromPublicUi(page) {
   await page.goto("/start-project", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("start-project-contact-form")).toBeVisible();
-  await page.getByTestId("start-project-contact-name").fill("Taylor QA Intake");
-  await page.getByTestId("start-project-contact-email").fill("info+intake-customer@myhomebro.com");
-  await page.getByTestId("start-project-contact-phone").fill("555-0199");
-  await snap(page, "01-public-intake-contact");
-  await page.getByTestId("start-project-contact-submit").click();
   await expect(page).toHaveURL(/\/start-project\/[^/]+$/);
   await snap(page, "02-public-intake-wizard-open");
   return new URL(page.url()).pathname.split("/").filter(Boolean).pop();
@@ -414,6 +408,7 @@ async function reviewAgreementWizard(page) {
 }
 
 test("public intake to opportunity to estimate workspace to agreement wizard", async ({ page, request }) => {
+  test.skip(!PASSWORD, "Set MHB_QA_PASSWORD for the approved QA account.");
   fs.mkdirSync(screenshotDir, { recursive: true });
   await installMapMocks(page);
   const events = collectEvents(page);
