@@ -278,6 +278,8 @@ def verify_phone_code(user, code, request):
             user.save(update_fields=["phone_number_normalized", "phone_verified_at", "verification_state", "is_verified", "is_active", "duplicate_phone_risk"])
             if user.duplicate_phone_risk:
                 duplicate.update(duplicate_phone_risk=True)
+            from accounts.services.welcome import queue_contractor_welcome
+            queue_contractor_welcome(user)
     if error:
         if failed_attempts is not None:
             log_event("sms_verification_failed", user=user, request=request, metadata={"attempts": failed_attempts})
