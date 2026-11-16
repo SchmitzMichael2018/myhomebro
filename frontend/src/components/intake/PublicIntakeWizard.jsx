@@ -714,18 +714,22 @@ export default function PublicIntakeWizard() {
     [form.accomplishment_text]
   );
 
+  const hasValidContact = useMemo(
+    () => Boolean(form.customer_name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customer_email.trim())),
+    [form.customer_name, form.customer_email]
+  );
+
   const canFinish = useMemo(() => {
     const effectiveForm = getEffectiveProjectForm(form);
     return (
-      !!String(effectiveForm.customer_name || "").trim() &&
-      !!String(effectiveForm.customer_email || "").trim() &&
+      hasValidContact &&
       !!String(effectiveForm.project_address_line1 || "").trim() &&
       !!String(effectiveForm.project_city || "").trim() &&
       !!String(effectiveForm.project_state || "").trim() &&
       !!String(effectiveForm.project_postal_code || "").trim() &&
       !!String(effectiveForm.accomplishment_text || "").trim()
     );
-  }, [form]);
+  }, [form, hasValidContact]);
 
   const clarificationQuestions = useMemo(
     () => (Array.isArray(form.ai_clarification_questions) ? form.ai_clarification_questions.slice(0, 6) : []),
@@ -1012,6 +1016,14 @@ export default function PublicIntakeWizard() {
     if (currentStep === 8) {
       await handleConfirm();
       return;
+    }
+    if (currentStep === 5) {
+      if (!hasValidContact) {
+        toast.error("Add your full name and a valid email address to continue.");
+        return;
+      }
+      const saved = await saveIntake({ showToast: false, allowBranch: false });
+      if (!saved) return;
     }
     if (currentStep === 6) {
       setCurrentStep(7);
@@ -2451,7 +2463,7 @@ export default function PublicIntakeWizard() {
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Contact Info</h2>
             <p className="mt-2 text-base text-slate-600">Where should we send updates about your project?</p>
             <p className="mt-1 text-sm text-slate-500">
-              We use this information to keep the project moving and send any important updates.
+              Add your details to save your request and receive project updates. If you already have an account, we&apos;ll link the request when you submit it. Adding your details does not send invitations to contractors.
             </p>
           </div>
 
@@ -2460,7 +2472,7 @@ export default function PublicIntakeWizard() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <label htmlFor="mhb-publicintakewizard-2462" className="mb-1 block text-sm font-medium text-gray-900">Full name</label>
-                  <input id="mhb-publicintakewizard-2462"
+                  <input id="mhb-publicintakewizard-2462" autoComplete="name"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_name}
                     onChange={(e) => setField("customer_name", e.target.value)}
@@ -2469,7 +2481,7 @@ export default function PublicIntakeWizard() {
                 </div>
                 <div>
                   <label htmlFor="mhb-publicintakewizard-2471" className="mb-1 block text-sm font-medium text-gray-900">Email</label>
-                  <input id="mhb-publicintakewizard-2471"
+                  <input id="mhb-publicintakewizard-2471" type="email" autoComplete="email"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_email}
                     onChange={(e) => setField("customer_email", e.target.value)}
@@ -2477,8 +2489,8 @@ export default function PublicIntakeWizard() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="mhb-publicintakewizard-2480" className="mb-1 block text-sm font-medium text-gray-900">Phone</label>
-                  <input id="mhb-publicintakewizard-2480"
+                  <label htmlFor="mhb-publicintakewizard-2480" className="mb-1 block text-sm font-medium text-gray-900">Phone (optional)</label>
+                  <input id="mhb-publicintakewizard-2480" type="tel" autoComplete="tel"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_phone}
                     onChange={(e) => setField("customer_phone", e.target.value)}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { LockKeyhole } from "lucide-react";
@@ -51,35 +51,20 @@ function resolveStartToken(data) {
 export default function StartProjectIntake() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [starting, setStarting] = useState(false);
+  const [starting, setStarting] = useState(true);
   const [startError, setStartError] = useState("");
-  const [contact, setContact] = useState({
-    name: (searchParams.get("name") || "").trim(),
-    email: (searchParams.get("email") || "").trim(),
-    phone: (searchParams.get("phone") || "").trim(),
-  });
+  const startRequested = useRef(false);
 
-  const canStart = useMemo(
-    () => Boolean(contact.name.trim() && contact.email.trim() && contact.phone.trim()),
-    [contact]
-  );
-
-  async function startIntake(event) {
-    event?.preventDefault();
-    if (!canStart) {
-      toast.error("Add your full name, email, and phone to start.");
-      return;
-    }
-
+  const startIntake = useCallback(async () => {
     try {
       setStarting(true);
       setStartError("");
       resetPublicIntakeWizardState();
 
       const payload = {
-        customer_name: contact.name.trim(),
-        customer_email: contact.email.trim(),
-        customer_phone: contact.phone.trim(),
+        customer_name: (searchParams.get("name") || "").trim(),
+        customer_email: (searchParams.get("email") || "").trim(),
+        customer_phone: (searchParams.get("phone") || "").trim(),
         contractor_slug:
           (searchParams.get("contractor_slug") ||
             searchParams.get("contractor") ||
@@ -122,7 +107,13 @@ export default function StartProjectIntake() {
     } finally {
       setStarting(false);
     }
-  }
+  }, [navigate, searchParams]);
+
+  useEffect(() => {
+    if (startRequested.current) return;
+    startRequested.current = true;
+    void startIntake();
+  }, [startIntake]);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(135deg,#020617_0%,#062856_52%,#0f172a_100%)] text-white">
@@ -163,66 +154,24 @@ export default function StartProjectIntake() {
               </div>
               <h1 className="mt-3 text-2xl font-bold text-gray-900">Start your project request</h1>
               <p className="mt-2 text-sm text-gray-600">
-                Add your contact details first. If you already have an account, we&apos;ll link this request to it.
+                Start with your project idea. You can review your plan before adding your contact details.
               </p>
-              <form className="mt-5 space-y-4" onSubmit={startIntake} data-testid="start-project-contact-form">
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-800" htmlFor="start-project-name">
-                    Full name
-                  </label>
-                  <input
-                    id="start-project-name"
-                    data-testid="start-project-contact-name"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                    value={contact.name}
-                    onChange={(event) => setContact((prev) => ({ ...prev, name: event.target.value }))}
-                    placeholder="Your full name"
-                    autoComplete="name"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-800" htmlFor="start-project-email">
-                    Email
-                  </label>
-                  <input
-                    id="start-project-email"
-                    data-testid="start-project-contact-email"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                    value={contact.email}
-                    onChange={(event) => setContact((prev) => ({ ...prev, email: event.target.value }))}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    type="email"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-800" htmlFor="start-project-phone">
-                    Phone
-                  </label>
-                  <input
-                    id="start-project-phone"
-                    data-testid="start-project-contact-phone"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                    value={contact.phone}
-                    onChange={(event) => setContact((prev) => ({ ...prev, phone: event.target.value }))}
-                    placeholder="(555) 555-5555"
-                    autoComplete="tel"
-                  />
-                </div>
+              <div className="mt-5 space-y-4" aria-live="polite" aria-busy={starting}>
                 {startError ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {startError}
-                  </div>
-                ) : null}
-                <button
-                  type="submit"
-                  data-testid="start-project-contact-submit"
-                  disabled={starting || !canStart}
-                  className="w-full rounded-2xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/20 transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-400"
-                >
-                  {starting ? "Opening your request..." : "Continue to project details"}
-                </button>
-              </form>
+                  <>
+                    <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {startError}
+                    </div>
+                    <button type="button" onClick={startIntake} disabled={starting}
+                      data-testid="start-project-retry"
+                      className="w-full rounded-2xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-600 disabled:bg-slate-400">
+                      Try again
+                    </button>
+                  </>
+                ) : (
+                  <p role="status" className="text-sm text-slate-600">Opening your project planner...</p>
+                )}
+              </div>
             </div>
           </div>
         </div>
