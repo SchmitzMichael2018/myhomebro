@@ -1,10 +1,22 @@
 from django.db.models import Case, IntegerField, Q, Value, When
+from django.db import DatabaseError, transaction
 from django.http import Http404
+from django.utils.decorators import method_decorator
+from rest_framework import serializers
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from projects.models_templates import ProjectTemplate
+from projects.services.diy_planner import clean_text
+from projects.services.public_improvement_planner import GuideSafetyReferenceError, build_public_plan_preview
+from projects.services.public_plan_admission import (
+    PublicPlanClientIPUnavailable,
+    public_plan_client_ip,
+    reserve_public_plan_slot,
+)
 
 
 DEFAULT_SOCIAL_IMAGE = "/static/social/myhomebro-default-1200x630.png"
@@ -201,3 +213,80 @@ class PublicImprovementDetailView(APIView):
         if template is None:
             raise Http404("Published improvement not found.")
         return Response(serialize_improvement(template, detail=True))
+
+
+class PublicPlanAdmissionUnavailable(APIException):
+    status_code = 503
+    default_detail = "Project planning is temporarily unavailable. Please try again shortly."
+    default_code = "planning_unavailable"
+
+
+class PublicImprovementPlanThrottle(BaseThrottle):
+    scope = "public_improvement_plan"
+    rate = "6/hour"
+
+    def get_ident(self, request):
+        return public_plan_client_ip(request)
+
+    def allow_request(self, request, view):
+        try:
+            self.retry_after = reserve_public_plan_slot(self.get_ident(request))
+        except (DatabaseError, PublicPlanClientIPUnavailable):
+            # Unverified client identity, an absent migration, or unavailable
+            # database must never bypass admission and invoke a paid provider.
+            raise PublicPlanAdmissionUnavailable() from None
+        return self.retry_after is None
+
+    def wait(self):
+        return self.retry_after
+
+
+class PublicImprovementPlanSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200, required=False)
+    desired_outcome = serializers.CharField(max_length=2000)
+    existing_conditions = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+    additional_context = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+    confidence_notes = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        unknown = set(self.initial_data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError("Only project planning answers may be submitted.")
+        for name, value in attrs.items():
+            attrs[name] = clean_text(value, self.fields[name].max_length)
+        for name in ("title", "desired_outcome"):
+            if name in attrs and not attrs[name]:
+                raise serializers.ValidationError({name: "Enter a description using plain text."})
+        return attrs
+
+
+@method_decorator(transaction.non_atomic_requests, name="dispatch")
+class PublicImprovementPlanView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [PublicImprovementPlanThrottle]
+
+    def post(self, request, category_slug, improvement_slug):
+        template = published_improvements().filter(
+            public_category_slug=category_slug, public_slug=improvement_slug,
+        ).first()
+        if template is None:
+            raise Http404("Published improvement not found.")
+        serializer = PublicImprovementPlanSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        inputs = dict(serializer.validated_data)
+        inputs.setdefault("title", clean_text(template.public_title or template.name, 200))
+        try:
+            preview = build_public_plan_preview(template, inputs)
+        except GuideSafetyReferenceError:
+            raise serializers.ValidationError({
+                "detail": "This guide's safety references need editorial review before a plan can be generated. "
+                          "Please try another guide or contact support.",
+            })
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({
+                "detail": "This plan preview is too large. Shorten your answers and generate a new preview.",
+            })
+        response = Response(preview)
+        response["Cache-Control"] = "private, no-store"
+        return response

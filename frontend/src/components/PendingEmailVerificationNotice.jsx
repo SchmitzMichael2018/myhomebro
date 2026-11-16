@@ -1,49 +1,54 @@
-import React, { useEffect, useReducer } from "react";
+import React, { useEffect, useReducer } from 'react';
 
-import api from "../api";
+import api from '../api';
+import { verificationResumeUrl } from '../lib/planningVerification.js';
 import {
   initialResendState,
   resendStateReducer,
-} from "../lib/verificationResendState.js";
+} from '../lib/verificationResendState.js';
 
 export default function PendingEmailVerificationNotice({
   email,
   verificationSession,
+  emailVerified = false,
+  continuation = '',
 }) {
   const [state, dispatch] = useReducer(resendStateReducer, initialResendState);
 
   useEffect(() => {
     if (state.cooldownSeconds <= 0) return undefined;
-    const timer = window.setTimeout(() => dispatch({ type: "tick" }), 1000);
+    const timer = window.setTimeout(() => dispatch({ type: 'tick' }), 1000);
     return () => window.clearTimeout(timer);
   }, [state.cooldownSeconds]);
 
   const resend = async () => {
-    dispatch({ type: "start" });
+    dispatch({ type: 'start' });
     try {
       const { data } = await api.post(
-        "/accounts/auth/verification/resend-email/",
+        '/accounts/auth/verification/resend-email/',
         {
-          email: String(email || "").trim().toLowerCase(),
+          email: String(email || '')
+            .trim()
+            .toLowerCase(),
           verification_session: verificationSession,
         }
       );
       dispatch({
-        type: "success",
+        type: 'success',
         message: data?.detail,
         cooldownSeconds: data?.cooldown_seconds,
       });
     } catch (error) {
       dispatch({
-        type: "failure",
+        type: 'failure',
         message: error?.response?.data?.detail,
-        cooldownSeconds: error?.response?.headers?.["retry-after"],
+        cooldownSeconds: error?.response?.headers?.['retry-after'],
       });
     }
   };
 
   const coolingDown = state.cooldownSeconds > 0;
-  const loading = state.status === "loading";
+  const loading = state.status === 'loading';
 
   return (
     <div
@@ -51,19 +56,30 @@ export default function PendingEmailVerificationNotice({
       data-testid="pending-email-verification"
     >
       <p className="text-sm font-bold">Finish setting up your account.</p>
-      <button
-        type="button"
-        className="mt-2 w-full rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-        data-testid="resend-verification-email-button"
-        disabled={loading || coolingDown}
-        onClick={resend}
-      >
-        {loading
-          ? "Sending..."
-          : coolingDown
-            ? `Resend available in ${state.cooldownSeconds}s`
-            : "Resend verification email"}
-      </button>
+      {verificationSession ? (
+        <a
+          data-testid="continue-account-verification"
+          href={verificationResumeUrl(verificationSession, continuation)}
+          className="mt-2 block rounded-lg bg-amber-500 px-3 py-2 text-center text-sm font-bold text-slate-950"
+        >
+          Continue account verification
+        </a>
+      ) : null}
+      {!emailVerified ? (
+        <button
+          type="button"
+          className="mt-2 w-full rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+          data-testid="resend-verification-email-button"
+          disabled={loading || coolingDown}
+          onClick={resend}
+        >
+          {loading
+            ? 'Sending...'
+            : coolingDown
+              ? `Resend available in ${state.cooldownSeconds}s`
+              : 'Resend verification email'}
+        </button>
+      ) : null}
       {state.message ? (
         <p
           className="mt-2 text-xs leading-5"

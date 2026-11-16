@@ -275,7 +275,7 @@ def _fallback_plan(project):
     return payload
 
 
-def build_plan_proposal(project):
+def build_plan_proposal(project, *, reviewed_guide=None):
     fallback = _fallback_plan(project)
     api_key = str(getattr(settings, "OPENAI_API_KEY", "") or "").strip()
     if not api_key:
@@ -288,6 +288,9 @@ def build_plan_proposal(project):
             "work_completed": project.work_completed, "confidence_notes": project.confidence_notes,
             "design_notes": project.design_notes, "additional_context": project.additional_context,
         }
+        if reviewed_guide:
+            # Reviewed guide references are not homeowner scope or answers.
+            context["reviewed_guide"] = reviewed_guide
         response = OpenAI(api_key=api_key, timeout=15.0, max_retries=0).responses.create(
             model=str(getattr(settings, "OPENAI_MODEL", "") or "gpt-4.1-mini"),
             input=[
@@ -303,7 +306,11 @@ def build_plan_proposal(project):
                     "and dependency sequence so later work does not damage or conceal earlier work. Include preparation, cure or "
                     "acclimation time, inspection hold points, functional testing, and record retention when relevant. Do not add "
                     "work merely because an existing retained item is mentioned. Recommend local professional review for electrical, "
-                    "plumbing, gas, roofing, structural, or hazardous work."
+                    "plumbing, gas, roofing, structural, or hazardous work. "
+                    "If reviewed_guide is supplied, preserve its applicable safety precautions and inspection or testing "
+                    "hold points before the affected work or concealment. Use it as a conditional safety reference, "
+                    "not as permission to add trades, demolition, or other work absent from the homeowner's scope. "
+                    "Ask about unresolved scope instead of assuming a full renovation."
                 )},
                 {"role": "user", "content": json.dumps(context)},
             ],

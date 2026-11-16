@@ -8,6 +8,8 @@ import CustomerDashboard from "../components/CustomerDashboard.jsx";
 import Modal from "../components/Modal.jsx";
 import PendingEmailVerificationNotice from "../components/PendingEmailVerificationNotice.jsx";
 import logo from "../assets/myhomebro_logo.png";
+import { readPublicPlanningDraft } from "../lib/publicPlanningDraft.js";
+import { pendingCustomerVerification } from "../lib/planningVerification.js";
 import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
 
 function formatDate(value) {
@@ -566,15 +568,9 @@ export default function CustomerPortalPage() {
       setPortal(data);
       toast.success("Welcome back to your Customer Portal.");
     } catch (error) {
-      const responseData = error?.response?.data;
-      if (
-        error?.response?.status === 403 &&
-        responseData?.code === "email_verification_required" &&
-        responseData?.verification_session
-      ) {
-        setPendingVerification({
-          verificationSession: responseData.verification_session,
-        });
+      const verification = pendingCustomerVerification(error, Boolean(readPublicPlanningDraft()), window.location.search);
+      if (verification) {
+        setPendingVerification(verification);
         return;
       }
       const message = getLoginErrorMessage(error);
@@ -814,6 +810,8 @@ export default function CustomerPortalPage() {
                   {pendingVerification ? (
                     <PendingEmailVerificationNotice
                       email={loginForm.email}
+                      emailVerified={pendingVerification.emailVerified}
+                      continuation={pendingVerification.continuation}
                       verificationSession={
                         pendingVerification.verificationSession
                       }
