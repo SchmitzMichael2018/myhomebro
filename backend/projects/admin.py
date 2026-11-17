@@ -1,4 +1,5 @@
 from __future__ import annotations
+from . import admin_website_service  # noqa: F401
 
 from django.contrib import admin, messages
 from django.utils import timezone
@@ -2205,3 +2206,4 @@ class ProjectAttributionSnapshotAdmin(admin.ModelAdmin):
 class RevenueAttributionSnapshotAdmin(admin.ModelAdmin):
     list_display = ("receipt", "project", "eligible_platform_fee_cents", "total_referral_reward_cents", "retained_platform_fee_cents", "created_at")
     readonly_fields = tuple(field.name for field in RevenueAttributionSnapshot._meta.fields)
+
