@@ -8,9 +8,10 @@ test('web design templates and contact-last inquiry work without submitting data
   await expect(page.getByTestId('webdesign-page')).toBeVisible();
   await expect(page).toHaveTitle(/MyHomeBro Web Design/);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://www.myhomebro.com/webdesign');
-  await page.getByRole('button', { name: '02 / Restaurant websites' }).click();
-  await expect(page.getByRole('heading', { name: 'Your new usual.' })).toBeVisible();
-  await page.getByRole('link', { name: 'Plan a website like this' }).click();
+  await page.getByRole('button', { name: 'Restaurant websites', exact: true }).click();
+  await expect(page.locator('.wd-gallery-card')).toHaveCount(3);
+  await page.getByRole('link', { name: 'Choose Food First', exact: true }).click();
+  await expect(page.getByLabel('Website design', { exact: true })).toHaveValue('restaurant-food');
   await expect(page.getByRole('radio', { name: 'Restaurant', exact: true })).toBeChecked();
   await expect(page.getByLabel('Email address')).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -25,6 +26,7 @@ test('web design templates and contact-last inquiry work without submitting data
   const href = await email.getAttribute('href');
   expect(href).toContain('mailto:schmitzmichael1985@gmail.com');
   expect(decodeURIComponent(href)).toContain('Business type: Restaurant');
+  expect(decodeURIComponent(href)).toContain('Selected design: Food First');
   expect(decodeURIComponent(href)).toContain('Example Kitchen');
   // Inspect the email link; never open or send it during tests.
   await page.getByRole('button', { name: 'Back', exact: true }).click();
