@@ -7,6 +7,11 @@ export const SOCIAL_DESCRIPTION =
 export const DEFAULT_SOCIAL_IMAGE = `${SITE_ORIGIN}/static/social/myhomebro-default-1200x630.png`;
 
 const ROUTES = {
+  '/webdesign': {
+    title: 'Websites for Contractors & Restaurants | MyHomeBro Web Design',
+    description: 'Explore contractor and restaurant website templates, website updates, launch support, and optional ongoing maintenance from MyHomeBro.',
+    index: true,
+  },
   '/': {
     title: DEFAULT_TITLE,
     description: DEFAULT_DESCRIPTION,
@@ -161,3 +166,4 @@ export function applySeoMetadata(pathname, overrides = {}) {
   }
   return metadata;
 }
+

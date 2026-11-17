@@ -19,6 +19,13 @@ SOCIAL_DESCRIPTION = (
 DEFAULT_SOCIAL_IMAGE = f"{SITE_ORIGIN}/static/social/myhomebro-default-1200x630.png"
 
 INDEXABLE_ROUTES = {
+    "/webdesign": {
+        "title": "Websites for Contractors & Restaurants | MyHomeBro Web Design",
+        "description": (
+            "Explore contractor and restaurant website templates, website updates, "
+            "launch support, and optional ongoing maintenance from MyHomeBro."
+        ),
+    },
     "/": {"title": DEFAULT_TITLE, "description": DEFAULT_DESCRIPTION},
     "/faq": {
         "title": "Frequently Asked Questions | MyHomeBro",
@@ -80,3 +87,4 @@ def improvement_metadata(template):
         "seo_indexable": True,
         "search_verification": getattr(settings, "GOOGLE_SITE_VERIFICATION", ""),
     }
+

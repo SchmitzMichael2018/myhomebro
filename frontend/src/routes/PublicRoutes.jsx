@@ -20,6 +20,7 @@ import {
 import { applySeoMetadata } from '../lib/seoMetadata.js';
 
 const LandingPage = lazy(() => import('../components/LandingPage.jsx'));
+const WebDesignPage = lazy(() => import('../pages/WebDesignPage.jsx'));
 const LoginForm = lazy(() => import('../components/LoginForm.jsx'));
 const SignUpForm = lazy(() => import('../components/SignUpForm.jsx'));
 const ForgotPassword = lazy(() => import('../components/ForgotPassword.jsx'));
@@ -148,6 +149,7 @@ export default function PublicRoutes() {
 
         {/* Landing & Auth */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/webdesign" element={<WebDesignPage />} />
         <Route path="/san-antonio/" element={<SanAntonioLaunchPage />} />
         <Route path="/faq" element={<PublicFaqPage />} />
         <Route
@@ -283,3 +285,4 @@ export default function PublicRoutes() {
     </Suspense>
   );
 }
+
