@@ -1,8 +1,8 @@
-# Homeowner project guides — review copy
+# Homeowner project guides - review copy
 
-Prepared for Michael Schmitz / MyHomeBro. Drafts awaiting human editorial review; not published. Source checks: November 16, 2026.
+Prepared for Michael Schmitz / MyHomeBro. Drafts awaiting human editorial review; not published. Bathroom and patio checked November 16, 2026; shed and deck revised November 17, 2026.
 
-Start with bathroom renovation, followed by shed, deck and patio projects. Each DIY route has a defined scope; structural and licensed-trade work is not presented as a general DIY tutorial.
+Bathroom renovation, shed, deck and patio guides include planning, defined DIY workflows and hiring checklists. Permit exemptions are explained separately from DIY suitability.
 
 ---
 
@@ -34,7 +34,7 @@ Stop if you see active leaks, soft flooring, unexplained staining, recurring mol
 
 Tile, grout and ordinary water-resistant board are not by themselves a complete shower-waterproofing system. Ask the installer to identify the complete assembly and verification steps. Keep plumbing, electrical, structural changes and wet-area waterproofing outside the DIY walkthrough.
 
-## Budget worksheet: what to include
+## Budget: what to include
 
 Build a budget by work package: investigation and protection; demolition/disposal; repairs; trade work; waterproofing and finishes; fixtures; permits/inspections; and cleanup. Add delivery, tax and temporary bathroom arrangements. Keep a separate reserve for concealed damage rather than assuming every unknown is in the base price.
 
@@ -49,6 +49,14 @@ Do not buy a demolition tool or wet-area system until the scope and professional
 ## Common mistakes
 
 Ordering a vanity before measuring the door and plumbing constraints; tiling over a moisture problem; treating grout as waterproofing; leaving demolition, substrate repair or disposal out of the estimate; and scheduling custom glass before final dimensions are confirmed can all turn a simple budget into a series of changes.
+
+## DIY suitability
+
+A cosmetic refresh may fit a homeowner comfortable with careful surface preparation, painting and reusing existing hardware holes. Start only with sound, dry surfaces and safe access. The steps below deliberately leave fixture connections, wet areas and hidden-condition repairs to professionals.
+
+## When to hire help
+
+Hire help for a shower rebuild, fixture relocation, damaged subfloor, electrical changes, ventilation changes, or uncertainty about moisture. You can still handle selections, recordkeeping, and some finishing tasks if those responsibilities are agreed before work starts.
 
 ## Choose the version of the project
 
@@ -130,9 +138,9 @@ List remaining items with owners and target dates. Collect inspection records wh
 
 ## Choose your next step
 
-**Build my DIY plan:** create an editable project from the five scoped DIY steps after the guide is published. Account setup is required to save the plan. The existing DIY planner supports task progress, notes, photos and requests for help.
+**Build my DIY plan:** after publication, create an editable project from the five scoped DIY steps. Sign in or create an account to save it.
 
-**Plan my contractor request:** begin a project request linked to this guide. The intake asks for project details before contact information. No contractor invitation is sent merely by starting a request.
+**Plan my contractor request:** begin a guide-linked request, with project details collected before contact information. Starting a request does not send contractor invitations.
 
 ## Questions homeowners ask
 
@@ -165,19 +173,19 @@ No. Ask for the complete wet-area assembly appropriate to the chosen products an
 
 # Plan a backyard shed that fits your yard, storage and budget
 
-Check location, access, permits and the complete installed scope before buying a shed. Plan a safe DIY finish-out and know when the base, shell and utilities need professional help.
+Plan a backyard storage shed, check San Antonio permit exemptions, follow a small shed-kit DIY workflow, and compare complete installation estimates.
 
 ## What this project involves
 
-The advertised shed price may cover only the kit or shell. A usable shed also needs the right site, access, support, anchoring, weather protection and storage layout. Decide what you will put inside and how you will move it through the door before choosing the building.
+A useful shed starts with what goes inside: equipment, bins, door clearance and room to move. The kit price may exclude the base, delivery, anchors, tools and help with assembly. Compare the complete usable result before buying.
 
-This is a storage-shed planning guide. The DIY walkthrough covers organization and ground-access finishing after a suitable shed is installed. It does not provide a structural plan, foundation design, roof instructions or utility installation. Converting a shed to a bedroom, business space or dwelling is a different project requiring separate review.
+A small storage-shed kit can be a DIY project when its instructions, site conditions, lifting requirements and your experience fit. This walkthrough organizes that process around the exact model's manual. It is not a custom structural design. A shed intended as a bedroom, business space or dwelling needs separate review.
 
 ## Scope checklist
 
-List the building dimensions, usable interior dimensions, door clear opening, door swing, threshold height, intended storage, shelving, finish, ventilation and any utility needs. Identify delivery route and gate restrictions. Write down whether the quote includes the base, grading, delivery, assembly, anchoring, roofing, exterior finish, taxes, disposal and cleanup.
+Record the exterior footprint, usable interior space, door clear opening, door swing, threshold, intended loads, ventilation and storage layout. Identify who handles site preparation, support/base, delivery, assembly, anchoring, weatherproofing, finishes and cleanup.
 
-Example: a detached storage shed for garden tools and a mower, without plumbing or habitable use; installer supplies a documented support/anchoring system; homeowner organizes lightweight freestanding storage afterward. Final dimensions and construction must follow the approved design and site conditions.
+Example: a 10-by-12-foot detached storage shed is 120 square feet. That area falls below San Antonio's shed exemption threshold, but does not settle its placement, construction or utility requirements. Choose a model with a complete assembly manual and a support/anchoring arrangement suitable for the actual site. A DIY shell with a professionally prepared base is also an option.
 
 ## Before you begin
 
@@ -187,11 +195,11 @@ Keep emergency access, drainage paths and required utility access clear. Before 
 
 ## Safety and stopping points
 
-A shed's weight, wind resistance and anchoring cannot be judged from its footprint alone. Use a site-appropriate design and the kit manufacturer's installation requirements. Hire qualified help for unstable ground, foundations, framing, roof work, lifting heavy panels and electrical installation. Do not connect the shed to household power with a permanent improvised extension cord.
+Permit exemption does not establish structural safety or DIY readiness. Follow the exact kit's support, assembly, temporary bracing, anchoring and weather instructions. Plan the specified crew and lifting method before opening large panels; stop for wind, unstable parts or work beyond your safe reach. Never stand on shed roof panels or improvise lifting equipment.
 
-Do not alter walls, doors, floor framing, supports or the roof to make a purchased kit fit. Stop if the installed shed rocks, settles, leaks, has a soft floor, or cannot open/close normally. Keep children and pets clear of delivery and assembly.
+Do not alter framing, substitute connectors, omit anchors or cover a soft floor. Get qualified help for uncertain soils, drainage, custom structural details, unsupported loads or assembly you cannot safely control. Use appropriate professionals for utility installations; do not improvise a permanent power supply with an extension cord.
 
-## Budget worksheet: what to include
+## Budget: what to include
 
 Separate the shell price from the installed price: site assessment; access preparation; specified support/base; delivery and assembly; anchoring; roofing/weatherproofing; finish; permit costs; and storage equipment. Add any professional utility work as a separate scope. Difficult delivery, poor drainage, heavy storage loads or extensive site work can change the price materially.
 
@@ -199,19 +207,27 @@ Compare the same usable size and door arrangement. A cheaper kit may omit a floo
 
 ## Tools and materials
 
-For planning and finishing: tape measure, a simple layout sketch, camera, level for observation rather than foundation design, compatible cleaning/finishing supplies, screwdrivers, labeled storage bins and a stable step stool. Use PPE and handling limits appropriate to the work.
+Start with the exact model's manual and parts list, then assemble only the tools it specifies. Common planning and assembly tools may include a tape measure, level, square, screwdrivers, drill/driver and compatible bits, clamps, labeled fastener containers and eye/hand protection. Manual-specific access equipment and helpers are part of the plan, not optional extras.
 
-Use manufacturer-approved shelving arrangements and compatible finishes. Avoid wall drilling or suspended storage unless the building supplier has specified adequate support and safe fasteners for that exact location.
+Confirm whether anchors, floor components, sealants, finishes and tools are included. A kit's floor panels do not necessarily provide the required foundation. Select support and anchoring for the stated model, ground conditions and intended loads; do not borrow dimensions or anchor details from another kit.
 
 ## Common mistakes
 
 Buying from outside dimensions alone; failing to check the door opening and threshold; treating delivery as assembly; placing a shed in an easement or drainage path; assuming a small shed has no location restrictions; and loading unverified wall shelving are common ways the final project differs from the advertised kit.
 
-## Check the site before ordering
+## DIY suitability
 
-San Antonio's published exemption list includes some one-story detached storage structures of no more than 300 square feet when applicable setback requirements are met. That is not blanket permission to build anywhere. Confirm current zoning, setbacks, easements, district restrictions, use, permit requirements and HOA rules with the authority for the actual address.
+A small shed kit can be suitable DIY work with a model-specific manual, a verified support/base and anchoring arrangement, manageable lifting and the required helpers. You may split the job: hire site/base work or difficult assembly, then complete ground-access finishing and storage yourself. Permit status is a separate check from skill and safety.
 
-A supplier's 'permit-free' label is not an approval. Ask Development Services to evaluate the proposed size and location; a nearby municipality may use different criteria.
+## When to hire help
+
+Hire help for unsuitable or uncertain ground, significant grading, custom structural design, difficult lifting or work at height, utility connections, or tasks beyond your tools and experience. A permit requirement does not automatically rule out homeowner construction; confirm the applicable homeowner-permit process and inspection responsibilities with Development Services.
+
+## San Antonio shed permits: check area and conditions
+
+Within San Antonio city limits, the published building-permit exemption covers one-story detached tool/storage sheds and similar accessory structures with a floor area of 300 square feet or less, provided applicable setbacks are met. Exactly 300 square feet is included in that threshold. A 10-by-12-foot shed is 120 square feet; a 12-by-24-foot shed is 288. Confirm how the city measures your proposed structure.
+
+This does not remove zoning, easement, drainage, district or HOA restrictions. Electrical, plumbing and mechanical work can require separate permits. Altered shipping containers and garages have different rules. Check the actual address and intended use before ordering; a San Antonio mailing address may be outside city jurisdiction. Above the exemption threshold, ask about permits rather than assuming DIY is prohibited.
 
 ## Size for what goes inside
 
@@ -225,41 +241,47 @@ Resolve location and approvals, choose the design, confirm access and lead time,
 
 Rain, wet ground, supplier rescheduling or an unsuitable delivery route can delay the job. Ask who protects materials and who pays for a failed delivery when the route was not ready.
 
-## DIY readiness: plan and finish a stable installed shed
+## DIY readiness: choose a kit you can safely assemble
 
-The walkthrough starts with planning and continues after installation is accepted. It is not an instruction to erect a structural shell. You need safe ground-level access, manageable lifting, a dry stable floor and permission from the supplier for any finish or accessory.
+Read the complete assembly manual before purchase, including base, anchoring, weather limits, crew size, roof assembly and access requirements. Decide which stages you can perform and which need help. Do not proceed without an applicable support/anchoring solution and a practical way to handle every component safely.
 
-Before proceeding, obtain the installed building's care instructions, loading guidance and warranty limits. If you do not know what a wall or floor can support, ask rather than testing it with stored weight.
+This walkthrough is for a small detached storage-shed kit built to its instructions. Custom framing, structural modifications, habitable conversions and utility installation need a separate plan. If the manual requires equipment, helpers or skills you do not have, arrange them or hire that stage.
 
-## 1. Make the storage and access checklist
+## 1. Confirm the location, model and scope
 
-Measure equipment and bins, sketch the layout, and record the required door opening and threshold arrangement. Photograph and measure the delivery route. Send the measurements to the supplier for confirmation before ordering.
+Sketch property boundaries, easements, drainage, nearby structures and the proposed footprint. Verify the permit and approval position for the address. Measure the access route, stored equipment and door clear opening. Read the model's floor-load, support and anchoring requirements before ordering.
 
-Checkpoint: the selected model fits both the delivery route and the things you need to store.
+Checkpoint: the site, intended use, model, approvals and division of DIY/hired work are documented. Save the manual and model number with the project.
 
-## 2. Verify the handover before finishing
+## 2. Prepare and verify the specified base
 
-After the installer completes the shell, walk around it from ground level. Check for visible damage, debris, door operation and missing components. Review the support, anchoring and weatherproofing documentation with the installer; do not climb onto the roof or adjust supports yourself.
+Before digging, notify Texas811 within its required notice period and identify private lines that may need a separate locator. Follow the selected model's base details and address actual ground, drainage and load conditions. Hire preparation or foundation work if those conditions are uncertain.
 
-Checkpoint: unresolved movement, leaks, alignment problems or missing documents are recorded for the installer before interior work begins.
+Check the required dimensions, level, squareness, support and anchor provisions before assembling the shell. Do not compensate for an unsuitable site with improvised stacks of blocks.
 
-## 3. Prepare permitted surfaces
+Checkpoint: the base meets the documented requirements, applicable checks are complete, and the support and anchoring solution is ready.
 
-If a finish is allowed, read the building and coating instructions together. Clean compatible surfaces and allow the stated drying time. Protect the floor and door hardware. Test compatibility on an approved inconspicuous area.
+## 3. Inventory and assemble in the manual’s sequence
 
-Checkpoint: the substrate and selected finish are compatible, and no suspected rot, hazardous coating or dampness is being concealed.
+Inventory panels, framing, hardware and connectors against the parts list. Label similar pieces and keep fasteners separated. Set up the required helpers, tools and safe work area. Assemble floor, walls and roof components in the exact model's sequence, using its temporary stabilization and fastening instructions.
 
-## 4. Finish at ground level and add storage
+Do not leave an unstable partial shell unattended, force misaligned panels or climb onto the roof. Pause for missing parts, unsafe weather or lifting beyond the planned crew.
 
-Apply approved finishes only where you can work from safe footing and follow the product's application, ventilation and drying directions. Keep required vents and drainage openings clear. Assemble suitable freestanding storage using its instructions; place heavier items low and stay within stated load limits. If an item requires wall anchoring, obtain an approved support/fastener arrangement or hire help.
+Checkpoint: each stage matches the manual before the next stage hides its connections. Photograph progress without interrupting safe support of components.
 
-Checkpoint: access remains clear, nothing relies on an unknown wall capacity, and doors/vents still function.
+## 4. Complete anchoring, doors and weather protection
 
-## 5. Record the setup and inspect periodically
+Install the specified anchoring, remaining connectors, doors and weather-protection components using the approved arrangement for this model and base. Do not guess anchor type, spacing or capacity. Obtain supplier or qualified professional guidance when those details are unresolved.
 
-Save purchase, delivery, installation, anchoring, finish and warranty records. Photograph the empty shed and completed storage layout. Recheck after rain and seasonally for leaks, settling, pests or sticking doors. Report movement or damage to the responsible professional; do not solve a soft floor by covering it with another sheet.
+Check door operation, visible gaps, hardware and the manual's completion checklist. Keep vents and drainage openings clear. If coating is permitted, use compatible products and their application/drying instructions.
 
-If you need help, send the model information, site photos and the exact symptom or unfinished task with the request.
+Checkpoint: support, assembly and anchoring requirements are complete; movement, binding doors, damage or leaks are resolved before loading.
+
+## 5. Add storage and keep an inspection record
+
+Install storage according to its instructions and the shed's capacity limits. Put heavier items low. Do not suspend loads or anchor shelving to unverified wall locations. Keep the door route clear. Save model/manual, approvals, base and anchoring details, photos, receipts and warranties.
+
+Recheck after rain and seasonally for leaks, settling, loose components, pests and door changes. Stop using affected areas if movement, damage or a soft floor develops; arrange assessment rather than covering the problem.
 
 ## Ask for a complete installed estimate
 
@@ -281,15 +303,15 @@ Record incomplete items, owners and correction dates. Retain applicable approval
 
 ## Choose your next step
 
-**Build my DIY plan:** create an editable project from the five scoped DIY steps after the guide is published. Account setup is required to save the plan. The existing DIY planner supports task progress, notes, photos and requests for help.
+**Build my DIY plan:** after publication, create an editable project from the five scoped DIY steps. Sign in or create an account to save it.
 
-**Plan my contractor request:** begin a project request linked to this guide. The intake asks for project details before contact information. No contractor invitation is sent merely by starting a request.
+**Plan my contractor request:** begin a guide-linked request, with project details collected before contact information. Starting a request does not send contractor invitations.
 
 ## Questions homeowners ask
 
-**Does a small shed automatically avoid all permits?**
+**What is San Antonio’s shed building-permit exemption?**
 
-No. A building-permit exemption can still have conditions, and property location, intended use, district rules, trade work, setbacks and easements can affect what is allowed.
+The published exemption covers qualifying one-story detached storage sheds of 300 square feet or less that meet applicable setbacks. Other location, use, district and utility requirements still apply. Confirm the proposal for the actual address.
 
 **Can I turn a storage shed into a guest room later?**
 
@@ -299,24 +321,31 @@ Do not assume so. Habitable use changes the project. Discuss zoning, building, f
 
 Compare the complete installed scope, site suitability, access, warranty responsibilities and intended use. Either option needs a suitable support and anchoring arrangement.
 
+**Can I build the shed myself?**
+
+A suitable small kit may be a DIY project when you can follow its complete instructions, provide suitable support and anchoring, and handle assembly safely with the required helpers. Permit requirements and DIY suitability are separate decisions.
+
 ## Sources to verify
 
 - [San Antonio residential permits](https://www.sa.gov/Directory/Departments/DSD/Constructing/Residential/Permits)
 - [San Antonio work that typically needs no permit](https://www.sa.gov/Directory/Departments/DSD/Constructing/Residential/Permits/No-Permit-Required)
 - [FTC: choosing a home-improvement contractor](https://consumer.ftc.gov/articles/how-avoid-home-improvement-scam)
 - [Texas811: notify before digging](https://texas811.org/homeowner/)
+- [San Antonio residential improvements: shed and deck permit triggers](https://docsonline.sanantonio.gov/FileUploads/DSD/GeneralRepairsMinorCommercialApplication.pdf)
+- [Lifetime: model-specific shed foundation planning](https://www.lifetime.com/customerservice/tipsandsolutionsdetail/193/lifetime-shed-foundation-options)
+- [Lifetime: shed anchoring varies by model and foundation](https://www.lifetime.com/company/faqdetail/261/what-is-the-best-way-to-anchor-a-lifetime-shed)
 
 ---
 
-# A better deck starts with a clear plan—and a sound structure
+# Plan, build or refresh a deck with clear expectations
 
-Plan a new deck or a refresh, compare complete installation estimates, and follow a practical DIY cleaning and care walkthrough for an existing deck that is safe to use.
+Check San Antonio deck permit conditions, plan a low detached DIY deck from a complete design, compare contractor estimates, and care for an existing deck.
 
 ## What this project involves
 
-A deck is an outdoor structure, not just a flooring purchase. Its supports, connections, guards, stairs, drainage and materials need to work together. Decide whether you need a new deck, professional repairs, or simply better care for a deck that is already sound.
+A deck is an outdoor structure with supports, connections and a walking surface that must work together. Start by choosing your route: build a small low detached deck, hire a new deck or repairs, or maintain a sound existing deck.
 
-The DIY route here is surface cleaning and permitted finish maintenance on a safe existing deck. New construction, structural repairs, ledger work, posts, beams, joists, guards and stairs are professional scopes in this guide. Fresh stain does not make an unsafe deck sound.
+The DIY build workflow below covers a simple uncovered detached deck using a complete site-appropriate design. It organizes construction decisions and checkpoints; it does not supply universal beam spans, footing dimensions or connector schedules. Permit exemption does not remove construction requirements, and a permit requirement does not automatically prohibit homeowner construction.
 
 ## Scope checklist
 
@@ -330,13 +359,17 @@ Photograph the deck and accessible areas from safe ground-level positions. Note 
 
 For a new deck, sketch doors, thresholds, yard grade, drainage, utilities, access and intended furniture. Check property restrictions and obtain a professional assessment before committing to a footprint or ordering materials. Notify Texas811 before any digging; ask about private lines as well.
 
+For a DIY build, obtain a complete design covering the actual dimensions, soil/support conditions, lumber species and grade, spans, connections and any bracing, guards or steps. The city references adopted residential deck provisions and AWC DCA 6; confirm which provisions apply to this design. Do not combine unrelated internet diagrams into a structural plan.
+
 ## Safety and stopping points
 
 Keep people off a deck that moves, sags, has damaged supports, loose guards or unsafe stairs, and obtain a qualified assessment. Do not hide deterioration with a coating or new surface boards. Stay off ladders and roof structures when performing the cleaning walkthrough.
 
 Use cleaners and coatings appropriate to the actual material and follow their labels. Never mix chemicals. Protect people, pets, plants and surrounding surfaces. Avoid electrical equipment around wet conditions unless its instructions and protection are suitable. Stop if safe access or drainage cannot be maintained.
 
-## Budget worksheet: what to include
+During a new build, control access to excavations and unfinished framing, use the planned temporary support/bracing, follow tool instructions and arrange manageable lifting. Avoid overhead utilities. Never use an unfinished or unstable frame as a work platform. Stop if actual site conditions or supplied materials differ from the design.
+
+## Budget: what to include
 
 Ask for separate costs for design/approvals; removals; site/support work; framing/connections; surface boards; guards/stairs; finishes; cleanup and any trade work. Material selection alone does not explain the installed price. Access, height, poor existing conditions and complex stairs can matter substantially.
 
@@ -348,15 +381,25 @@ For safe surface care: broom, hose, soft brush suitable for the product, compati
 
 Do not treat a rented pressure washer as a universal deck-cleaning tool. Manufacturers differ, and some composite products can be damaged by pressure washing or cannot be recoated. Identify the exact material and care instructions before choosing equipment.
 
+For a new build, use the design’s material and connector schedule to make the shopping list. Typical tools include measuring and layout tools, a level and square, appropriate saw/drill equipment, clamps, PPE and task-specific digging/compaction tools. Confirm experience with each tool and utility clearance before excavation. Select fasteners and hardware for the actual treated lumber and exposure; ordinary interior screws are not a substitute for specified structural connectors.
+
 ## Common mistakes
 
 Covering an unsafe deck with new boards; assuming guards or house connections are included in a surface quote; using the same cleaner or pressure setting on every material; trapping debris between boards; and applying finish before the substrate meets the coating requirements can cause avoidable problems.
 
-## San Antonio: verify the current deck requirements
+## DIY suitability
 
-Use Development Services' current residential-deck bulletin, IB 151, to check the proposed deck. Permit questions depend on size, height, attachment and doors served, as well as the actual property and scope. Confirm the design, required drawings and inspections with the applicable authority before starting.
+A small low detached deck may be suitable for a homeowner with relevant carpentry skills, appropriate tools and a complete site-appropriate plan. Verify support, soil, connections, materials and safe access before starting. Cleaning and compatible finish maintenance are a separate DIY route for a sound existing deck.
 
-City web resources can be revised at different times; do not rely on a single size threshold quoted in an old article. HOA approval and property restrictions are separate from a building-permit decision.
+## When to hire help
+
+Get qualified help for an unclear design, uncertain soils or load capacity, unsafe existing structure, house attachment/flashing, elevated or complex work, stairs/guards beyond your experience, roof covers, hot tubs or other concentrated loads. Arrange appropriate professionals and permits for utility work. You can hire design or supports and complete suitable portions yourself.
+
+## San Antonio deck permits: size is only one condition
+
+For the residential uncovered-deck exemption, check every condition: area of 300 square feet or less; no point more than 30 inches above grade; no attachment to the dwelling; and no service to a required exit door. The city's residential improvements application identifies exceeding either size/height limit, house attachment or serving a required exit as permit triggers. Confirm the actual door and design with Development Services.
+
+A 12-by-16-foot deck is 192 square feet, but still needs the other conditions checked. Measure height at the highest point above the actual ground beneath the deck, including sloping ground. Treat a cover or roof as a separate scope to verify. Setbacks, easements, district/HOA rules and separate trade permits can still apply. These thresholds determine the exemption; they do not determine who may build. Ask about homeowner permits and inspections when required.
 
 ## Compare the whole material system
 
@@ -370,41 +413,61 @@ A new deck requires decisions and site/design checks before ordering, then site 
 
 A maintenance project needs a suitable weather window, cleaning and drying time, and any coating's return-to-use time. Plan several available sessions instead of assuming every cleaner or stain is a same-day job.
 
-## DIY readiness: care for a sound existing deck
+## DIY readiness: a small, low, detached deck
 
-Proceed only if the structure has no unresolved safety concerns, the walking surface is safe, and you can work without leaning over edges or disturbing structural parts. If you are uncertain about condition, get a professional assessment first.
+Choose a simple uncovered detached design without a hot tub, roof or unresolved access requirements. Verify every permit-exemption condition or arrange the required approvals. A required exit, slope or connection to the house can change the project even at a small footprint.
 
-Identify the surface material and read its care guidance. Composite care is not the same as wood refinishing. This walkthrough does not include sanding unknown old coatings, replacing boards or changing fasteners.
+Before ordering, have a complete plan applicable to the site, including supports, lumber, spans, fastening and lateral stability. Use qualified design help if the plan or site is uncertain. This workflow does not tell you to use loose deck blocks, shallow supports or guessed member sizes simply because the deck is low. New stairs, guards and heavy loads need explicit design decisions.
 
-## 1. Inspect from safe positions and identify the finish
+## 1. Confirm the site, approvals and complete design
 
-Clear movable furniture with help where needed. Observe accessible surfaces and report movement, decay, loose parts or unsafe stairs before cleaning. Identify the board material and any existing finish from records or the supplier.
+Measure the proposed footprint and height above ground at all relevant points. Identify doors served, property restrictions, drainage, utilities and any house connection. Record the permit decision for the actual scope and address.
 
-Checkpoint: the deck is safe for the planned work, and you have product-specific care instructions. Stop if condition or material remains uncertain.
+Select a complete site-appropriate design and bill of materials, including support and connection details. Verify its limits before purchasing.
 
-## 2. Protect the work area
+Checkpoint: the design, approvals, material schedule and division of DIY/professional tasks are resolved. No structural dimensions are being invented during assembly.
 
-Read cleaner and equipment directions. Protect nearby plants, painted surfaces and items below the deck as directed. Keep children and pets away and establish a clear exit. Sweep loose debris using a tool that will not damage the surface.
+## 2. Locate utilities and install the planned supports
 
-Checkpoint: protection and runoff handling are planned, and no incompatible chemicals are being combined.
+Notify Texas811 before digging and arrange location of private lines where necessary. Lay out the design with strings and measurements; verify dimensions, squareness, clearances and drainage. Install the specified support system only after site and soil suitability are established, following applicable approvals and inspection hold points.
 
-## 3. Test and clean in manageable sections
+Use help for concrete, excavation or support work beyond your ability. Do not alter footing dimensions or substitute support methods when an obstruction or poor soil appears.
 
-Test an approved method in an inconspicuous area. For a suitable product, use the recommended cleaner, gentle brushing and rinsing method. Work in manageable sections and follow the specified contact time. Do not let cleaning residue dry onto the boards if the product says to rinse it away.
+Checkpoint: support locations, levels, anchorage and applicable checks match the plan before framing begins.
 
-Checkpoint: the surface is cleaned without damage or persistent residue. If a stain needs a stronger treatment, check the product instructions or ask the manufacturer before escalating.
+## 3. Assemble and check the framing
 
-## 4. Let the deck dry and finish only when appropriate
+Confirm lumber grade, treatment, member sizes and connector compatibility against the plan. Build in its sequence with the specified temporary stabilization, connections and fasteners. Check alignment, level and squareness as you go; do not substitute hardware or enlarge spans to use available boards.
 
-Allow drying under the material and coating instructions. If a wood coating is appropriate, verify surface readiness and forecast, protect adjacent materials, and apply it as directed. Do not coat composite boards unless the manufacturer expressly permits the product and method. Follow label instructions for safe handling and disposal of finish-soaked materials.
+Keep people off incomplete framing and arrange manageable lifting. Resolve unexpected movement, splits, unsuitable materials or a design mismatch before covering connections.
 
-Checkpoint: the selected finish is compatible, all use restrictions are recorded, and the surface is not returned to service prematurely.
+Checkpoint: the support/framing and connections are checked against the design, photographed and inspected where required before decking conceals them.
 
-## 5. Restore use and keep a care record
+## 4. Install decking and complete safe access
 
-Restore furniture only when permitted. Record the material/finish, products, date, photos and next maintenance check. Keep debris from building up in accessible gaps using the approved care method. Watch for new movement, loose parts or moisture problems over time.
+Install the selected decking using its product instructions together with the structural plan: fastening, gaps, end support and edge details must fit both. Finish all designed steps, guards, bracing and access provisions rather than assuming a low deck needs none. Keep unfinished areas closed to use.
 
-If you need help, share the deck's material details, safe photos and the specific condition. Do not climb underneath or dismantle parts to create a better photograph.
+If access requirements or material instructions conflict with the design, pause for clarification. Do not add a house ledger, roof, hot tub or heavy planter arrangement without reviewing the changed scope.
+
+Checkpoint: walking surfaces, fasteners and access details are complete and checked against the plan and applicable requirements.
+
+## 5. Check completion and establish maintenance
+
+Complete required inspections and the plan/product completion checks before use. Resolve movement, sharp edges, protruding fasteners or unsafe access. Save the design, approvals, inspection records, materials, photos and product instructions. A homeowner walkthrough does not replace a required inspection.
+
+Follow material-specific cleaning and coating guidance. Inspect periodically and after notable weather for movement, damage or loose components. Obtain qualified assessment for structural concerns; a new coating cannot repair them.
+
+## Existing deck: confirm condition before cleaning
+
+For a maintenance-only project, first confirm the deck is safe to occupy. Stay off a structure with movement, decay, damaged supports, loose guards or unsafe stairs and arrange assessment. Identify the exact board material and existing finish. Do not sand unknown old coatings or assume every composite can be coated.
+
+## Protect, test and clean the surface
+
+Clear movable items, protect surrounding surfaces and plants, and manage runoff according to the product label. Sweep loose debris. Test a manufacturer-approved cleaner and method in an inconspicuous area, then work in manageable sections with the specified contact time and rinse method. Never mix chemicals or assume stronger pressure is better.
+
+## Dry, finish if permitted and record the work
+
+Allow the surface to dry as instructed. Apply a compatible coating only if the decking manufacturer permits it and conditions meet its instructions. Follow safe disposal directions for finish-soaked materials and the return-to-use time. Record products and dates, keep accessible gaps clear using approved methods, and watch for new damage or movement.
 
 ## Specify the structure as well as the surface
 
@@ -426,9 +489,9 @@ Ask what normal material movement or appearance changes may occur, what is cover
 
 ## Choose your next step
 
-**Build my DIY plan:** create an editable project from the five scoped DIY steps after the guide is published. Account setup is required to save the plan. The existing DIY planner supports task progress, notes, photos and requests for help.
+**Build my DIY plan:** after publication, create an editable project from the five scoped DIY steps. Sign in or create an account to save it.
 
-**Plan my contractor request:** begin a project request linked to this guide. The intake asks for project details before contact information. No contractor invitation is sent merely by starting a request.
+**Plan my contractor request:** begin a guide-linked request, with project details collected before contact information. Starting a request does not send contractor invitations.
 
 ## Questions homeowners ask
 
@@ -444,6 +507,14 @@ No. Material and manufacturer instructions differ. Identify the product and appr
 
 Ask for a schedule based on the design, approvals, material lead times and site conditions. Separate construction days from the total calendar time.
 
+**Does every deck under 300 square feet avoid a permit?**
+
+No. The exemption includes exactly 300 square feet but also requires an uncovered deck no more than 30 inches above grade at any point, detached from the dwelling and not serving a required exit door. Verify the full scope and local restrictions.
+
+**Can I build a deck myself if a permit is required?**
+
+Permit status is separate from DIY suitability. San Antonio provides a homeowner application route subject to its eligibility requirements. Confirm the current process, design and inspection responsibilities before starting.
+
 ## Sources to verify
 
 - [San Antonio residential permits](https://www.sa.gov/Directory/Departments/DSD/Constructing/Residential/Permits)
@@ -452,6 +523,8 @@ Ask for a schedule based on the design, approvals, material lead times and site 
 - [San Antonio IB 151: residential decks](https://docsonline.sanantonio.gov/FileUploads/DSD/IB151.pdf)
 - [Texas811: notification before digging](https://texas811.org/homeowner/)
 - [Trex: product-specific care and cleaning](https://www.trex.com/customer-support/trex-owners/care-and-cleaning/)
+- [San Antonio residential improvements: all deck permit triggers](https://docsonline.sanantonio.gov/FileUploads/DSD/GeneralRepairsMinorCommercialApplication.pdf)
+- [AWC DCA 6: residential wood deck construction reference; verify local applicability](https://web-media.awc.org/wp-content/uploads/2022/02/17210514/AWC-DCA62015-DeckGuide-1804.pdf)
 
 ---
 
@@ -483,7 +556,7 @@ Stop for unknown lines, major roots, unstable fill, steep ground, persistent pon
 
 Pavers and equipment are heavy; plan safe handling and follow equipment instructions. Dry cutting masonry or concrete can generate hazardous dust. Plan a no-cut layout or arrange controlled cutting by a qualified provider. Do not mix or place structural concrete, disturb a building foundation or construct retaining work from this guide.
 
-## Budget worksheet: what to include
+## Budget: what to include
 
 Price removals and disposal, excavation, base materials, compaction, edge restraints, the selected surface, joint treatment and delivery/rental costs. Add access constraints and any professional drainage or utility work. A poor base can make a low surface price expensive later.
 
@@ -498,6 +571,14 @@ Confirm tool availability, equipment transport and manufacturer instructions bef
 ## Common mistakes
 
 Installing over loose topsoil; changing levels without considering door thresholds and runoff; omitting edge restraints; using a universal base depth without assessing the site; ordering no allowance for the layout; and loading or cleaning a new surface before the product instructions permit it can undermine the finished result.
+
+## DIY suitability
+
+A small, simple paver area may suit a homeowner who can safely handle the work and follow a verified site-appropriate installation plan. Preparation and compaction are a large part of the work. Use a no-cut layout when possible and stop if drainage or ground conditions are uncertain.
+
+## When to hire help
+
+Hire help for a concrete slab, large or complex paver installation, steep/poorly drained ground, retaining edges, heavy loads, utility changes or patio covers. A roofed patio is a separate structural project, not an accessory to order after the slab is installed.
 
 ## Choose concrete or pavers for the actual use
 
@@ -573,9 +654,9 @@ Record any unresolved cracks, settlement, damaged units or ponding with the cont
 
 ## Choose your next step
 
-**Build my DIY plan:** create an editable project from the five scoped DIY steps after the guide is published. Account setup is required to save the plan. The existing DIY planner supports task progress, notes, photos and requests for help.
+**Build my DIY plan:** after publication, create an editable project from the five scoped DIY steps. Sign in or create an account to save it.
 
-**Plan my contractor request:** begin a project request linked to this guide. The intake asks for project details before contact information. No contractor invitation is sent merely by starting a request.
+**Plan my contractor request:** begin a guide-linked request, with project details collected before contact information. Starting a request does not send contractor invitations.
 
 ## Questions homeowners ask
 
