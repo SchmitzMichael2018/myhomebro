@@ -54,6 +54,7 @@ function QuoteForm({ business, setBusiness, selectedTemplate, setSelectedTemplat
   const summary = `Website inquiry\n\nBusiness type: ${business}\nSelected design: ${findWebsiteTemplate(selectedTemplate)?.name || 'Help me choose'}\nProject: ${values.need}\nBusiness: ${values.company}\nCurrent website: ${values.website || 'None supplied'}\nDetails: ${values.details}\nBudget: ${values.budget}\nTiming: ${values.timing || 'Flexible'}\n\nName: ${values.name}\nEmail: ${values.email}\nPhone: ${values.phone || 'Not supplied'}`;
   const mailto = `mailto:${EMAIL}?subject=${encodeURIComponent('Website inquiry: ' + values.company)}&body=${encodeURIComponent(summary)}`;
   return h('div', { className: 'wd-quote-form' },
+    h('p', { className: 'wd-small' }, 'Want to save your project and share photos? ', h(Link, { to: '/webdesign/dashboard' + (selectedTemplate ? '?template=' + encodeURIComponent(selectedTemplate) : '') }, 'Open your website dashboard →')),
     h('p', { className: 'wd-eyebrow', 'aria-live': 'polite' }, `STEP ${step} OF 3 • NO ACCOUNT NEEDED`),
     h('h3', { ref: heading, tabIndex: -1 }, ['Tell us what you need.', 'A little about your business.', 'How can we reach you?'][step - 1]),
     h('form', { onSubmit: event => { event.preventDefault(); if (step < 3) go(step + 1); else setPrepared(true); } },
@@ -79,7 +80,7 @@ export default function WebDesignPage() {
   return h('div', { className: 'wd-page', 'data-testid': 'webdesign-page' },
     h('a', { className: 'wd-skip', href: '#webdesign-main' }, 'Skip to content'),
     h('header', { className: 'wd-header' }, h(Link, { className: 'wd-brand', to: '/', 'aria-label': 'MyHomeBro home' }, h('img', { src: logo, alt: '', width: 44, height: 44 }), h('span', null, 'MyHomeBro', h('small', null, 'WEB DESIGN'))),
-      h('nav', { 'aria-label': 'Web design navigation' }, h('a', { href: '#templates' }, 'Templates'), h('a', { href: '#process' }, 'How it works'), h('a', { className: 'wd-button wd-button-small', href: '#quote' }, 'Let’s build your website ↗'))),
+      h('nav', { 'aria-label': 'Web design navigation' }, h('a', { href: '#templates' }, 'Templates'), h(Link, { className: 'wd-dashboard-link', to: '/webdesign/dashboard' }, 'Customer dashboard'), h('a', { className: 'wd-button wd-button-small', href: '#quote' }, 'Let’s build your website ↗'))),
     h('main', { id: 'webdesign-main' },
       h('section', { className: 'wd-hero wd-container' },
         h('div', { className: 'wd-hero-copy' }, h('p', { className: 'wd-eyebrow' }, 'FOR THE BUSINESSES THAT KEEP US GOING'), h('h1', null, 'Your business.', h('br'), 'Looking its ', h('em', null, 'best.')),

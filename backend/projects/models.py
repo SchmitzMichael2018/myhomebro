@@ -1,6 +1,7 @@
 # backend/projects/models.py
 
 from decimal import Decimal
+from .models_website_service import WebsiteServiceProject, WebsiteServiceMaterial, WebsiteServiceRequest  # noqa: F401
 from datetime import timedelta
 import secrets
 import uuid
@@ -3497,3 +3498,4 @@ from .models_attribution import (  # noqa: E402,F401
     ProjectAttributionSnapshot,
     RevenueAttributionSnapshot,
 )
+

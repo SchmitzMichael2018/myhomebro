@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
+from .views.website_service import WebsiteServiceProjectViewSet
 from rest_framework_nested.routers import NestedDefaultRouter
 
 from .views.agreements import (
@@ -557,6 +558,7 @@ from .views.maintenance_work_orders import MaintenanceWorkOrderViewSet
 app_name = "projects_api"
 
 router = DefaultRouter(trailing_slash="/?")
+router.register(r"website-service-projects", WebsiteServiceProjectViewSet, basename="website-service-projects")
 router.register(r"homeowners", HomeownerViewSet, basename="homeowners")
 router.register(r"projects", ProjectViewSet, basename="projects")
 router.register(r"agreements", AgreementViewSet, basename="agreements")
@@ -1384,3 +1386,4 @@ urlpatterns += [
         AgreementViewSet.as_view({"post": "acknowledge"}),
     ),
 ]
+
