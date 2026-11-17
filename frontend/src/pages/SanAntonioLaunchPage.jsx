@@ -1,17 +1,29 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowRight, Building2, ClipboardList, HardHat, Home, HousePlus, MapPin, Search, ShieldCheck, Wrench } from 'lucide-react';
 import logo from '../assets/myhomebro_logo.png';
 import { CONTRACTOR_SEARCH_HANDOFF, sanAntonioCtaUrl } from '../lib/sanAntonioLaunch.js';
 
 const services = [
-  { title: 'Flooring', detail: 'Describe the room, existing surface, material preference, and timing.' },
-  { title: 'Concrete', detail: 'Share the area, intended use, access, and any site conditions you know.' },
-  { title: 'Bathroom remodeling', detail: 'Outline the fixtures, finishes, layout changes, and your priorities.' },
+  { title: 'Bathroom renovation', slug: 'bathroom-renovation-planning-guide', detail: 'Decide what to keep, compare the full scope, and plan a cosmetic DIY refresh or professional renovation.' },
+  { title: 'Backyard shed', slug: 'shed-planning-and-finishing-guide', detail: 'Check location, delivery, support and storage needs before buying a shed or hiring an installer.' },
+  { title: 'Deck', slug: 'deck-planning-and-care-guide', detail: 'Plan structural work with qualified help and learn which care tasks fit a sound existing deck.' },
+  { title: 'Patio', slug: 'patio-planning-and-paver-guide', detail: 'Compare concrete and pavers, plan drainage and preparation, and assess a small pedestrian paver project.' },
 ];
 
 export default function SanAntonioLaunchPage() {
   const { search } = useLocation();
+  const [publishedGuides, setPublishedGuides] = useState({});
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/projects/public/improvements/?audience=homeowner', { signal: controller.signal })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(data => setPublishedGuides(Object.fromEntries(
+        (data.improvements || []).filter(item => item.canonical_path?.startsWith('/improvements/')).map(item => [item.slug, item.canonical_path])
+      )))
+      .catch(() => { /* Planning remains available if the optional guide list cannot load. */ });
+    return () => controller.abort();
+  }, []);
   const cta = (path) => sanAntonioCtaUrl(path, search);
 
   return (
@@ -80,13 +92,14 @@ export default function SanAntonioLaunchPage() {
         <section className="mx-auto max-w-6xl px-5 py-16" aria-labelledby="service-heading">
           <p className="text-sm font-bold uppercase tracking-widest text-amber-300">Citywide starting points</p>
           <h2 id="service-heading" className="mt-3 text-3xl font-bold">What are you planning?</h2>
-          <p className="mt-3 max-w-2xl leading-7 text-slate-300">These are ways to describe your work, not promises of contractor supply or project availability.</p>
-          <div className="mt-8 grid gap-5 md:grid-cols-3">
+          <p className="mt-3 max-w-2xl leading-7 text-slate-300">Start with the decisions that shape the work, the questions to ask, and a plan you can adapt. Choose DIY tasks or professional help to fit the project.</p>
+          <div className="mt-8 grid gap-5 md:grid-cols-2">
             {services.map((service) => (
               <article key={service.title} className="rounded-2xl border border-white/15 bg-slate-900 p-6">
                 <ClipboardList className="text-sky-300" aria-hidden="true" />
                 <h3 className="mt-4 text-xl font-bold">{service.title}</h3>
                 <p className="mt-3 min-h-20 leading-7 text-slate-300">{service.detail}</p>
+                {publishedGuides[service.slug] ? <Link data-testid={`san-antonio-guide-${service.slug}`} to={cta(publishedGuides[service.slug])} className="mt-5 mr-5 inline-flex min-h-11 items-center gap-2 font-semibold text-amber-200 underline-offset-4 hover:underline">Read the DIY &amp; hiring guide <ArrowRight size={16} aria-hidden="true" /></Link> : null}
                 <Link to={cta('/start-project')} className="mt-5 inline-flex min-h-11 items-center gap-2 font-semibold text-amber-200 underline-offset-4 hover:underline">Plan this project <ArrowRight size={16} aria-hidden="true" /></Link>
               </article>
             ))}
@@ -112,3 +125,4 @@ export default function SanAntonioLaunchPage() {
     </div>
   );
 }
+

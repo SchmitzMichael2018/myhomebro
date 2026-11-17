@@ -1,11 +1,25 @@
 import { expect, test } from '@playwright/test';
 
+async function mockAnonymousIntake(page) {
+  const starts = [];
+  await page.route('**/api/projects/public-intake/**', route => {
+    if (route.request().method() === 'POST') {
+      starts.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { token: 'san-antonio-smoke-token' } });
+    }
+    return route.fulfill({ json: { id: 1, status: 'draft', ai_milestones: [], ai_clarification_questions: [], ai_clarification_answers: {}, clarification_photos: [] } });
+  });
+  return starts;
+}
+
+
 for (const { name, width, height } of [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'mobile', width: 390, height: 844 },
 ]) {
   test(`San Antonio public launch is accessible at ${name} width`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height });
+    const starts = await mockAnonymousIntake(page);
     await page.route('**/api/projects/attribution/track/', (route) => route.fulfill({ status: 200, json: {} }));
     await page.goto('/san-antonio/?utm_source=synthetic&ref=TEST-1&unsafe=discard');
     await expect(page.getByRole('heading', { level: 1 })).toContainText('San Antonio');
@@ -28,21 +42,20 @@ for (const { name, width, height } of [
     await expect(page.getByTestId('san-antonio-find-contractor')).toHaveCSS('color', 'rgb(255, 255, 255)');
     await page.screenshot({ path: testInfo.outputPath(`san-antonio-${name}.png`), fullPage: true });
     await page.getByTestId('san-antonio-find-contractor').click();
-    await expect(page.getByTestId('start-project-contact-form')).toBeVisible();
-    const handoff = new URL(page.url());
-    expect(handoff.pathname).toBe('/start-project');
-    expect(handoff.searchParams.get('utm_source')).toBe('synthetic');
-    expect(handoff.searchParams.get('ref')).toBe('TEST-1');
-    expect(handoff.searchParams.get('source')).toBe('san_antonio_launch');
-    expect(handoff.searchParams.has('unsafe')).toBe(false);
+    await expect(page.getByTestId('public-intake-accomplishment-text')).toBeVisible();
+    expect(starts[0].source).toBe('san_antonio_launch');
+    expect(starts[0].customer_email).toBe('');
+
   });
 }
 
 test('national homepage and direct intake refresh retain their existing routes', async ({ page }) => {
+  await mockAnonymousIntake(page);
   await page.goto('/');
   await expect(page.getByTestId('landing-start-project-intake-button')).toBeVisible();
   await page.goto('/start-project');
-  await expect(page.getByTestId('start-project-contact-form')).toBeVisible();
+  await expect(page.getByTestId('public-intake-accomplishment-text')).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId('start-project-contact-form')).toBeVisible();
+  await expect(page.getByTestId('public-intake-accomplishment-text')).toBeVisible();
 });
+

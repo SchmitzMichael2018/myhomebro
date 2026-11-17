@@ -6,6 +6,7 @@ import api from '../api';
 import { trackAcquisitionEvent } from '../lib/acquisitionAttribution.js';
 import { applySeoMetadata, SITE_ORIGIN } from '../lib/seoMetadata.js';
 import { LibraryShell } from './PublicImprovementLibraryPage.jsx';
+import { HomeownerGuideNavigation, HomeownerGuideSections, isHomeownerProjectGuide } from '../components/HomeownerGuideSections.jsx';
 
 const sections = [
   ['Preparation', 'preparation'],
@@ -201,6 +202,7 @@ export default function PublicImprovementPage({ preview = false }) {
       </LibraryShell>
     );
   const contractorGuide = contractorGuides[item.slug];
+  const homeownerGuide = isHomeownerProjectGuide(item);
   return (
     <LibraryShell showBrandText>
       <div className={contractorGuide ? 'bg-[#f7f4ed]' : ''}>
@@ -257,6 +259,7 @@ export default function PublicImprovementPage({ preview = false }) {
           {contractorGuide ? <BlueprintPlan guide={contractorGuide} /> : null}
           </div>
         </header>
+        {homeownerGuide ? <HomeownerGuideNavigation /> : null}
         {item.problem ? (
           <div className={contractorGuide ? 'mt-8 rounded-[2rem] border border-[#e7e0d3] bg-white px-6 pb-10 pt-1 shadow-[0_20px_50px_-35px_rgba(7,27,52,.32)] sm:px-10 lg:px-16' : ''}>
             <ContentSection title="The problem" value={item.problem} />
@@ -354,7 +357,7 @@ export default function PublicImprovementPage({ preview = false }) {
                 <ContentSection key={key} title={title} value={item[key]} />
               ) : null
             )}
-            {(item.sections || []).map((section) => (
+            {homeownerGuide ? <HomeownerGuideSections sections={item.sections} /> : (item.sections || []).map((section) => (
               <ContentSection key={section.id} title={section.title} value={section.body} />
             ))}
             {item.materials ? (
@@ -363,7 +366,7 @@ export default function PublicImprovementPage({ preview = false }) {
                 value={item.materials}
               />
             ) : null}
-            {item.milestones.length ? (
+            {item.milestones.length && !homeownerGuide ? (
               <section className="mt-10">
                 <h2 className="text-2xl font-bold">Typical project steps</h2>
                 <ol className="mt-4 space-y-4">
@@ -403,9 +406,11 @@ export default function PublicImprovementPage({ preview = false }) {
                   <strong>Professional help:</strong> {item.pro_guidance}
                 </p>
               ) : null}
+              {preview ? <p className="mt-4 rounded-xl border border-amber-300/50 p-3 text-sm text-amber-100">Preview only: project actions become available after the guide is reviewed and published.</p> : null}
               <div className="mt-7 grid gap-3 sm:grid-cols-2">
                 <button
                   data-testid="diy-this-project"
+                  disabled={preview}
                   onClick={() =>
                     act(
                       'diy_project_started',
@@ -414,10 +419,11 @@ export default function PublicImprovementPage({ preview = false }) {
                   }
                   className="min-h-14 rounded-xl bg-amber-400 px-5 font-bold text-slate-950"
                 >
-                  DIY This Project
+                  {homeownerGuide ? 'Build my DIY plan' : 'DIY This Project'}
                 </button>
                 <button
                   data-testid="get-contractor-help"
+                  disabled={preview}
                   onClick={() =>
                     act(
                       'hire_pro_clicked',
@@ -426,7 +432,7 @@ export default function PublicImprovementPage({ preview = false }) {
                   }
                   className="min-h-14 rounded-xl border border-white/30 px-5 font-bold text-white"
                 >
-                  Get Contractor Help
+                  {homeownerGuide ? 'Plan my contractor request' : 'Get Contractor Help'}
                 </button>
               </div>
             </section>
@@ -651,3 +657,4 @@ function PracticalSteps({ value }) {
     </section>
   );
 }
+
