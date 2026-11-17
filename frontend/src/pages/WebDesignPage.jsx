@@ -80,7 +80,7 @@ export default function WebDesignPage() {
   return h('div', { className: 'wd-page', 'data-testid': 'webdesign-page' },
     h('a', { className: 'wd-skip', href: '#webdesign-main' }, 'Skip to content'),
     h('header', { className: 'wd-header' }, h(Link, { className: 'wd-brand', to: '/', 'aria-label': 'MyHomeBro home' }, h('img', { src: logo, alt: '', width: 44, height: 44 }), h('span', null, 'MyHomeBro', h('small', null, 'WEB DESIGN'))),
-      h('nav', { 'aria-label': 'Web design navigation' }, h('a', { href: '#templates' }, 'Templates'), h(Link, { to: '/webdesign/dashboard' }, 'Customer dashboard'), h('a', { className: 'wd-button wd-button-small', href: '#quote' }, 'Let’s build your website ↗'))),
+      h('nav', { 'aria-label': 'Web design navigation' }, h('a', { href: '#templates' }, 'Templates'), h(Link, { className: 'wd-dashboard-link', to: '/webdesign/dashboard' }, 'Customer dashboard'), h('a', { className: 'wd-button wd-button-small', href: '#quote' }, 'Let’s build your website ↗'))),
     h('main', { id: 'webdesign-main' },
       h('section', { className: 'wd-hero wd-container' },
         h('div', { className: 'wd-hero-copy' }, h('p', { className: 'wd-eyebrow' }, 'FOR THE BUSINESSES THAT KEEP US GOING'), h('h1', null, 'Your business.', h('br'), 'Looking its ', h('em', null, 'best.')),

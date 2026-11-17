@@ -14,7 +14,7 @@ function safeLink(url) { try { return ['http:', 'https:'].includes(new URL(url).
 function failure(error) {
   const data = error?.response?.data;
   if (error?.response?.status === 401) return 'Your session has expired. Sign in again to continue.';
-  if (data && typeof data === 'object') return Object.entries(data).map(([key, value]) => (key === 'detail' ? '' : key.replaceAll('_', ' ') + ': ') + (Array.isArray(value) ? value.join(' ') : String(value))).join(' ');
+  if (data && typeof data === 'object' && Object.keys(data).length) return Object.entries(data).map(([key, value]) => (key === 'detail' ? '' : key.replaceAll('_', ' ') + ': ') + (Array.isArray(value) ? value.join(' ') : String(value))).join(' ');
   return 'We could not save that change. Your information is still here. Please try again.';
 }
 
