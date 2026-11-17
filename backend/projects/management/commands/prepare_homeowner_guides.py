@@ -45,11 +45,11 @@ def draft_fields(guide):
         "public_next_action": "create_project",
         "public_editorial_brief": {
             "series": "san_antonio_homeowner_guides_v1",
-            "source_check_date": "2026-11-16",
+            "source_check_date": guide.get("source_check_date", "2026-11-16"),
             "review_needed": "Owner review of accuracy, tone and DIY limits before publication.",
             "diy_plan_scope": guide["diy"],
         },
-        "seo_title": {
+        "seo_title": guide.get("seo_title") or {
             "bathroom-renovation-planning-guide": "Bathroom Renovation: DIY & Hiring Guide | MyHomeBro",
             "shed-planning-and-finishing-guide": "Backyard Shed: Planning & DIY Finishing Guide | MyHomeBro",
             "deck-planning-and-care-guide": "Deck Planning, Hiring & DIY Care Guide | MyHomeBro",

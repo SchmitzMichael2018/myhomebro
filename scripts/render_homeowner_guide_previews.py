@@ -21,6 +21,7 @@ for g in guides:
     for q,a in g['faqs']: parts.append(f'<details class="step"><summary><strong>{esc(q)}</strong></summary><p>{esc(a)}</p></details>')
     parts.append('<h2>Sources and local checks</h2><ul>')
     for label,url in g['sources']: parts.append(f'<li><a href="{esc(url)}" target="_blank" rel="noopener noreferrer">{esc(label)}</a></li>')
-    parts.append('</ul><footer>Source check: November 16, 2026. This is a review copy, not a recorded human approval. No project is submitted by opening this preview.</footer></article></main></html>')
+    checked = esc(g.get('source_check_date', '2026-11-16'))
+    parts.append(f'</ul><footer>Source check: {checked}. This is a review copy, not a recorded human approval. No project is submitted by opening this preview.</footer></article></main></html>')
     (out / f'{g["slug"]}.html').write_text(''.join(parts), encoding='utf-8')
 print(f'Created {len(guides)} standalone review previews.')
