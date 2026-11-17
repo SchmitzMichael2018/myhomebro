@@ -94,10 +94,7 @@ export default function PublicImprovementLibraryPage() {
               Plan your next home project.
             </h1>
             <p className="mt-5 max-w-2xl text-lg leading-8 text-sky-100">
-              Explore practical project guides for the work ahead.{' '}
-              {data.contractor_published_count
-                ? 'Start with our contractor guides: real problems, sourced context, our viewpoint, and useful next steps.'
-                : 'Our contractor-first editorial series is in review and will connect real problems, sourced context, our viewpoint, and useful next steps.'}
+              Explore the decisions, preparation and practical steps behind a home project. Read the DIY tasks, know when to hire help, and take a useful plan into the work.
             </p>
             <a
               href="#guides"
@@ -382,3 +379,4 @@ export function LibraryShell({ children, showBrandText = false }) {
     </div>
   );
 }
+
