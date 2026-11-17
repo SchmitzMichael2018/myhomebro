@@ -7,6 +7,8 @@ from pathlib import Path
 repo = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo / "backend"))
 os.environ.setdefault("SECRET_KEY", "isolated-website-dashboard-qa-only")
+os.environ.setdefault("POSTMARK_SERVER_TOKEN", "offline-dashboard-tests")
+os.environ["DEPLOYMENT_ENVIRONMENT"] = "test"
 from core import settings_local_qa as source
 from django.conf import settings
 
