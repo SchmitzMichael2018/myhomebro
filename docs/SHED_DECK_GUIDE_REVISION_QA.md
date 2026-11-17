@@ -24,7 +24,7 @@ San Antonio official sources checked November 17, 2026: No Permit Required list,
 
 ## Failed
 
-None in the focused checks. Production verification is recorded below when complete.
+None in the final focused checks. The first baseline export ran before its commit had been fetched; fetching main resolved it before any draft mutation.
 
 ## Blocked
 
@@ -44,3 +44,13 @@ python -m py_compile backend/projects/management/commands/refresh_homeowner_guid
 ```
 
 Production: back up database, save the original catalog from commit `059b4b8a4e6aaf834f0d298247131720453460e8`, pull release, run isolated tests, dry-run refresh, then apply only shed and deck. Check article IDs 28/29, review/publication state and milestone IDs. Rollback: restore the pre-change database backup together with the preceding code version if needed; do not overwrite later owner edits.
+
+## Production result
+
+- PASS: PR 41 merged and release `dfa333590c08bdf969ceea2b893e0121dc2fa2ae` pulled on PythonAnywhere. WSGI reloaded. No frontend files or schema changed, so no frontend rebuild or migration was needed.
+- PASS: verified a fresh SQLite backup before updating content. Internal backup locations are omitted from this report.
+- PASS: all 8 focused tests passed in 0.444 seconds using an isolated in-memory test database on the server. Its deliberately temporary LocMem cache raised core.W130; production cache configuration was not changed.
+- PASS: dry run validated both existing seed drafts against the original catalog; targeted refresh updated only shed ID 28 and deck ID 29.
+- PASS: post-update database assertions verified all milestone IDs preserved and bathroom ID 27 / patio ID 30 model fields unchanged. All four guides have five milestones, remain ready_for_review, and have no human review recorded. No articles published.
+- Validation used the authenticated deployment console, not an authenticated homeowner-guide browser preview. No new article screenshot captured and no frontend visual pass claimed. Internal console links are omitted from this report.
+- Refreshed local standalone HTML previews and combined Markdown review copy are available for owner review.
