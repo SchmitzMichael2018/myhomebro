@@ -51,3 +51,17 @@ test('demo loader rejects unknown IDs before requesting script paths',()=>{
   vm.runInNewContext(fs.readFileSync(path.join(templates,'demo.js'),'utf8'),scope);
   assert.match(scope.message,/not available/);
 });
+
+test('configured business colors override shared page defaults',()=>{
+  const scope={window:{}};
+  vm.runInNewContext(fs.readFileSync(path.join(templates,'configs/restaurant-food.js'),'utf8'),scope);
+  const properties={};
+  const root={innerHTML:''};
+  Object.assign(scope,{location:{hash:'',href:'https://example.com/'},URL,FormData,document:{getElementById:id=>id==='site'?root:null,body:{style:{setProperty:(name,value)=>{properties[name]=value;}},classList:{toggle(){}}},querySelector:()=>({addEventListener(){}})},});
+  scope.window.addEventListener=()=>{};
+  scope.window.scrollTo=()=>{};
+  vm.runInNewContext(fs.readFileSync(path.join(templates,'site.js'),'utf8'),scope);
+  assert.equal(properties['--ink'],'#542c23');
+  assert.equal(properties['--accent'],'#b45335');
+  assert.ok(root.innerHTML.includes('The Neighborhood Table'));
+});

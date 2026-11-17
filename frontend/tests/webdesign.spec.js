@@ -11,7 +11,7 @@ test('web design templates and contact-last inquiry work without submitting data
   await page.getByRole('button', { name: 'Restaurant websites', exact: true }).click();
   await expect(page.locator('.wd-gallery-card')).toHaveCount(3);
   await page.getByRole('link', { name: 'Choose Food First', exact: true }).click();
-  await expect(page.getByLabel('Website design', { exact: true })).toHaveValue('restaurant-food');
+  await expect(page.locator('select[name="template"]')).toHaveValue('restaurant-food');
   await expect(page.getByRole('radio', { name: 'Restaurant', exact: true })).toBeChecked();
   await expect(page.getByLabel('Email address')).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue' }).click();

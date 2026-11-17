@@ -19,7 +19,7 @@
   const heading = (eyebrow, title, text = '') => `<div class="page-heading"><p class="eyebrow">${escape(eyebrow)}</p><h1>${escape(title)}</h1>${text ? `<p class="intro">${escape(text)}</p>` : ''}</div>`;
   const pages = restaurant ? [['home','Home'],['menu','Menu'],['about','Our story'],['visit','Visit us'],['contact','Catering & inquiries']] : [['home','Home'],['services','Services'],['gallery','Our work'],['about','About us'],['contact','Request an estimate']];
   for (const [name, value] of Object.entries(c.colors || {})) {
-    if (['ink','accent','paper'].includes(name) && /^#[0-9a-f]{6}$/i.test(value)) document.documentElement.style.setProperty(`--${name}`, value);
+    if (['ink','accent','paper'].includes(name) && /^#[0-9a-f]{6}$/i.test(value)) document.body.style.setProperty(`--${name}`, value);
   }
   document.body.classList.toggle('restaurant', restaurant);
   function footer() {
