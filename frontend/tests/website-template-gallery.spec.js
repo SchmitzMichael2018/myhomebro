@@ -8,7 +8,7 @@ test('gallery filters and design choices reach the contact-last quote',async({pa
   await page.getByRole('button',{name:'Restaurant websites',exact:true}).click();
   await expect(page.locator('.wd-gallery-card')).toHaveCount(3);
   await page.getByRole('link',{name:'Choose Dining Experience',exact:true}).click();
-  await expect(page.getByLabel('Website design',{exact:true})).toHaveValue('restaurant-dining');
+  await expect(page.locator('select[name="template"]')).toHaveValue('restaurant-dining');
   await expect(page.getByRole('radio',{name:'Restaurant',exact:true})).toBeChecked();
   await expect(page.getByLabel('Email address')).toHaveCount(0);
 });
