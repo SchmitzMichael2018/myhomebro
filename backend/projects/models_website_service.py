@@ -37,6 +37,12 @@ class WebsiteServiceProject(models.Model):
     next_step = models.TextField(max_length=3000, blank=True)
     preview_url = models.URLField(blank=True)
     live_url = models.URLField(blank=True)
+    menu_public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    menu_draft = models.JSONField(default=list, blank=True)
+    menu_revision = models.PositiveIntegerField(default=0)
+    menu_published = models.JSONField(null=True, blank=True)
+    menu_published_revision = models.PositiveIntegerField(null=True, blank=True)
+    menu_published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,3 +70,22 @@ class WebsiteServiceRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-pk"]
+
+
+def restaurant_menu_photo_path(instance, filename):
+    return f"menu/{instance.project_id}/{instance.pk}.jpg"
+
+
+class WebsiteMenuPhoto(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(WebsiteServiceProject, on_delete=models.CASCADE, related_name="menu_photos")
+    file = models.FileField(storage=website_material_storage, upload_to=restaurant_menu_photo_path)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class WebsiteMenuEvent(models.Model):
+    project = models.ForeignKey(WebsiteServiceProject, on_delete=models.CASCADE, related_name="menu_events")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    action = models.CharField(max_length=16, choices=[("saved", "Saved draft"), ("published", "Published"), ("unpublished", "Unpublished")])
+    revision = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)

@@ -6,3 +6,7 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 
 .hero-background img{width:100%;height:100%;object-fit:cover}
+
+/* Optional restaurant dish photos and dashboard-managed live menus. */
+.menu-item.has-photo{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:18px;align-items:start}.menu-dish-photo{width:96px;height:96px;object-fit:cover;border-radius:8px}.menu-preview-photo{width:100%;height:180px;object-fit:cover;border-radius:8px;margin-bottom:18px}.menu-item.has-photo h3{overflow-wrap:anywhere}.menu-preview>.empty-state{grid-column:1/-1}
+@media(max-width:740px){.menu-item.has-photo{grid-template-columns:80px minmax(0,1fr);gap:14px}.menu-dish-photo{width:80px;height:80px}.menu-item.has-photo>strong{grid-column:2}.menu-preview-photo{height:190px}}

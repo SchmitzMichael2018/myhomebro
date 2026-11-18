@@ -31,7 +31,8 @@ test('all six designs export to independent customer websites',()=>{
     assert.equal(config.demo,true);
     assert.ok(config.about.includes(config.name));
     layouts.add(config.type+':'+config.layout);
-    assert.doesNotMatch(fs.readFileSync(path.join(folder,'site.js'),'utf8'),/fetch\(|XMLHttpRequest|localStorage|sessionStorage/);
+    assert.doesNotMatch(fs.readFileSync(path.join(folder,'site.js'),'utf8'),/XMLHttpRequest|localStorage|sessionStorage/);
+    assert.equal(config.menuFeedUrl, undefined, 'Default exports do not connect to a menu service unless requested');
   }
   assert.equal(layouts.size,6);
 });

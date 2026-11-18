@@ -4,6 +4,7 @@ import api, { getAccessToken } from '../api';
 import LoginForm from '../components/LoginForm.jsx';
 import { WEBSITE_TEMPLATES, findWebsiteTemplate, websiteTemplateDemoUrl } from '../lib/websiteTemplates.js';
 import './WebsiteCustomerDashboard.css';
+import RestaurantMenuEditor from '../components/RestaurantMenuEditor.jsx';
 
 const h = React.createElement;
 const emptyBrief = template => ({ business_name: '', business_type: template?.type === 'Restaurant' ? 'restaurant' : 'contractor', template_id: template?.id || '', current_website: '', description: '', services: '', contact_details: '', design_notes: '' });
@@ -33,6 +34,7 @@ function Workspace() {
   const [project, setProject] = useState(null);
   const [brief, setBrief] = useState(() => emptyBrief(initialTemplate));
   const [dirty, setDirty] = useState(false);
+  const [menuDirty, setMenuDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -42,9 +44,9 @@ function Workspace() {
   const [uploadKey, setUploadKey] = useState(0);
 
   function select(next) {
-    if (dirty && !window.confirm('Leave without saving your website brief?')) return;
+    if ((dirty || menuDirty) && !window.confirm('Leave without saving your website changes?')) return;
     setProject(next); setBrief(next ? Object.fromEntries(Object.keys(emptyBrief()).map(key => [key, next[key] || ''])) : emptyBrief(initialTemplate));
-    setDirty(false); setMessage(''); setFile(null); setUploadKey(key => key + 1); setError(''); setNotice('');
+    setDirty(false); setMenuDirty(false); setMessage(''); setFile(null); setUploadKey(key => key + 1); setError(''); setNotice('');
   }
   function receive(next) { setProject(next); setProjects(rows => [next, ...rows.filter(row => row.id !== next.id)]); }
   async function load() {
@@ -59,10 +61,10 @@ function Workspace() {
   }
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    const warn = event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } };
+    const warn = event => { if (dirty || menuDirty) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
+  }, [dirty, menuDirty]);
   async function run(action) {
     setBusy(true); setError(''); setNotice('');
     try { await action(); } catch (err) { setError(failure(err)); } finally { setBusy(false); }
@@ -93,6 +95,7 @@ function Workspace() {
         notice && h('div', { role: 'status', className: 'wcd-success' }, notice),
         loading ? h('p', { role: 'status' }, 'Loading your website projects…') : h(React.Fragment, null,
           h('ol', { className: 'wcd-progress', 'aria-label': 'Website project progress' }, ...labels.map((label, i) => h('li', { key: label, className: i <= currentStep ? 'reached' : '', 'aria-current': i === currentStep ? 'step' : undefined }, h('span', null, String(i + 1).padStart(2, '0')), label))),
+          project?.business_type === 'restaurant' && h(RestaurantMenuEditor, { key: project.id, projectId: project.id, onDirtyChange: setMenuDirty }),
           h('div', { className: 'wcd-columns' },
             h('section', { className: 'wcd-card' }, h('div', { className: 'wcd-card-heading' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, '01 / THE FOUNDATION'), h('h2', null, 'Your business brief')), h('span', { className: 'wcd-muted' }, dirty ? 'Unsaved changes' : project ? 'Saved' : 'Not saved yet')),
               h('form', { onSubmit: event => { event.preventDefault(); run(async () => {
@@ -100,7 +103,7 @@ function Workspace() {
                 receive(data); setDirty(false); setNotice('Your website brief is saved.');
               }); } }, h('fieldset', { disabled: busy, className: 'wcd-fields' },
                 field('Business name', 'business_name', { required: true, maxLength: 180 }),
-                h('label', null, h('span', null, 'Business type'), h('select', { name: 'business_type', value: brief.business_type, onChange: change }, ...[['contractor', 'Contractor'], ['restaurant', 'Restaurant'], ['other', 'Other business']].map(([value, title]) => h('option', { key: value, value }, title)))),
+                h('label', null, h('span', null, 'Business type'), h('select', { name: 'business_type', value: brief.business_type, onChange: change, disabled: menuDirty }, ...[['contractor', 'Contractor'], ['restaurant', 'Restaurant'], ['other', 'Other business']].map(([value, title]) => h('option', { key: value, value }, title)))),
                 h('label', { className: 'wcd-wide' }, h('span', null, 'Starting design'), h('select', { name: 'template_id', value: brief.template_id, onChange: change }, h('option', { value: '' }, 'Help me choose'), ...WEBSITE_TEMPLATES.map(row => h('option', { key: row.id, value: row.id }, `${row.type} — ${row.name}`)))),
                 field('Current website (optional)', 'current_website', { type: 'url', placeholder: 'https://', wide: true, maxLength: 200 }),
                 field('What do you want your website to do?', 'description', { rows: 4, wide: true, placeholder: 'New website or updates? Tell us your goals, preferred pages, and what customers should be able to do.' }),

@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from .views.website_service import WebsiteServiceProjectViewSet
+from .views.restaurant_menu import OwnerMenuView, OwnerMenuPublishView, OwnerMenuUnpublishView, OwnerMenuPhotoView, PublicMenuView, PublicMenuPhotoView
 from rest_framework_nested.routers import NestedDefaultRouter
 
 from .views.agreements import (
@@ -1373,6 +1374,13 @@ urlpatterns = [
 ]
 
 urlpatterns += [
+    path("website-service-projects/<int:pk>/menu/", OwnerMenuView.as_view()),
+    path("website-service-projects/<int:pk>/menu/publish/", OwnerMenuPublishView.as_view()),
+    path("website-service-projects/<int:pk>/menu/unpublish/", OwnerMenuUnpublishView.as_view()),
+    path("website-service-projects/<int:pk>/menu/photos/", OwnerMenuPhotoView.as_view()),
+    path("website-service-projects/<int:pk>/menu/photos/<uuid:photo_id>/", OwnerMenuPhotoView.as_view()),
+    path("public/restaurant-menus/<uuid:public_id>/", PublicMenuView.as_view()),
+    path("public/restaurant-menus/<uuid:public_id>/photos/<uuid:photo_id>/", PublicMenuPhotoView.as_view()),
     re_path(
         r"^agreements/(?P<pk>\d+)/preview_pdf/?$",
         AgreementViewSet.as_view({"get": "preview_pdf"}),

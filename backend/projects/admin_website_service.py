@@ -39,7 +39,7 @@ class WebsiteServiceProjectAdmin(admin.ModelAdmin):
     list_display = ["business_name", "owner", "business_type", "status", "updated_at"]
     list_filter = ["status", "business_type"]
     search_fields = ["business_name", "owner__email"]
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = ["created_at", "updated_at", "menu_public_id", "menu_draft", "menu_revision", "menu_published", "menu_published_revision", "menu_published_at"]
     inlines = [WebsiteMaterialInline, WebsiteRequestInline]
 
     def get_urls(self):
