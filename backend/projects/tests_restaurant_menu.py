@@ -144,7 +144,7 @@ class RestaurantMenuTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "image/jpeg")
         self.assertEqual(response["X-Content-Type-Options"], "nosniff")
-        response.close()
+        self.assertTrue(b"".join(response.streaming_content).startswith(b"\xff\xd8"))
         self.save([])
         self.assertEqual(self.public.get(public_photo).status_code, 200)
         self.publish()
