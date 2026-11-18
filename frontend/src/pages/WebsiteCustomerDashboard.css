@@ -122,7 +122,7 @@
 .wcd-login-note span { margin-left: auto; font-size: 14px; color: #deead8; }
 .wcd-login > main { background: #f5f3eb; }
 .wcd-login > main > section { border: 1px solid #d9dfd4; box-shadow: 0 18px 50px #234b3d14; }
-.wcd-login form input { min-height: 50px; font-size: 16px; }
+.wcd-login form input:not([type=checkbox]) { min-height: 50px; font-size: 16px; }
 .wcd-login form button[type=submit] { min-height: 48px; font-size: 16px; background: #234b3d; }
 .wcd-login form button[type=submit]:hover { background: #163b2d; }
 @media (max-width: 1200px) {
