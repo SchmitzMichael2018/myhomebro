@@ -42,7 +42,7 @@
 .wcd-project:hover { background: #315c4c; }
 .wcd-project.active { background: #f2e3c4; border-color: #f2e3c4; color: #203e34; }
 .wcd-project.active span { color: #4c6152; }
-.wcd-sidebar > .wcd-secondary { width: 100%; color: #fffdf5; border-color: #91ac96; font-size: 14px; }
+.wcd-sidebar > .wcd-secondary { width: 100%; background: transparent; color: #fffdf5; border-color: #91ac96; font-size: 14px; }
 .wcd-sidebar > .wcd-secondary:hover { background: #315c4c; }
 .wcd-sidebar-note { margin-top: 64px; padding-top: 24px; border-top: 1px solid #63806c; font-size: 14px; color: #deead8; }
 .wcd-sidebar-note strong { display: block; color: #fffdf5; margin-bottom: 10px; }
