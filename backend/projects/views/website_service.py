@@ -50,6 +50,11 @@ class ProjectSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Choose a design from the template gallery.")
         return value
 
+    def validate_business_type(self, value):
+        if self.instance and value != "restaurant" and (self.instance.menu_draft or self.instance.menu_published is not None):
+            raise serializers.ValidationError("Remove all draft dishes and take the menu offline before changing the business type.")
+        return value
+
 
 class WebsiteServiceProjectViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]

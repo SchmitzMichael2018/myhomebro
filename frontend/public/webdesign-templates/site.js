@@ -8,6 +8,8 @@
     return;
   }
   const restaurant = c.type === 'restaurant';
+  let menuState = restaurant && c.menuFeedUrl ? 'loading' : 'static';
+  if (restaurant && c.menuFeedUrl) c.menu = [];
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   function url(value) {
     if (!value) return '';
@@ -39,6 +41,14 @@
   function baseHome() {
     return `<section class="hero"><div class="hero-copy"><p class="eyebrow">${escape(c.descriptor)}</p><h1>${escape(c.headline)}</h1><p class="intro">${escape(c.introduction)}</p><div class="actions">${link(restaurant ? '#menu' : '#contact',restaurant ? 'Find your next favorite' : 'Tell us about your project')}${link(restaurant ? '#visit' : '#gallery',restaurant ? 'Plan your visit →' : 'Explore our work →','text-link')}</div><p class="hero-footnote">${escape(c.demo ? 'A website concept. Your business, your story.' : restaurant ? c.address : c.serviceArea)}</p></div><div class="hero-image">${image(c.heroImage,c.heroAlt,'fetchpriority="high"')}<div class="image-caption">${escape(c.tagline)}</div></div></section>${restaurant ? `<section class="section split"><div>${image(c.foodImage,'Illustrative fresh food served in a bowl','class="feature-image" loading="lazy"')}</div><div><p class="eyebrow">SOMETHING FOR THE WHOLE TABLE</p><h2>A little comfort.<br>A little discovery.</h2><p>Browse the menu, make a plan, and bring someone you love sharing a meal with.</p>${link('#menu','Take a look at the menu →','text-link')}<p class="fine-print">Demo dishes and prices are illustrative. Replace with your actual menu.</p></div></section><section class="highlight"><p class="eyebrow">MAKE YOURSELF AT HOME</p><h2>There’s a place for you here.</h2><p>Find our hours, location, and the details for your next visit.</p>${link('#visit','Hours & location')}</section>` : `<section class="section"><div class="section-title"><div><p class="eyebrow">WHAT WE CAN HELP WITH</p><h2>Good spaces start<br>with a clear plan.</h2></div>${link('#services','All services →','text-link')}</div>${serviceCards()}</section><section class="section work-section"><div class="section-title"><div><p class="eyebrow">THE POSSIBILITIES</p><h2>Room for inspiration.</h2></div>${link('#gallery','Explore the gallery →','text-link')}</div>${c.demo ? '<p class="fine-print">Inspiration photography. These are not completed projects by this fictional business.</p>' : ''}${projectCards(c.projects.slice(0,2))}</section><section class="highlight"><p class="eyebrow">START WITH A CONVERSATION</p><h2>What would you change<br>about your home?</h2><p>Share your ideas, priorities, and timeline. Take the next step with a clear scope.</p>${link('#contact','Start a project conversation')}</section>`}`;
   }
+  function menuNotice() {
+    return menuState === 'loading' ? 'Loading the latest menu…' : menuState === 'error' ? 'Our menu is temporarily unavailable. Please contact the restaurant for current dishes and prices.' : '';
+  }
+  function previewDishes() {
+    const notice = menuNotice();
+    if (notice) return '<p class="empty-state" role="status">'+escape(notice)+'</p>';
+    return c.menu.length ? c.menu.slice(0,3).map(item=>'<article>'+(item.image?image(item.image,item.name,'class="menu-preview-photo" loading="lazy"'):'')+'<h3>'+escape(item.name)+'</h3><p>'+escape(item.description)+'</p><strong>'+escape(item.price)+'</strong></article>').join('') : '<p>No dishes are currently listed. Please contact the restaurant.</p>';
+  }
   function home() {
     const standard = baseHome();
     const chosen = c.layout || 'showcase';
@@ -49,8 +59,8 @@
     if(chosen === 'showcase') return standard;
     if(chosen === 'premium') return '<section class="hero editorial-hero"><div class="editorial-top">'+copy+'<p class="intro">'+escape(c.tagline)+'</p></div><div class="hero-image">'+homeImage+'</div></section><section class="section editorial-gallery"><p class="eyebrow">SPACES WITH A STORY</p><h2>Considered from every angle.</h2><p class="fine-print">'+(c.demo?'Inspiration photography, not completed client work.':'Explore our featured work.')+'</p>'+projectCards(c.projects.slice(0,2))+'</section><section class="section"><p class="eyebrow">OUR EXPERTISE</p><h2>From vision to the details.</h2>'+serviceCards()+'</section><section class="highlight"><h2>Let’s create something lasting.</h2>'+link('#contact','Start a conversation')+'</section>';
     if(chosen === 'local' && !restaurant) return '<section class="hero compact-hero">'+copy+'<aside class="quick-panel"><p class="eyebrow">WHAT CAN WE HELP WITH?</p><h2>Local help.<br>A clear next step.</h2><div class="quick-links">'+c.services.map(s=>link('#services',s.title+' →','')).join('')+'</div>'+link('#contact','Request an estimate')+'<p class="fine-print">'+escape(c.serviceArea)+'</p></aside></section><div class="local-strip"><p>Services explained clearly</p><p>Your priorities come first</p><p>One place to start a project</p></div><section class="section local-summary"><div><p class="eyebrow">SERVICES FOR YOUR HOME</p>'+serviceCards()+'</div><aside><h2>How can we help?</h2><p>Tell us about the job, where you are, and when you’d like to begin.</p>'+link('#contact','Get in touch →','text-link')+'</aside></section><section class="section"><div class="section-title"><h2>Ideas for your space.</h2>'+link('#gallery','View gallery →','text-link')+'</div>'+projectCards(c.projects.slice(0,2))+'</section>';
-    if(chosen === 'food') return '<section class="hero food-hero">'+copy+'<div class="hero-image">'+homeImage+'</div></section><section class="section"><p class="eyebrow">FROM OUR EXAMPLE MENU</p><h2>Made for your kind of hungry.</h2><div class="menu-preview">'+c.menu.filter(item=>item.category==='The favorites').slice(0,3).map(item=>'<article><h3>'+escape(item.name)+'</h3><p>'+escape(item.description)+'</p><strong>'+escape(item.price)+'</strong></article>').join('')+'</div><p class="fine-print">'+(c.demo?'Illustrative dishes and prices. No orders accepted.':'Ask us about ingredients and availability.')+'</p>'+link('#menu','Browse the full menu →','text-link')+'</section><section class="highlight"><h2>A good meal. A great excuse to gather.</h2>'+link('#contact','Catering & inquiries')+'</section>';
-    if(chosen === 'local' && restaurant) return '<section class="hero compact-hero">'+copy+'<aside class="quick-panel"><p class="eyebrow">PLAN YOUR NEXT VISIT</p><h2>Good food.<br>Right around the corner.</h2><p>'+escape(c.address)+'</p><div class="quick-links">'+link('#menu','View our menu →','')+link('#visit','Hours & directions →','')+link('#contact','Ask about catering →','')+'</div>'+external(c.orderingUrl,'Order online')+'<p class="fine-print">'+(c.demo?'Demo restaurant · sample address and hours.':'We look forward to seeing you.')+'</p></aside></section><section class="section local-summary"><div><p class="eyebrow">THE EVERYDAY FAVORITES</p><h2>Find something you love.</h2><div class="menu-preview">'+c.menu.slice(0,3).map(item=>'<article><h3>'+escape(item.name)+'</h3><p>'+escape(item.description)+'</p><strong>'+escape(item.price)+'</strong></article>').join('')+'</div>'+link('#menu','Full menu →','text-link')+'</div><aside class="visit-card"><h2>Our hours</h2><dl class="hours">'+c.hours.map(([day,time])=>'<div><dt>'+escape(day)+'</dt><dd>'+escape(time)+'</dd></div>').join('')+'</dl>'+link('#visit','Plan your visit →','text-link')+'</aside></section>';
+    if(chosen === 'food') return '<section class="hero food-hero">'+copy+'<div class="hero-image">'+homeImage+'</div></section><section class="section"><p class="eyebrow">'+(c.demo?'FROM OUR EXAMPLE MENU':'FROM OUR MENU')+'</p><h2>Made for your kind of hungry.</h2><div class="menu-preview">'+previewDishes()+'</div><p class="fine-print">'+(c.demo?'Illustrative dishes and prices. No orders accepted.':'Ask us about ingredients and availability.')+'</p>'+link('#menu','Browse the full menu →','text-link')+'</section><section class="highlight"><h2>A good meal. A great excuse to gather.</h2>'+link('#contact','Catering & inquiries')+'</section>';
+    if(chosen === 'local' && restaurant) return '<section class="hero compact-hero">'+copy+'<aside class="quick-panel"><p class="eyebrow">PLAN YOUR NEXT VISIT</p><h2>Good food.<br>Right around the corner.</h2><p>'+escape(c.address)+'</p><div class="quick-links">'+link('#menu','View our menu →','')+link('#visit','Hours & directions →','')+link('#contact','Ask about catering →','')+'</div>'+external(c.orderingUrl,'Order online')+'<p class="fine-print">'+(c.demo?'Demo restaurant · sample address and hours.':'We look forward to seeing you.')+'</p></aside></section><section class="section local-summary"><div><p class="eyebrow">THE EVERYDAY FAVORITES</p><h2>Find something you love.</h2><div class="menu-preview">'+previewDishes()+'</div>'+link('#menu','Full menu →','text-link')+'</div><aside class="visit-card"><h2>Our hours</h2><dl class="hours">'+c.hours.map(([day,time])=>'<div><dt>'+escape(day)+'</dt><dd>'+escape(time)+'</dd></div>').join('')+'</dl>'+link('#visit','Plan your visit →','text-link')+'</aside></section>';
     if(chosen === 'dining') return '<section class="hero hero-full"><div class="hero-background">'+homeImage+'</div>'+copy+'</section><section class="section dining-story"><p class="eyebrow">MORE THAN A MEAL</p><h2>The evening is yours.</h2><p>'+escape(c.about)+'</p>'+link('#about','Meet the people behind the table →','text-link')+'</section><section class="section split"><div>'+image(c.foodImage,'Illustrative restaurant dish','class="feature-image" loading="lazy"')+'</div><div><p class="eyebrow">TAKE YOUR TIME</p><h2>Something worth<br>sitting down for.</h2><p>Discover the menu, plan an occasion, and settle in.</p>'+link('#menu','Explore the menu →','text-link')+'</div></section><section class="highlight"><h2>Make an evening of it.</h2>'+link('#visit','Visit & reservations')+'</section>';
     return standard;
   }
@@ -66,11 +76,12 @@
     return `${heading('THE MENU','Find your next favorite.','Something to start. Something to share. Something just for you.')}<p class="notice">${c.demo ? 'Demonstration menu and prices. No orders are accepted.' : 'Please ask our team about ingredients and dietary requirements before ordering.'}</p><div class="menu-tools"><label>Search the menu<input type="search" id="menu-search" placeholder="Try soup, chicken, or lemonade"></label><label class="checkbox"><input type="checkbox" id="vegetarian"> Show vegetarian options</label></div><div class="filter-bar" role="group" aria-label="Menu categories">${categories.map((category,i)=>`<button type="button" data-menu-filter="${escape(category)}" aria-pressed="${i===0}">${escape(category)}</button>`).join('')}</div><div id="menu-results" aria-live="polite"></div><div class="menu-bottom"><p>For a gathering or a special occasion?</p>${link('#contact','Ask about catering →','text-link')}${external(c.orderingUrl,'Order online')}</div>`;
   }
   function renderMenu(category = 'All') {
+    if (menuNotice()) { document.getElementById('menu-results').innerHTML = '<p class="empty-state" role="status">'+escape(menuNotice())+'</p>'; return; }
     const query = document.getElementById('menu-search').value.trim().toLowerCase();
     const vegetarian = document.getElementById('vegetarian').checked;
     const items = c.menu.filter(item=>(category==='All'||item.category===category)&&(!vegetarian||item.tags.includes('Vegetarian'))&&`${item.name} ${item.description}`.toLowerCase().includes(query));
     const categories = [...new Set(items.map(item=>item.category))];
-    document.getElementById('menu-results').innerHTML = items.length ? categories.map(category=>`<section class="menu-category"><h2>${escape(category)}</h2><div class="menu-grid">${items.filter(item=>item.category===category).map(item=>`<article class="menu-item"><div><h3>${escape(item.name)}</h3><p>${escape(item.description)}</p>${item.tags.length ? `<span class="diet-label">${escape(item.tags.join(' · '))}</span>` : ''}</div><strong>${escape(item.price)}</strong></article>`).join('')}</div></section>`).join('') : '<p class="empty-state">No dishes match your search. Try another search or category.</p>';
+    document.getElementById('menu-results').innerHTML = items.length ? categories.map(category=>`<section class="menu-category"><h2>${escape(category)}</h2><div class="menu-grid">${items.filter(item=>item.category===category).map(item=>`<article class="menu-item${item.image ? ' has-photo' : ''}">${item.image ? image(item.image,item.name,'class="menu-dish-photo" loading="lazy"') : ''}<div><h3>${escape(item.name)}</h3><p>${escape(item.description)}</p>${item.tags.length ? `<span class="diet-label">${escape(item.tags.join(' · '))}</span>` : ''}</div><strong>${escape(item.price)}</strong></article>`).join('')}</div></section>`).join('') : '<p class="empty-state">No dishes match your search. Try another search or category.</p>';
   }
   function about() {
     return `${heading(restaurant ? 'OUR STORY' : 'ABOUT US',restaurant ? 'A table worth coming back to.' : 'Good work starts with good people.')}<section class="split about-content"><div>${image(c.heroImage,c.heroAlt,'class="feature-image" loading="lazy"')}</div><div><p class="intro">${escape(c.about)}</p><h2>${escape(c.tagline)}</h2><p>${restaurant ? 'Use this space to introduce the owners, kitchen team, food traditions, and the neighborhood you serve.' : 'Use this space to explain how you communicate, plan projects, and help customers understand their options. Publish only verified credentials and authentic customer feedback.'}</p>${link(restaurant ? '#visit' : '#contact',restaurant ? 'Come visit →' : 'Let’s talk about your project →','text-link')}</div></section>`;
@@ -106,5 +117,35 @@
     document.title=`${c.name} | ${pages.find(([id])=>id===page)[1]}${c.demo?' — Website Demo':''}`;
     bind(page);window.scrollTo(0,0);if(!firstRender)document.getElementById('main').focus({preventScroll:true});firstRender=false;
   }
-  window.addEventListener('hashchange',render);render();
+  async function loadConnectedMenu() {
+    if (!restaurant || !c.menuFeedUrl) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(()=>controller.abort(), 10000);
+    try {
+      const feed = new URL(c.menuFeedUrl);
+      if (feed.protocol !== 'https:' || !['www.myhomebro.com','myhomebro.com'].includes(feed.hostname) || !/^\/api\/projects\/public\/restaurant-menus\/[0-9a-f-]{36}\/$/i.test(feed.pathname) || feed.search || feed.hash || feed.username || feed.password || feed.port) throw new Error('Invalid menu connection');
+      const response = await fetch(feed.href, {credentials:'omit', cache:'no-store', signal:controller.signal});
+      if (!response.ok) throw new Error('Menu unavailable');
+      const data = await response.json();
+      if (data.currency !== 'USD' || !Array.isArray(data.items) || data.items.length > 150) throw new Error('Invalid menu');
+      c.menu = data.items.map(item=>{
+        if (typeof item.name !== 'string' || typeof item.description !== 'string' || typeof item.category !== 'string' || !/^\d{1,6}\.\d{2}$/.test(String(item.price))) throw new Error('Invalid dish');
+        let photo = '';
+        if (item.photo_url) {
+          const parsed = new URL(item.photo_url);
+          if (parsed.origin !== feed.origin || !parsed.pathname.startsWith(feed.pathname+'photos/')) throw new Error('Invalid photo');
+          photo = parsed.href;
+        }
+        return {name:item.name,description:item.description,category:item.category,price:new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(item.price)),tags:item.vegetarian?['Vegetarian']:[],image:photo};
+      });
+      menuState = 'ready';
+    } catch {
+      c.menu = [];
+      menuState = 'error';
+    } finally {
+      clearTimeout(timeout);
+      render();
+    }
+  }
+  window.addEventListener('hashchange',render);render();loadConnectedMenu();
 })();
