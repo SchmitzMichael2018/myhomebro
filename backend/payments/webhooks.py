@@ -40,7 +40,10 @@ from projects.services.rental_operations_billing import (
     sync_invoice_payment_failed as sync_rental_operations_invoice_payment_failed,
     sync_subscription as sync_rental_operations_subscription,
 )
-from projects.services.website_service import sync_checkout_completed as sync_website_service_checkout
+from projects.services.website_service import (
+    sync_checkout_completed as sync_website_service_checkout,
+    sync_checkout_unavailable as sync_website_service_checkout_unavailable,
+)
 
 log = logging.getLogger(__name__)
 
@@ -1245,6 +1248,17 @@ def stripe_webhook(request):
                 _handle_checkout_session_async_payment_failed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Async checkout failure handler failed (session=%s).", data_obj.get("id"))
+            try:
+                sync_website_service_checkout_unavailable(data_obj, reason="async_payment_failed")
+            except Exception:
+                log.exception("Website service async checkout failure handler failed (session=%s).", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        if event_type == "checkout.session.expired":
+            try:
+                sync_website_service_checkout_unavailable(data_obj, reason="expired")
+            except Exception:
+                log.exception("Website service expired checkout handler failed (session=%s).", data_obj.get("id"))
             return HttpResponse(status=200)
 
         if event_type == "refund.updated":

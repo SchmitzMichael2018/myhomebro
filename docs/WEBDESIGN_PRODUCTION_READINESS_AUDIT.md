@@ -55,7 +55,7 @@ The production site reflects the gallery/dashboard implementation currently on G
 
 ## Test evidence
 
-- `python scripts/check-website-dashboard.py` — PASS, 31 tests.
+- `python scripts/check-website-dashboard.py` — PASS, 38 tests (including signed-webhook, concurrency, session-expiry, stale-proposal, upload, isolation, notification-recipient, and transaction cases).
 - `node --test scripts/website-templates.test.mjs` — PASS, 4 tests.
 - `npm.cmd run build` — PASS (isolated build copy using the repository lockfile).
 - `npx.cmd playwright test tests/webdesign.spec.js tests/website-template-gallery.spec.js` — PASS, 9 production tests covering desktop/mobile landing behavior and all six deployed demos.
@@ -85,3 +85,50 @@ Contractor screenshots are stored in `qa-artifacts/webdesign/`.
 8. Confirm approval did not publish automatically, inspect logs/alerts, and record the deployed commit.
 
 Rollback: restore the prior application/static revision and reload. Retain the additive website-service tables and private upload directory; do not reverse the migration after customer orders exist.
+
+## Final P0 verification (2026-11-22)
+
+### Payment integrity
+
+- Checkout creation now reserves a project row before calling Stripe. A second request cannot create a competing session while the five-minute reservation is active.
+- Every attempt has a unique token and Stripe idempotency key. A session that loses the post-create comparison is expired best-effort and is never stored on the project.
+- An abandoned reservation may be safely superseded after five minutes. The new attempt uses a new idempotency key, avoiding reuse of an unknown orphan.
+- Open, unpaid sessions for the unchanged proposal are reused. Completed/paid sessions wait for the signed webhook rather than creating another charge opportunity.
+- Stripe `checkout.session.expired` and `checkout.session.async_payment_failed` events invalidate only the exact stored, unpaid session with matching project and proposal metadata. A later completion for the invalidated session cannot mark the project paid.
+- Completion still requires exact stored session ID, project ID, amount, USD currency, paid state, and current approved-proposal fingerprint. Duplicate completion returns idempotently and creates no additional confirmation events.
+- Staff proposal changes clear the stored session, fingerprint, and active attempt reservation. The customer must reaccept the revised proposal.
+
+### Controlled provider verification
+
+The isolated development process has no `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, or `POSTMARK_SERVER_TOKEN`; `WEBSITE_SERVICE_STRIPE_LIVE_ENABLED` is unset and therefore false. No real or production charge and no external email was attempted.
+
+Automated verification used Stripe test-shaped objects and the real signed-webhook application path with `stripe.Webhook.construct_event` isolated at the provider boundary. It verified correct-project payment, amount/currency/fingerprint enforcement, duplicate suppression, and post-commit notification records. A real Stripe-hosted Checkout and Postmark inbox delivery remain controlled-environment gates. Required configuration is: a restricted Stripe test secret key, a test-mode endpoint signing secret for `/api/payments/webhooks/stripe/`, an approved test customer email, a Postmark server token/sender authorized for approved test recipients, and `SUPPORT_EMAIL` set to the approved staff test inbox. Secret values must never be committed or printed.
+
+### Notification review
+
+The following events are wired through the shared post-commit notification service: new submission and customer confirmation, customer upload, change request, proposal availability, payment confirmation (customer and staff), preview availability, staff request response, and final approval (customer and staff). Recipient selection is limited to the project owner's email for customer events and configured `SUPPORT_EMAIL` for staff events. Delivery attempts are audited; exceptions are caught after commit and cannot undo customer work. Payment notification uniqueness derives from the locked paid-state transition and event-type check.
+
+### Authenticated workflow and isolation
+
+Isolated API tests cover authentication enforcement, project creation/editing, template validation, brief submission, private upload/download, proposal and explicit terms acceptance, checkout creation, signed-webhook payment, preview/change/final-approval rules, and cross-customer denial. Final approval records consent but leaves `live_url` empty and performs no publication. Production was not mutated; an authenticated browser run with an approved production test account remains a deployment-window smoke test.
+
+### Upload security
+
+Uploads are limited to 5 MB, 20 files per project, and JPG/JPEG/PNG/WebP/PDF extensions. Images are decoded with Pillow, format-matched, and decompression-bomb warnings fail closed. PDFs are structurally parsed with `pypdf`, must be unencrypted with 1–200 pages, and reject catalog auto-actions, JavaScript name trees, and embedded files. Files use private storage outside public static/media paths, are downloaded only through owner/staff authorization, and responses use attachment disposition, `no-store`, and `nosniff`.
+
+This is defense in depth, not antivirus. The affordable next step is a quarantine/scanning worker using ClamAV on infrastructure where a daemon can run; PythonAnywhere web workers should not synchronously scan large files. A current 1 GiB DigitalOcean Basic VM is USD $6/month ([official pricing](https://www.digitalocean.com/pricing/droplets)); validate memory under actual ClamAV signatures before purchase. ClamAV documents `clamd` as a long-running scanner and warns that its TCP socket is not encrypted or authenticated ([official protocol guidance](https://docs.clamav.net/manual/Usage/ClamdProtocol.html)), so expose it only over a private authenticated tunnel/network. Until approved, staff should treat uploads as untrusted and never open them with macros or privileged desktop software. Retention/deletion periods require business and privacy approval before automation.
+
+### Business-owner approval checklist
+
+- Approve price structure, taxes/fees, and when work is considered started.
+- Approve the exact deliverables, exclusions, revision count, and out-of-scope change pricing.
+- Approve customer deadlines and responsibility for lawful text, images, trademarks, and credentials.
+- Decide domain registrant, DNS access, hosting account ownership, portability/export, and transfer assistance.
+- Approve maintenance/security/update terms and recurring fees, if any.
+- Obtain counsel/business approval for cancellation, refund, chargeback, and abandoned-project terms.
+- Approve delivery estimates, dependencies, delay handling, acceptance window, and publication authorization.
+- Replace any placeholder proposal language before accepting payment; no policy is activated by this code.
+
+### Recommendation
+
+**Blocked for payment launch, technically ready for controlled provider testing.** Code-level P0 integrity and isolated tests pass, but merge/deployment/payment acceptance should wait for business/legal terms approval, real Stripe test-mode signed-webhook verification, approved-recipient Postmark delivery, and an approved authenticated deployment smoke test.

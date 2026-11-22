@@ -2,6 +2,7 @@ from pathlib import Path
 import warnings
 
 from PIL import Image
+from pypdf import PdfReader
 from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
@@ -16,6 +17,22 @@ from projects.models_website_service import WebsiteServiceMaterial, WebsiteServi
 from projects.services.website_service import create_checkout_session, queue_website_notification
 
 TEMPLATES = {"contractor-showcase", "contractor-local", "contractor-premium", "restaurant-food", "restaurant-local", "restaurant-dining"}
+
+
+def _validate_customer_pdf(upload):
+    reader = PdfReader(upload, strict=True)
+    if reader.is_encrypted or not 1 <= len(reader.pages) <= 200:
+        raise ValueError("Unsupported PDF")
+    root = reader.trailer.get("/Root")
+    if root:
+        root = root.get_object()
+        if "/OpenAction" in root or "/AA" in root:
+            raise ValueError("PDF actions are not allowed")
+        names = root.get("/Names")
+        if names:
+            names = names.get_object()
+            if "/JavaScript" in names or "/EmbeddedFiles" in names:
+                raise ValueError("PDF scripts and attachments are not allowed")
 
 
 class WebsiteServiceThrottle(UserRateThrottle):
@@ -133,8 +150,7 @@ class WebsiteServiceProjectViewSet(ModelViewSet):
         suffix = Path(upload.name).suffix.lower()
         try:
             if suffix == ".pdf":
-                if upload.read(5) != b"%PDF-":
-                    raise ValueError()
+                _validate_customer_pdf(upload)
             elif suffix in {".jpg", ".jpeg", ".png", ".webp"}:
                 with warnings.catch_warnings():
                     warnings.simplefilter("error", Image.DecompressionBombWarning)

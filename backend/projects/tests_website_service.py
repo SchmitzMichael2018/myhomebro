@@ -3,6 +3,7 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 from PIL import Image
+from pypdf import PdfWriter
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import transaction
@@ -11,7 +12,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models_website_service import WebsiteServiceEvent, WebsiteServiceMaterial, WebsiteServiceProject
-from projects.services.website_service import proposal_fingerprint, queue_website_notification, sync_checkout_completed
+from projects.services.website_service import proposal_fingerprint, queue_website_notification, send_website_notification, sync_checkout_completed, sync_checkout_unavailable
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -125,6 +126,18 @@ class WebsiteServiceTests(TestCase):
             response = self.client.post(url + "materials/", {"file": SimpleUploadedFile(name, data)}, format="multipart")
             self.assertEqual(response.status_code, 400)
         self.assertEqual(WebsiteServiceMaterial.objects.count(), 1)
+
+    def test_structurally_valid_pdf_is_accepted_and_fake_pdf_is_rejected(self):
+        project = self.create()
+        url = f'{self.base}{project["id"]}/materials/'
+        pdf = io.BytesIO()
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        writer.write(pdf)
+        response = self.client.post(url, {"file": SimpleUploadedFile("brief.pdf", pdf.getvalue(), content_type="application/pdf")}, format="multipart")
+        self.assertEqual(response.status_code, 201, response.data)
+        response = self.client.post(url, {"file": SimpleUploadedFile("fake.pdf", b"%PDF-not-a-document", content_type="application/pdf")}, format="multipart")
+        self.assertEqual(response.status_code, 400)
 
     def test_request_and_staff_response_are_visible_to_owner(self):
         project = self.create()
@@ -275,8 +288,9 @@ class WebsiteServiceTests(TestCase):
         self.assertEqual(project.checkout_proposal_fingerprint, proposal_fingerprint(project))
 
     @override_settings(STRIPE_SECRET_KEY="sk_test_website", FRONTEND_URL="https://app.example.test")
+    @patch("stripe.checkout.Session.expire")
     @patch("stripe.checkout.Session.create")
-    def test_proposal_change_during_checkout_does_not_store_or_return_stale_session(self, create_session):
+    def test_proposal_change_during_checkout_does_not_store_or_return_stale_session(self, create_session, expire_session):
         project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
         self.prepare_checkout(project, session_id="cs_test_old")
         project.stripe_checkout_session_id = None
@@ -296,6 +310,80 @@ class WebsiteServiceTests(TestCase):
         project.refresh_from_db()
         self.assertIsNone(project.stripe_checkout_session_id)
         self.assertEqual(project.checkout_proposal_fingerprint, "")
+        expire_session.assert_called_once_with("cs_test_stale")
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_website", FRONTEND_URL="https://app.example.test")
+    @patch("stripe.checkout.Session.create")
+    def test_concurrent_checkout_does_not_create_second_session(self, create_session):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        self.prepare_checkout(project, session_id="cs_old")
+        project.stripe_checkout_session_id = None
+        project.checkout_proposal_fingerprint = ""
+        project.checkout_attempt_token = "active-attempt"
+        project.checkout_attempt_started_at = timezone.now()
+        project.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint", "checkout_attempt_token", "checkout_attempt_started_at"])
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        self.assertEqual(response.status_code, 400)
+        create_session.assert_not_called()
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_website", FRONTEND_URL="https://app.example.test")
+    @patch("stripe.checkout.Session.expire")
+    @patch("stripe.checkout.Session.create")
+    def test_superseded_attempt_expires_orphaned_session(self, create_session, expire_session):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        self.prepare_checkout(project, session_id="cs_old")
+        project.stripe_checkout_session_id = None
+        project.checkout_proposal_fingerprint = ""
+        project.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint"])
+
+        def supersede(**kwargs):
+            WebsiteServiceProject.objects.filter(pk=project.pk).update(checkout_attempt_token="newer-attempt", checkout_attempt_started_at=timezone.now())
+            return SimpleNamespace(id="cs_orphan", url="https://checkout.stripe.test/orphan")
+
+        create_session.side_effect = supersede
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        self.assertEqual(response.status_code, 400)
+        expire_session.assert_called_once_with("cs_orphan")
+        project.refresh_from_db()
+        self.assertIsNone(project.stripe_checkout_session_id)
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_website", FRONTEND_URL="https://app.example.test")
+    @patch("stripe.checkout.Session.retrieve")
+    @patch("stripe.checkout.Session.create")
+    def test_open_checkout_session_is_reused(self, create_session, retrieve_session):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        self.prepare_checkout(project, session_id="cs_open")
+        retrieve_session.return_value = SimpleNamespace(id="cs_open", url="https://checkout.stripe.test/open", status="open", payment_status="unpaid")
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["checkout_url"], "https://checkout.stripe.test/open")
+        create_session.assert_not_called()
+
+    def test_expired_checkout_cannot_later_mark_project_paid(self):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        session = self.prepare_checkout(project, session_id="cs_expired")
+        self.assertTrue(sync_checkout_unavailable(session, reason="expired"))
+        self.assertFalse(sync_checkout_unavailable(session, reason="expired"))
+        self.assertFalse(sync_checkout_completed(session))
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "failed")
+        self.assertIsNone(project.stripe_checkout_session_id)
+
+    @override_settings(STRIPE_WEBHOOK_SECRET="whsec_test", POSTMARK_SERVER_TOKEN="", SUPPORT_EMAIL="support@example.test")
+    @patch("stripe.Webhook.construct_event")
+    def test_signed_webhook_updates_exact_project_once(self, construct_event):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        session = self.prepare_checkout(project, session_id="cs_signed")
+        construct_event.return_value = {"type": "checkout.session.completed", "data": {"object": session}}
+        with self.captureOnCommitCallbacks(execute=True):
+            first = self.client.post("/api/payments/webhooks/stripe/", b"{}", content_type="application/json", HTTP_STRIPE_SIGNATURE="test-signature")
+        with self.captureOnCommitCallbacks(execute=True):
+            duplicate = self.client.post("/api/payments/webhooks/stripe/", b"{}", content_type="application/json", HTTP_STRIPE_SIGNATURE="test-signature")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(duplicate.status_code, 200)
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "paid")
+        self.assertEqual(WebsiteServiceEvent.objects.filter(project=project, event_type="payment_confirmed").count(), 1)
 
     @override_settings(POSTMARK_SERVER_TOKEN="test-token", SUPPORT_EMAIL="support@example.test")
     @patch("projects.services.website_service.send_postmark_email", side_effect=RuntimeError("provider unavailable"))
@@ -320,6 +408,16 @@ class WebsiteServiceTests(TestCase):
             except RuntimeError:
                 pass
         deliver.assert_not_called()
+
+    @override_settings(SUPPORT_EMAIL="approved-staff@example.test")
+    @patch("projects.services.website_service.send_postmark_email", return_value=(True, "accepted"))
+    def test_notifications_select_only_project_owner_or_configured_staff(self, send_email):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        send_website_notification(project, "customer_test", "Customer", "Message", "customer")
+        send_website_notification(project, "staff_test", "Staff", "Message", "staff")
+        recipients = [call.kwargs["to_email"] for call in send_email.call_args_list]
+        self.assertEqual(recipients, [self.owner.email, "approved-staff@example.test"])
+        self.assertNotIn(self.other.email, recipients)
 
     def test_other_account_cannot_start_checkout_or_approve(self):
         project = self.create()

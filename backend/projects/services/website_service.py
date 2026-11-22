@@ -1,6 +1,8 @@
 import hashlib
 import json
 import logging
+import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
@@ -72,6 +74,21 @@ def proposal_fingerprint(project):
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
+def _session_value(session, name, default=None):
+    if hasattr(session, "get"):
+        return session.get(name, default)
+    return getattr(session, name, default)
+
+
+def _expire_checkout_session(stripe, session_id):
+    try:
+        stripe.checkout.Session.expire(session_id)
+        return True
+    except Exception:
+        log.exception("Could not expire superseded website Checkout session %s", session_id)
+        return False
+
+
 def create_checkout_session(project, *, terms_accepted):
     if not terms_accepted:
         raise ValueError("Accept the displayed proposal, service terms, and refund terms before checkout.")
@@ -88,42 +105,89 @@ def create_checkout_session(project, *, terms_accepted):
     import stripe
 
     stripe.api_key = stripe_key
-    fingerprint = proposal_fingerprint(project)
-    if project.stripe_checkout_session_id and project.checkout_proposal_fingerprint == fingerprint:
-        session = stripe.checkout.Session.retrieve(project.stripe_checkout_session_id)
-        if getattr(session, "url", None):
+    with transaction.atomic():
+        current = WebsiteServiceProject.objects.select_for_update().select_related("owner").get(pk=project.pk)
+        if current.payment_status == "paid":
+            raise ValueError("This website project is already paid.")
+        if not current.has_complete_proposal or not current.proposal_sent_at:
+            raise ValueError("A complete written proposal is required before checkout.")
+        fingerprint = proposal_fingerprint(current)
+        checkout_price_cents = current.quoted_price_cents
+        checkout_business_name = current.business_name
+        checkout_customer_email = str(getattr(current.owner, "email", "") or "") or None
+        reusable_session_id = ""
+        if current.stripe_checkout_session_id and current.checkout_proposal_fingerprint == fingerprint:
+            reusable_session_id = current.stripe_checkout_session_id
+            attempt_token = ""
+        else:
+            if current.checkout_attempt_token and current.checkout_attempt_started_at and current.checkout_attempt_started_at > timezone.now() - timedelta(minutes=5):
+                raise ValueError("Checkout is already being prepared. Wait a moment and try again.")
+            attempt_token = uuid.uuid4().hex
+            current.stripe_checkout_session_id = None
+            current.checkout_proposal_fingerprint = ""
+            current.checkout_attempt_token = attempt_token
+            current.checkout_attempt_started_at = timezone.now()
+            current.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint", "checkout_attempt_token", "checkout_attempt_started_at", "updated_at"])
+
+    if reusable_session_id:
+        session = stripe.checkout.Session.retrieve(reusable_session_id)
+        session_status = str(_session_value(session, "status", "") or "").lower()
+        session_payment_status = str(_session_value(session, "payment_status", "") or "").lower()
+        if session_status == "open" and session_payment_status != "paid" and _session_value(session, "url"):
             return session
+        if session_status == "complete" and session_payment_status == "paid":
+            raise ValueError("Payment is complete and awaiting webhook confirmation. Refresh the project shortly.")
+        with transaction.atomic():
+            current = WebsiteServiceProject.objects.select_for_update().get(pk=project.pk)
+            if current.payment_status == "paid":
+                raise ValueError("This website project is already paid.")
+            if current.stripe_checkout_session_id != reusable_session_id:
+                raise ValueError("Checkout changed while opening. Refresh the project and try again.")
+            attempt_token = uuid.uuid4().hex
+            current.stripe_checkout_session_id = None
+            current.checkout_proposal_fingerprint = ""
+            current.checkout_attempt_token = attempt_token
+            current.checkout_attempt_started_at = timezone.now()
+            current.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint", "checkout_attempt_token", "checkout_attempt_started_at", "updated_at"])
 
     base = str(getattr(settings, "FRONTEND_URL", "") or "").rstrip("/")
     session = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
-        customer_email=str(getattr(project.owner, "email", "") or "") or None,
+        customer_email=checkout_customer_email,
         line_items=[{
             "quantity": 1,
             "price_data": {
                 "currency": WEBSITE_SERVICE_CURRENCY,
-                "unit_amount": project.quoted_price_cents,
-                "product_data": {"name": f"Website design — {project.business_name}"},
+                "unit_amount": checkout_price_cents,
+                "product_data": {"name": f"Website design — {checkout_business_name}"},
             },
         }],
-        metadata={"kind": "website_service", "website_service_project_id": str(project.pk), "proposal_fingerprint": fingerprint},
-        payment_intent_data={"metadata": {"kind": "website_service", "website_service_project_id": str(project.pk), "proposal_fingerprint": fingerprint}},
+        metadata={"kind": "website_service", "website_service_project_id": str(project.pk), "proposal_fingerprint": fingerprint, "checkout_attempt_token": attempt_token},
+        payment_intent_data={"metadata": {"kind": "website_service", "website_service_project_id": str(project.pk), "proposal_fingerprint": fingerprint, "checkout_attempt_token": attempt_token}},
         success_url=f"{base}/webdesign/dashboard?checkout=success&project={project.pk}",
         cancel_url=f"{base}/webdesign/dashboard?checkout=cancelled&project={project.pk}",
-        idempotency_key=f"website-service-{project.pk}-{project.proposal_sent_at.isoformat()}",
+        idempotency_key=f"website-service-{project.pk}-{attempt_token}",
     )
-    with transaction.atomic():
-        current = WebsiteServiceProject.objects.select_for_update().get(pk=project.pk)
-        if current.payment_status == "paid":
-            raise ValueError("This website project is already paid.")
-        if proposal_fingerprint(current) != fingerprint:
-            raise ValueError("The proposal changed while checkout was opening. Review the updated proposal and try again.")
-        current.stripe_checkout_session_id = session.id
-        current.checkout_proposal_fingerprint = fingerprint
-        current.terms_accepted_at = timezone.now()
-        current.payment_status = "checkout"
-        current.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint", "terms_accepted_at", "payment_status", "updated_at"])
+    try:
+        with transaction.atomic():
+            current = WebsiteServiceProject.objects.select_for_update().get(pk=project.pk)
+            if current.payment_status == "paid":
+                raise ValueError("This website project is already paid.")
+            if current.checkout_attempt_token != attempt_token:
+                raise ValueError("Another checkout replaced this attempt. Use the newest checkout link.")
+            if proposal_fingerprint(current) != fingerprint:
+                raise ValueError("The proposal changed while checkout was opening. Review the updated proposal and try again.")
+            current.stripe_checkout_session_id = session.id
+            current.checkout_proposal_fingerprint = fingerprint
+            current.checkout_attempt_token = ""
+            current.checkout_attempt_started_at = None
+            current.terms_accepted_at = timezone.now()
+            current.payment_status = "checkout"
+            current.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint", "checkout_attempt_token", "checkout_attempt_started_at", "terms_accepted_at", "payment_status", "updated_at"])
+    except Exception:
+        _expire_checkout_session(stripe, session.id)
+        raise
     return session
 
 
@@ -162,4 +226,37 @@ def sync_checkout_completed(session):
         project.save(update_fields=["payment_status", "stripe_payment_intent_id", "paid_at", "updated_at"])
         queue_website_notification(project, "payment_confirmed", "Your MyHomeBro website payment is confirmed", "Payment was received. Your project dashboard will show the next build step.", "customer")
         queue_website_notification(project, "payment_confirmed_staff", "Website design payment received", "A website service checkout completed.", "staff")
+    return True
+
+
+def sync_checkout_unavailable(session, *, reason):
+    """Invalidate only the exact unpaid website session reported by Stripe."""
+    metadata = session.get("metadata") or {}
+    session_id = str(session.get("id") or "").strip()
+    project_id = str(metadata.get("website_service_project_id") or "").strip()
+    fingerprint = str(metadata.get("proposal_fingerprint") or "").strip()
+    if metadata.get("kind") != "website_service" or not session_id or not project_id or not fingerprint:
+        return False
+    with transaction.atomic():
+        project = WebsiteServiceProject.objects.select_for_update().filter(
+            stripe_checkout_session_id=session_id
+        ).first()
+        if not project or str(project.pk) != project_id or project.payment_status == "paid":
+            return False
+        if fingerprint != project.checkout_proposal_fingerprint:
+            return False
+        project.stripe_checkout_session_id = None
+        project.checkout_proposal_fingerprint = ""
+        project.checkout_attempt_token = ""
+        project.checkout_attempt_started_at = None
+        project.payment_status = "failed"
+        project.save(update_fields=[
+            "stripe_checkout_session_id",
+            "checkout_proposal_fingerprint",
+            "checkout_attempt_token",
+            "checkout_attempt_started_at",
+            "payment_status",
+            "updated_at",
+        ])
+        log.info("Website Checkout session invalidated (%s, project=%s, reason=%s)", session_id, project.pk, reason)
     return True

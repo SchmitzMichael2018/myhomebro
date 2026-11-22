@@ -51,7 +51,7 @@ class WebsiteServiceProjectAdmin(admin.ModelAdmin):
     list_display = ["business_name", "owner", "business_type", "status", "payment_status", "updated_at"]
     list_filter = ["status", "payment_status", "business_type"]
     search_fields = ["business_name", "owner__email"]
-    readonly_fields = ["created_at", "updated_at", "proposal_sent_at", "terms_accepted_at", "paid_at", "stripe_checkout_session_id", "checkout_proposal_fingerprint", "stripe_payment_intent_id", "final_approved_at", "menu_public_id", "menu_draft", "menu_revision", "menu_published", "menu_published_revision", "menu_published_at"]
+    readonly_fields = ["created_at", "updated_at", "proposal_sent_at", "terms_accepted_at", "paid_at", "stripe_checkout_session_id", "checkout_proposal_fingerprint", "checkout_attempt_token", "checkout_attempt_started_at", "stripe_payment_intent_id", "final_approved_at", "menu_public_id", "menu_draft", "menu_revision", "menu_published", "menu_published_revision", "menu_published_at"]
     inlines = [WebsiteMaterialInline, WebsiteRequestInline, WebsiteEventInline]
 
     def save_model(self, request, obj, form, change):
@@ -63,6 +63,8 @@ class WebsiteServiceProjectAdmin(admin.ModelAdmin):
                 obj.payment_status = "checkout"
                 obj.stripe_checkout_session_id = None
                 obj.checkout_proposal_fingerprint = ""
+                obj.checkout_attempt_token = ""
+                obj.checkout_attempt_started_at = None
                 obj.terms_accepted_at = None
         super().save_model(request, obj, form, change)
         if obj.proposal_sent_at and (not previous or obj.proposal_sent_at != previous.proposal_sent_at):
