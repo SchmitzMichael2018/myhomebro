@@ -1,7 +1,7 @@
 # backend/projects/models.py
 
 from decimal import Decimal
-from .models_website_service import WebsiteServiceProject, WebsiteServiceMaterial, WebsiteServiceRequest, WebsiteMenuPhoto, WebsiteMenuEvent  # noqa: F401
+from .models_website_service import WebsiteServiceProject, WebsiteServiceMaterial, WebsiteServiceRequest, WebsiteServiceEvent, WebsiteMenuPhoto, WebsiteMenuEvent  # noqa: F401
 from datetime import timedelta
 import secrets
 import uuid

@@ -40,6 +40,7 @@ from projects.services.rental_operations_billing import (
     sync_invoice_payment_failed as sync_rental_operations_invoice_payment_failed,
     sync_subscription as sync_rental_operations_subscription,
 )
+from projects.services.website_service import sync_checkout_completed as sync_website_service_checkout
 
 log = logging.getLogger(__name__)
 
@@ -1217,6 +1218,11 @@ def stripe_webhook(request):
                 _handle_expense_checkout_completed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Expense checkout handler failed (session=%s).", data_obj.get("id"))
+
+            try:
+                sync_website_service_checkout(data_obj)
+            except Exception:
+                log.exception("Website service checkout handler failed (session=%s).", data_obj.get("id"))
 
             return HttpResponse(status=200)
 

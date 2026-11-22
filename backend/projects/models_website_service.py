@@ -5,6 +5,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from django.db import models
+from django.utils import timezone
 
 
 def website_material_storage():
@@ -37,6 +38,22 @@ class WebsiteServiceProject(models.Model):
     next_step = models.TextField(max_length=3000, blank=True)
     preview_url = models.URLField(blank=True)
     live_url = models.URLField(blank=True)
+    proposal_deliverables = models.TextField(max_length=8000, blank=True)
+    service_terms = models.TextField(max_length=8000, blank=True)
+    refund_terms = models.TextField(max_length=4000, blank=True)
+    quoted_price_cents = models.PositiveIntegerField(null=True, blank=True)
+    proposal_sent_at = models.DateTimeField(null=True, blank=True)
+    terms_accepted_at = models.DateTimeField(null=True, blank=True)
+    payment_status = models.CharField(
+        max_length=20,
+        choices=[("not_ready", "Not ready"), ("checkout", "Checkout available"), ("paid", "Paid"), ("failed", "Payment failed"), ("refunded", "Refunded")],
+        default="not_ready",
+        db_index=True,
+    )
+    stripe_checkout_session_id = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    final_approved_at = models.DateTimeField(null=True, blank=True)
     menu_public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     menu_draft = models.JSONField(default=list, blank=True)
     menu_revision = models.PositiveIntegerField(default=0)
@@ -51,6 +68,15 @@ class WebsiteServiceProject(models.Model):
 
     def __str__(self):
         return self.business_name
+
+    @property
+    def has_complete_proposal(self):
+        return bool(
+            self.quoted_price_cents
+            and self.proposal_deliverables.strip()
+            and self.service_terms.strip()
+            and self.refund_terms.strip()
+        )
 
 
 class WebsiteServiceMaterial(models.Model):
@@ -67,6 +93,20 @@ class WebsiteServiceRequest(models.Model):
     status = models.CharField(max_length=20, choices=[("open", "Open"), ("in_progress", "In progress"), ("done", "Completed")], default="open")
     response = models.TextField(max_length=5000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+
+class WebsiteServiceEvent(models.Model):
+    """Auditable customer/staff notification attempts for the paid website service."""
+
+    project = models.ForeignKey(WebsiteServiceProject, on_delete=models.CASCADE, related_name="events")
+    event_type = models.CharField(max_length=40, db_index=True)
+    recipient = models.EmailField()
+    delivered = models.BooleanField(default=False)
+    detail = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ["-created_at", "-pk"]

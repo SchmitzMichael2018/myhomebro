@@ -1,12 +1,16 @@
 import io
 import tempfile
+from types import SimpleNamespace
+from unittest.mock import patch
 from PIL import Image
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models_website_service import WebsiteServiceMaterial, WebsiteServiceProject
+from projects.models_website_service import WebsiteServiceEvent, WebsiteServiceMaterial, WebsiteServiceProject
+from projects.services.website_service import sync_checkout_completed
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -113,3 +117,66 @@ class WebsiteServiceTests(TestCase):
     def test_invalid_template_rejected(self):
         response = self.client.post(self.base, {"business_name": "Example", "template_id": "../../etc/passwd"}, format="json")
         self.assertEqual(response.status_code, 400)
+
+    def test_customer_cannot_forge_proposal_or_payment_fields(self):
+        project = self.create(
+            quoted_price_cents=1,
+            proposal_deliverables="Forged",
+            refund_terms="Forged",
+            payment_status="paid",
+        )
+        row = WebsiteServiceProject.objects.get(pk=project["id"])
+        self.assertIsNone(row.quoted_price_cents)
+        self.assertEqual(row.proposal_deliverables, "")
+        self.assertEqual(row.payment_status, "not_ready")
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_website", FRONTEND_URL="https://app.example.test")
+    @patch("stripe.checkout.Session.create")
+    def test_checkout_requires_complete_terms_and_is_separate_from_project_payments(self, create_session):
+        project_data = self.create()
+        project = WebsiteServiceProject.objects.get(pk=project_data["id"])
+        project.proposal_deliverables = "Five-page responsive website and content setup"
+        project.service_terms = "One build, two revision rounds, customer owns the delivered files."
+        project.refund_terms = "Refundable before work begins; completed work is non-refundable."
+        project.quoted_price_cents = 150000
+        project.proposal_sent_at = timezone.now()
+        project.payment_status = "checkout"
+        project.save()
+        url = f"{self.base}{project.pk}/checkout/"
+        self.assertEqual(self.client.post(url, {"accept_terms": False}, format="json").status_code, 400)
+        create_session.return_value = SimpleNamespace(id="cs_test_website", url="https://checkout.stripe.test/session")
+        response = self.client.post(url, {"accept_terms": True}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["checkout_url"], create_session.return_value.url)
+        kwargs = create_session.call_args.kwargs
+        self.assertEqual(kwargs["metadata"]["kind"], "website_service")
+        self.assertEqual(kwargs["line_items"][0]["price_data"]["unit_amount"], 150000)
+        project.refresh_from_db()
+        self.assertEqual(project.stripe_checkout_session_id, "cs_test_website")
+        self.assertIsNotNone(project.terms_accepted_at)
+
+    @override_settings(POSTMARK_SERVER_TOKEN="", SUPPORT_EMAIL="support@example.test")
+    def test_checkout_webhook_is_idempotent_and_final_approval_never_publishes(self):
+        project_data = self.create()
+        project = WebsiteServiceProject.objects.get(pk=project_data["id"])
+        project.status = "preview"
+        project.preview_url = "https://preview.example.test"
+        project.save(update_fields=["status", "preview_url"])
+        session = {"id": "cs_test_paid", "payment_status": "paid", "payment_intent": "pi_test_paid", "metadata": {"kind": "website_service", "website_service_project_id": str(project.pk)}}
+        self.assertTrue(sync_checkout_completed(session))
+        self.assertTrue(sync_checkout_completed(session))
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "paid")
+        self.assertEqual(WebsiteServiceEvent.objects.filter(project=project, event_type="payment_confirmed").count(), 1)
+        response = self.client.post(f"{self.base}{project.pk}/final-approval/")
+        self.assertEqual(response.status_code, 200, response.data)
+        project.refresh_from_db()
+        self.assertIsNotNone(project.final_approved_at)
+        self.assertEqual(project.live_url, "")
+        self.assertEqual(project.status, "preview")
+
+    def test_other_account_cannot_start_checkout_or_approve(self):
+        project = self.create()
+        self.client.force_authenticate(self.other)
+        for action in ["checkout", "final-approval"]:
+            self.assertEqual(self.client.post(f'{self.base}{project["id"]}/{action}/', {"accept_terms": True}, format="json").status_code, 404)
