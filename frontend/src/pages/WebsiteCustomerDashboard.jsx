@@ -22,7 +22,7 @@ function failure(error) {
 export default function WebsiteCustomerDashboard() {
   const location = useLocation();
   if (!getAccessToken()) return h('div', { className: 'wcd-login' },
-    h('div', { className: 'wcd-login-note' }, h(Link, { to: '/webdesign' }, '← Web design'), h('strong', null, 'Your website workspace'), h('span', null, 'Use your existing MyHomeBro account. Contractors do not need a second login.')),
+    h('div', { className: 'wcd-login-note' }, h(Link, { to: '/webdesign' }, '← Web design'), h('strong', null, 'Your website workspace'), h('span', null, 'Use your existing MyHomeBro account. New here? ', h(Link, { to: `/register?role=customer&next=${encodeURIComponent(location.pathname + location.search)}` }, 'Create an account'))),
     h(LoginForm, { redirectTo: location.pathname + location.search }));
   return h(Workspace, { key: location.search });
 }
@@ -42,11 +42,12 @@ function Workspace() {
   const [message, setMessage] = useState('');
   const [file, setFile] = useState(null);
   const [uploadKey, setUploadKey] = useState(0);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   function select(next) {
     if ((dirty || menuDirty) && !window.confirm('Leave without saving your website changes?')) return;
     setProject(next); setBrief(next ? Object.fromEntries(Object.keys(emptyBrief()).map(key => [key, next[key] || ''])) : emptyBrief(initialTemplate));
-    setDirty(false); setMenuDirty(false); setMessage(''); setFile(null); setUploadKey(key => key + 1); setError(''); setNotice('');
+    setDirty(false); setMenuDirty(false); setMessage(''); setFile(null); setUploadKey(key => key + 1); setAcceptedTerms(false); setError(''); setNotice('');
   }
   function receive(next) { setProject(next); setProjects(rows => [next, ...rows.filter(row => row.id !== next.id)]); }
   async function load() {
@@ -80,6 +81,13 @@ function Workspace() {
       const url = URL.createObjectURL(data); const anchor = document.createElement('a');
       anchor.href = url; anchor.download = material.original_name; anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
+  async function startCheckout() {
+    await run(async () => {
+      const { data } = await api.post(`${endpoint}${project.id}/checkout/`, { accept_terms: acceptedTerms });
+      if (!safeLink(data.checkout_url)) throw new Error('Checkout did not return a secure URL.');
+      window.location.assign(data.checkout_url);
     });
   }
   return h('div', { className: 'wcd', 'data-testid': 'website-customer-dashboard' },
@@ -117,8 +125,19 @@ function Workspace() {
                 dirty && project && h('small', null, 'Save your changes before submitting.')),
               h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, 'YOUR WEBSITE'), h('h2', null, 'Preview & launch'),
                 safeLink(project?.preview_url) ? h('a', { className: 'wcd-secondary', href: project.preview_url, target: '_blank', rel: 'noopener noreferrer' }, 'Open website preview ↗') : h('p', null, 'Your working website preview will appear here when it is ready.'),
-                safeLink(project?.live_url) && h('a', { className: 'wcd-secondary', href: project.live_url, target: '_blank', rel: 'noopener noreferrer' }, 'Visit live website ↗')),
-              h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, 'SCOPE & BILLING'), h('h2', null, 'Agree on the plan first.'), h('p', null, 'We’ll confirm your build price, hosting, and any ongoing care before work begins. Saving a brief does not charge you.'), h('small', null, 'Checkout and contractor website credits are not available in this workspace yet.')))),
+                safeLink(project?.live_url) && h('a', { className: 'wcd-secondary', href: project.live_url, target: '_blank', rel: 'noopener noreferrer' }, 'Visit live website ↗'),
+                project?.status === 'preview' && project?.payment_status === 'paid' && !project?.final_approved_at && h('button', { className: 'wcd-primary', disabled: busy, onClick: () => run(async () => { const { data } = await api.post(`${endpoint}${project.id}/final-approval/`); receive(data); setNotice('Your final approval is recorded. Nothing was published automatically.'); }) }, 'Approve final design'),
+                project?.final_approved_at && h('p', { className: 'wcd-approval' }, '✓ Final design approved. Publication is coordinated separately.')),
+              h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, 'SCOPE & BILLING'), h('h2', null, project?.proposal_sent_at ? 'Review your proposal.' : 'Agree on the plan first.'),
+                project?.proposal_sent_at ? h(React.Fragment, null,
+                  h('p', { className: 'wcd-price' }, new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((project.quoted_price_cents || 0) / 100)),
+                  h('h3', null, 'Deliverables'), h('p', { className: 'wcd-prewrap' }, project.proposal_deliverables),
+                  h('details', null, h('summary', null, 'Service terms'), h('p', { className: 'wcd-prewrap' }, project.service_terms)),
+                  h('details', null, h('summary', null, 'Refund terms'), h('p', { className: 'wcd-prewrap' }, project.refund_terms)),
+                  project.payment_status === 'paid' ? h('p', { className: 'wcd-approval' }, '✓ Payment confirmed') : h(React.Fragment, null,
+                    h('label', { className: 'wcd-terms-check' }, h('input', { type: 'checkbox', checked: acceptedTerms, onChange: event => setAcceptedTerms(event.target.checked) }), h('span', null, 'I reviewed and accept the displayed price, deliverables, service terms, and refund terms.')),
+                    h('button', { type: 'button', className: 'wcd-primary', disabled: busy || !acceptedTerms || !project.checkout_eligible, onClick: startCheckout, 'data-testid': 'website-checkout' }, busy ? 'Opening secure checkout…' : 'Continue to secure checkout')))
+                : h(React.Fragment, null, h('p', null, 'We’ll confirm your build price, deliverables, hosting, refund terms, and any ongoing care before checkout is enabled.'), h('small', null, 'Saving or submitting a brief does not charge you.'))))),
           h('div', { className: 'wcd-bottom' },
             h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, '02 / YOUR MATERIALS'), h('h2', null, 'Photos, logos & documents'), h('p', null, 'Share photos you own or have permission to use. JPG, PNG, WebP, or PDF; up to 5 MB each and 20 files per project. Files are private to your account and the MyHomeBro team.'),
               project ? h(React.Fragment, null,
