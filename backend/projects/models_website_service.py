@@ -51,6 +51,7 @@ class WebsiteServiceProject(models.Model):
         db_index=True,
     )
     stripe_checkout_session_id = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    checkout_proposal_fingerprint = models.CharField(max_length=64, blank=True)
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     final_approved_at = models.DateTimeField(null=True, blank=True)

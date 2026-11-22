@@ -5,12 +5,13 @@ from unittest.mock import patch
 from PIL import Image
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import transaction
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models_website_service import WebsiteServiceEvent, WebsiteServiceMaterial, WebsiteServiceProject
-from projects.services.website_service import sync_checkout_completed
+from projects.services.website_service import proposal_fingerprint, queue_website_notification, sync_checkout_completed
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -39,6 +40,30 @@ class WebsiteServiceTests(TestCase):
         response = self.client.post(self.base, payload, format="json")
         self.assertEqual(response.status_code, 201, response.data)
         return response.data
+
+    def prepare_checkout(self, project, session_id="cs_test_expected", price_cents=150000):
+        project.proposal_deliverables = "Five-page responsive website and content setup"
+        project.service_terms = "One build, two revision rounds, customer owns the delivered files."
+        project.refund_terms = "Refundable before work begins; completed work is non-refundable."
+        project.quoted_price_cents = price_cents
+        project.proposal_sent_at = timezone.now()
+        project.payment_status = "checkout"
+        project.stripe_checkout_session_id = session_id
+        project.save()
+        project.checkout_proposal_fingerprint = proposal_fingerprint(project)
+        project.save(update_fields=["checkout_proposal_fingerprint"])
+        return {
+            "id": session_id,
+            "payment_status": "paid",
+            "payment_intent": "pi_test_paid",
+            "amount_total": price_cents,
+            "currency": "usd",
+            "metadata": {
+                "kind": "website_service",
+                "website_service_project_id": str(project.pk),
+                "proposal_fingerprint": project.checkout_proposal_fingerprint,
+            },
+        }
 
     def test_login_required(self):
         self.client.force_authenticate(None)
@@ -151,8 +176,11 @@ class WebsiteServiceTests(TestCase):
         kwargs = create_session.call_args.kwargs
         self.assertEqual(kwargs["metadata"]["kind"], "website_service")
         self.assertEqual(kwargs["line_items"][0]["price_data"]["unit_amount"], 150000)
+        self.assertEqual(kwargs["line_items"][0]["price_data"]["currency"], "usd")
+        self.assertEqual(kwargs["metadata"]["proposal_fingerprint"], kwargs["payment_intent_data"]["metadata"]["proposal_fingerprint"])
         project.refresh_from_db()
         self.assertEqual(project.stripe_checkout_session_id, "cs_test_website")
+        self.assertEqual(project.checkout_proposal_fingerprint, kwargs["metadata"]["proposal_fingerprint"])
         self.assertIsNotNone(project.terms_accepted_at)
 
     @override_settings(POSTMARK_SERVER_TOKEN="", SUPPORT_EMAIL="support@example.test")
@@ -162,9 +190,11 @@ class WebsiteServiceTests(TestCase):
         project.status = "preview"
         project.preview_url = "https://preview.example.test"
         project.save(update_fields=["status", "preview_url"])
-        session = {"id": "cs_test_paid", "payment_status": "paid", "payment_intent": "pi_test_paid", "metadata": {"kind": "website_service", "website_service_project_id": str(project.pk)}}
-        self.assertTrue(sync_checkout_completed(session))
-        self.assertTrue(sync_checkout_completed(session))
+        session = self.prepare_checkout(project, session_id="cs_test_paid")
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(sync_checkout_completed(session))
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(sync_checkout_completed(session))
         project.refresh_from_db()
         self.assertEqual(project.payment_status, "paid")
         self.assertEqual(WebsiteServiceEvent.objects.filter(project=project, event_type="payment_confirmed").count(), 1)
@@ -174,6 +204,122 @@ class WebsiteServiceTests(TestCase):
         self.assertIsNotNone(project.final_approved_at)
         self.assertEqual(project.live_url, "")
         self.assertEqual(project.status, "preview")
+
+    def test_checkout_webhook_rejects_session_id_mismatch(self):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        session = self.prepare_checkout(project)
+        session["id"] = "cs_test_attacker"
+        self.assertFalse(sync_checkout_completed(session))
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "checkout")
+
+    def test_checkout_webhook_rejects_amount_and_currency_mismatches(self):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        session = self.prepare_checkout(project)
+        wrong_amount = {**session, "amount_total": session["amount_total"] - 1}
+        self.assertFalse(sync_checkout_completed(wrong_amount))
+        wrong_currency = {**session, "currency": "cad"}
+        self.assertFalse(sync_checkout_completed(wrong_currency))
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "checkout")
+
+    def test_checkout_webhook_requires_session_and_metadata_to_identify_same_project(self):
+        first = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        second = WebsiteServiceProject.objects.create(owner=self.other, business_name="Other website")
+        session = self.prepare_checkout(first)
+        session["metadata"] = {**session["metadata"], "website_service_project_id": str(second.pk)}
+        self.assertFalse(sync_checkout_completed(session))
+        first.refresh_from_db(); second.refresh_from_db()
+        self.assertEqual(first.payment_status, "checkout")
+        self.assertEqual(second.payment_status, "not_ready")
+
+    def test_duplicate_or_mismatched_events_cannot_pay_another_project(self):
+        first = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        second = WebsiteServiceProject.objects.create(owner=self.other, business_name="Other website")
+        valid = self.prepare_checkout(first)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(sync_checkout_completed(valid))
+        mismatched = {**valid, "metadata": {**valid["metadata"], "website_service_project_id": str(second.pk)}}
+        self.assertFalse(sync_checkout_completed(mismatched))
+        first.refresh_from_db(); second.refresh_from_db()
+        self.assertEqual(first.payment_status, "paid")
+        self.assertEqual(second.payment_status, "not_ready")
+        self.assertEqual(WebsiteServiceEvent.objects.filter(project=first, event_type="payment_confirmed").count(), 1)
+
+    def test_checkout_webhook_rejects_session_for_modified_proposal(self):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        old_session = self.prepare_checkout(project)
+        project.proposal_deliverables = "Changed scope with an additional page"
+        project.proposal_sent_at = timezone.now()
+        project.save(update_fields=["proposal_deliverables", "proposal_sent_at", "updated_at"])
+        self.assertFalse(sync_checkout_completed(old_session))
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "checkout")
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_website", FRONTEND_URL="https://app.example.test")
+    @patch("stripe.checkout.Session.retrieve")
+    @patch("stripe.checkout.Session.create")
+    def test_modified_proposal_creates_new_checkout_instead_of_reusing_old_session(self, create_session, retrieve_session):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        self.prepare_checkout(project, session_id="cs_test_old")
+        project.proposal_deliverables = "Changed and re-approved scope"
+        project.proposal_sent_at = timezone.now()
+        project.save(update_fields=["proposal_deliverables", "proposal_sent_at", "updated_at"])
+        create_session.return_value = SimpleNamespace(id="cs_test_new", url="https://checkout.stripe.test/new")
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        retrieve_session.assert_not_called()
+        create_session.assert_called_once()
+        project.refresh_from_db()
+        self.assertEqual(project.stripe_checkout_session_id, "cs_test_new")
+        self.assertEqual(project.checkout_proposal_fingerprint, proposal_fingerprint(project))
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_website", FRONTEND_URL="https://app.example.test")
+    @patch("stripe.checkout.Session.create")
+    def test_proposal_change_during_checkout_does_not_store_or_return_stale_session(self, create_session):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        self.prepare_checkout(project, session_id="cs_test_old")
+        project.stripe_checkout_session_id = None
+        project.checkout_proposal_fingerprint = ""
+        project.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint"])
+
+        def change_proposal(**kwargs):
+            WebsiteServiceProject.objects.filter(pk=project.pk).update(
+                proposal_deliverables="Scope changed during checkout",
+                proposal_sent_at=timezone.now(),
+            )
+            return SimpleNamespace(id="cs_test_stale", url="https://checkout.stripe.test/stale")
+
+        create_session.side_effect = change_proposal
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        project.refresh_from_db()
+        self.assertIsNone(project.stripe_checkout_session_id)
+        self.assertEqual(project.checkout_proposal_fingerprint, "")
+
+    @override_settings(POSTMARK_SERVER_TOKEN="test-token", SUPPORT_EMAIL="support@example.test")
+    @patch("projects.services.website_service.send_postmark_email", side_effect=RuntimeError("provider unavailable"))
+    def test_notification_failure_after_commit_does_not_roll_back_submission(self, send_email):
+        project = self.create(description="Show our work", contact_details="Public business phone")
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'{self.base}{project["id"]}/submit/')
+        self.assertEqual(response.status_code, 200, response.data)
+        row = WebsiteServiceProject.objects.get(pk=project["id"])
+        self.assertEqual(row.status, "review")
+        self.assertEqual(send_email.call_count, 2)
+        self.assertEqual(WebsiteServiceEvent.objects.filter(project=row, delivered=False).count(), 2)
+
+    @patch("projects.services.website_service.send_website_notification")
+    def test_rolled_back_transaction_does_not_deliver_notification(self, deliver):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        with self.captureOnCommitCallbacks(execute=True):
+            try:
+                with transaction.atomic():
+                    queue_website_notification(project, "test", "Test", "Test")
+                    raise RuntimeError("roll back")
+            except RuntimeError:
+                pass
+        deliver.assert_not_called()
 
     def test_other_account_cannot_start_checkout_or_approve(self):
         project = self.create()

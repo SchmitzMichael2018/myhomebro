@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 
 from django.conf import settings
@@ -8,6 +10,7 @@ from projects.models_website_service import WebsiteServiceEvent, WebsiteServiceP
 from projects.services.invites_delivery import send_postmark_email
 
 log = logging.getLogger(__name__)
+WEBSITE_SERVICE_CURRENCY = "usd"
 
 
 def _dashboard_url(project):
@@ -44,6 +47,31 @@ def send_website_notification(project, event_type, subject, message, audience="s
         )
 
 
+def queue_website_notification(project, event_type, subject, message, audience="staff"):
+    """Send only after the surrounding write commits; delivery is never transactional."""
+    project_id = project.pk
+
+    def deliver():
+        saved_project = WebsiteServiceProject.objects.select_related("owner").filter(pk=project_id).first()
+        if saved_project:
+            send_website_notification(saved_project, event_type, subject, message, audience)
+
+    transaction.on_commit(deliver, robust=True)
+
+
+def proposal_fingerprint(project):
+    payload = {
+        "project_id": project.pk,
+        "price_cents": project.quoted_price_cents,
+        "currency": WEBSITE_SERVICE_CURRENCY,
+        "deliverables": project.proposal_deliverables,
+        "service_terms": project.service_terms,
+        "refund_terms": project.refund_terms,
+        "proposal_sent_at": project.proposal_sent_at.isoformat() if project.proposal_sent_at else "",
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
 def create_checkout_session(project, *, terms_accepted):
     if not terms_accepted:
         raise ValueError("Accept the displayed proposal, service terms, and refund terms before checkout.")
@@ -60,7 +88,8 @@ def create_checkout_session(project, *, terms_accepted):
     import stripe
 
     stripe.api_key = stripe_key
-    if project.stripe_checkout_session_id:
+    fingerprint = proposal_fingerprint(project)
+    if project.stripe_checkout_session_id and project.checkout_proposal_fingerprint == fingerprint:
         session = stripe.checkout.Session.retrieve(project.stripe_checkout_session_id)
         if getattr(session, "url", None):
             return session
@@ -73,21 +102,28 @@ def create_checkout_session(project, *, terms_accepted):
         line_items=[{
             "quantity": 1,
             "price_data": {
-                "currency": "usd",
+                "currency": WEBSITE_SERVICE_CURRENCY,
                 "unit_amount": project.quoted_price_cents,
                 "product_data": {"name": f"Website design — {project.business_name}"},
             },
         }],
-        metadata={"kind": "website_service", "website_service_project_id": str(project.pk)},
-        payment_intent_data={"metadata": {"kind": "website_service", "website_service_project_id": str(project.pk)}},
+        metadata={"kind": "website_service", "website_service_project_id": str(project.pk), "proposal_fingerprint": fingerprint},
+        payment_intent_data={"metadata": {"kind": "website_service", "website_service_project_id": str(project.pk), "proposal_fingerprint": fingerprint}},
         success_url=f"{base}/webdesign/dashboard?checkout=success&project={project.pk}",
         cancel_url=f"{base}/webdesign/dashboard?checkout=cancelled&project={project.pk}",
         idempotency_key=f"website-service-{project.pk}-{project.proposal_sent_at.isoformat()}",
     )
-    project.stripe_checkout_session_id = session.id
-    project.terms_accepted_at = timezone.now()
-    project.payment_status = "checkout"
-    project.save(update_fields=["stripe_checkout_session_id", "terms_accepted_at", "payment_status", "updated_at"])
+    with transaction.atomic():
+        current = WebsiteServiceProject.objects.select_for_update().get(pk=project.pk)
+        if current.payment_status == "paid":
+            raise ValueError("This website project is already paid.")
+        if proposal_fingerprint(current) != fingerprint:
+            raise ValueError("The proposal changed while checkout was opening. Review the updated proposal and try again.")
+        current.stripe_checkout_session_id = session.id
+        current.checkout_proposal_fingerprint = fingerprint
+        current.terms_accepted_at = timezone.now()
+        current.payment_status = "checkout"
+        current.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint", "terms_accepted_at", "payment_status", "updated_at"])
     return session
 
 
@@ -95,20 +131,35 @@ def sync_checkout_completed(session):
     metadata = session.get("metadata") or {}
     if metadata.get("kind") != "website_service":
         return False
+    session_id = str(session.get("id") or "").strip()
     project_id = metadata.get("website_service_project_id")
-    if not project_id or session.get("payment_status") != "paid":
+    fingerprint = str(metadata.get("proposal_fingerprint") or "").strip()
+    if not session_id or not project_id or not fingerprint or session.get("payment_status") != "paid":
         return False
     with transaction.atomic():
-        project = WebsiteServiceProject.objects.select_for_update().select_related("owner").filter(pk=project_id).first()
+        project = WebsiteServiceProject.objects.select_for_update().select_related("owner").filter(
+            stripe_checkout_session_id=session_id
+        ).first()
         if not project:
+            return False
+        if str(project.pk) != str(project_id):
+            return False
+        try:
+            amount_total = int(session.get("amount_total"))
+        except (TypeError, ValueError):
+            return False
+        if amount_total != project.quoted_price_cents:
+            return False
+        if str(session.get("currency") or "").lower() != WEBSITE_SERVICE_CURRENCY:
+            return False
+        if fingerprint != project.checkout_proposal_fingerprint or fingerprint != proposal_fingerprint(project):
             return False
         if project.payment_status == "paid":
             return True
         project.payment_status = "paid"
-        project.stripe_checkout_session_id = session.get("id") or project.stripe_checkout_session_id
         project.stripe_payment_intent_id = session.get("payment_intent") or ""
         project.paid_at = timezone.now()
-        project.save(update_fields=["payment_status", "stripe_checkout_session_id", "stripe_payment_intent_id", "paid_at", "updated_at"])
-    send_website_notification(project, "payment_confirmed", "Your MyHomeBro website payment is confirmed", "Payment was received. Your project dashboard will show the next build step.", "customer")
-    send_website_notification(project, "payment_confirmed_staff", "Website design payment received", "A website service checkout completed.", "staff")
+        project.save(update_fields=["payment_status", "stripe_payment_intent_id", "paid_at", "updated_at"])
+        queue_website_notification(project, "payment_confirmed", "Your MyHomeBro website payment is confirmed", "Payment was received. Your project dashboard will show the next build step.", "customer")
+        queue_website_notification(project, "payment_confirmed_staff", "Website design payment received", "A website service checkout completed.", "staff")
     return True

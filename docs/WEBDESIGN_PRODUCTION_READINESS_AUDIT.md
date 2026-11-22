@@ -45,7 +45,9 @@ The production site reflects the gallery/dashboard implementation currently on G
 - Checkout remains disabled until the proposal is complete and the customer explicitly accepts all displayed terms.
 - Added a website-service-only Stripe Checkout session with dedicated metadata and a test-mode safety gate. Live keys are rejected unless `WEBSITE_SERVICE_STRIPE_LIVE_ENABLED=1` is deliberately configured after approval.
 - Integrated idempotent website-payment completion into the existing signed Stripe webhook; repeated events do not duplicate payment confirmation.
+- Webhook reconciliation locates projects by the stored unique Checkout session and independently verifies project metadata, approved USD amount, currency, and a proposal-content fingerprint before marking payment complete. Stale or cross-project sessions fail closed.
 - Added auditable notification attempts for customer and staff events without allowing email failures to lose project changes.
+- Deferred transactional notifications with `transaction.on_commit`; delivery failures are recorded after commit and cannot roll back customer submissions or approvals.
 - Added final customer approval after a paid preview. Approval records a timestamp and never publishes or sets a live URL automatically.
 - Added direct customer-registration routing from the website workspace.
 - Extended Django admin with proposal/payment visibility, event audit, preview notifications, and customer request-response notifications.
@@ -53,7 +55,7 @@ The production site reflects the gallery/dashboard implementation currently on G
 
 ## Test evidence
 
-- `python scripts/check-website-dashboard.py` — PASS, 22 tests.
+- `python scripts/check-website-dashboard.py` — PASS, 31 tests.
 - `node --test scripts/website-templates.test.mjs` — PASS, 4 tests.
 - `npm.cmd run build` — PASS (isolated build copy using the repository lockfile).
 - `npx.cmd playwright test tests/webdesign.spec.js tests/website-template-gallery.spec.js` — PASS, 9 production tests covering desktop/mobile landing behavior and all six deployed demos.
