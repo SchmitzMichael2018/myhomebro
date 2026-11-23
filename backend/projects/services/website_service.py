@@ -99,7 +99,7 @@ def create_checkout_session(project, *, terms_accepted):
 
     stripe_key = str(getattr(settings, "STRIPE_SECRET_KEY", "") or "").strip()
     allow_live = bool(getattr(settings, "WEBSITE_SERVICE_STRIPE_LIVE_ENABLED", False))
-    if not stripe_key or (not stripe_key.startswith("sk_test_") and not allow_live):
+    if not stripe_key or (not stripe_key.startswith(("sk_test_", "rk_test_")) and not allow_live):
         raise ValueError("Website checkout is unavailable until Stripe test mode is configured.")
 
     import stripe

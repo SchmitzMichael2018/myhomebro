@@ -78,11 +78,11 @@ Contractor screenshots are stored in `qa-artifacts/webdesign/`.
 1. Merge the approved pull request and record the merge commit.
 2. On PythonAnywhere, create a database and private-material backup and confirm the rollback revision.
 3. Pull the approved commit only; verify the checked-out SHA.
-4. Confirm `STRIPE_SECRET_KEY` is a test key for pre-production verification, `STRIPE_WEBHOOK_SECRET` is set, `SUPPORT_EMAIL` is correct, and `WEBSITE_SERVICE_STRIPE_LIVE_ENABLED` remains unset/false.
+4. Preserve the existing production Stripe API key and both webhook signing secrets. Confirm `WEBSITE_SERVICE_STRIPE_LIVE_ENABLED=false` before reload.
 5. Activate the production virtual environment and run `python manage.py migrate projects`.
 6. Build the frontend from the lockfile, collect static files, and reload the application.
-7. Verify `/webdesign`, all six demos, registration/login routing, an approved test project, proposal display, test checkout, signed webhook reconciliation, notification events, preview, change request, and final approval.
-8. Confirm approval did not publish automatically, inspect logs/alerts, and record the deployed commit.
+7. Verify `/webdesign`, all six demos, and registration/login routing with read-only production checks. Inspect logs and record the deployed commit.
+8. Complete Stripe test Checkout, signed test webhook reconciliation, and Postmark inbox verification only in isolated staging using the release checklist.
 
 Rollback: restore the prior application/static revision and reload. Retain the additive website-service tables and private upload directory; do not reverse the migration after customer orders exist.
 
@@ -102,7 +102,7 @@ Rollback: restore the prior application/static revision and reload. Retain the a
 
 The isolated development process has no `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, or `POSTMARK_SERVER_TOKEN`; `WEBSITE_SERVICE_STRIPE_LIVE_ENABLED` is unset and therefore false. No real or production charge and no external email was attempted.
 
-Automated verification used Stripe test-shaped objects and the real signed-webhook application path with `stripe.Webhook.construct_event` isolated at the provider boundary. It verified correct-project payment, amount/currency/fingerprint enforcement, duplicate suppression, and post-commit notification records. A real Stripe-hosted Checkout and Postmark inbox delivery remain controlled-environment gates. Required configuration is: a restricted Stripe test secret key, a test-mode endpoint signing secret for `/api/payments/webhooks/stripe/`, an approved test customer email, a Postmark server token/sender authorized for approved test recipients, and `SUPPORT_EMAIL` set to the approved staff test inbox. Secret values must never be committed or printed.
+Automated verification used Stripe test-shaped objects and the real signed-webhook application path with `stripe.Webhook.construct_event` isolated at the provider boundary. It verified correct-project payment, amount/currency/fingerprint enforcement, duplicate suppression, and post-commit notification records. A real Stripe-hosted Checkout and Postmark inbox delivery remain controlled-environment gates. Required configuration is: a restricted Stripe test secret key (`rk_test_`), or a standard test secret key (`sk_test_`), a test-mode endpoint signing secret for `/api/payments/webhooks/stripe/`, an approved test customer email, a Postmark server token/sender authorized for approved test recipients, and `SUPPORT_EMAIL` set to the approved staff test inbox. Secret values must never be committed or printed.
 
 ### Notification review
 
@@ -110,7 +110,7 @@ The following events are wired through the shared post-commit notification servi
 
 ### Authenticated workflow and isolation
 
-Isolated API tests cover authentication enforcement, project creation/editing, template validation, brief submission, private upload/download, proposal and explicit terms acceptance, checkout creation, signed-webhook payment, preview/change/final-approval rules, and cross-customer denial. Final approval records consent but leaves `live_url` empty and performs no publication. Production was not mutated; an authenticated browser run with an approved production test account remains a deployment-window smoke test.
+Isolated API tests cover authentication enforcement, project creation/editing, template validation, brief submission, private upload/download, proposal and explicit terms acceptance, checkout creation, signed-webhook payment, preview/change/final-approval rules, and cross-customer denial. Final approval records consent but leaves `live_url` empty and performs no publication. Production was not mutated; authenticated workflow verification belongs in isolated staging.
 
 ### Upload security
 

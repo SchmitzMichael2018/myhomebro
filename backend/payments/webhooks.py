@@ -1202,6 +1202,25 @@ def stripe_webhook(request):
                     )
             return HttpResponse(status=200)
 
+        if event_type in (
+            "checkout.session.completed",
+            "checkout.session.async_payment_succeeded",
+            "checkout.session.async_payment_failed",
+            "checkout.session.expired",
+        ) and (data_obj.get("metadata") or {}).get("kind") == "website_service":
+            try:
+                if event_type == "checkout.session.async_payment_failed":
+                    sync_website_service_checkout_unavailable(data_obj, reason="async_payment_failed")
+                elif event_type == "checkout.session.expired":
+                    sync_website_service_checkout_unavailable(data_obj, reason="expired")
+                else:
+                    sync_website_service_checkout(data_obj)
+            except Exception as exc:
+                # Acknowledge only after reconciliation succeeds or rejects the event.
+                log.error("Website Checkout reconciliation failed (%s).", type(exc).__name__)
+                return HttpResponse(status=503)
+            return HttpResponse(status=200)
+
         if event_type in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
             # NOTE: escrow funding is handled via payment_intent.succeeded
             try:
@@ -1221,11 +1240,6 @@ def stripe_webhook(request):
                 _handle_expense_checkout_completed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Expense checkout handler failed (session=%s).", data_obj.get("id"))
-
-            try:
-                sync_website_service_checkout(data_obj)
-            except Exception:
-                log.exception("Website service checkout handler failed (session=%s).", data_obj.get("id"))
 
             return HttpResponse(status=200)
 
@@ -1248,17 +1262,6 @@ def stripe_webhook(request):
                 _handle_checkout_session_async_payment_failed(data_obj, connected_account_id=connected_account_id)
             except Exception:
                 log.exception("Async checkout failure handler failed (session=%s).", data_obj.get("id"))
-            try:
-                sync_website_service_checkout_unavailable(data_obj, reason="async_payment_failed")
-            except Exception:
-                log.exception("Website service async checkout failure handler failed (session=%s).", data_obj.get("id"))
-            return HttpResponse(status=200)
-
-        if event_type == "checkout.session.expired":
-            try:
-                sync_website_service_checkout_unavailable(data_obj, reason="expired")
-            except Exception:
-                log.exception("Website service expired checkout handler failed (session=%s).", data_obj.get("id"))
             return HttpResponse(status=200)
 
         if event_type == "refund.updated":

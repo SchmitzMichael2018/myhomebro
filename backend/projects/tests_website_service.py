@@ -1,4 +1,8 @@
+import hashlib
+import hmac
 import io
+import json
+import time
 import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -6,7 +10,7 @@ from PIL import Image
 from pypdf import PdfWriter
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -196,6 +200,28 @@ class WebsiteServiceTests(TestCase):
         self.assertEqual(project.checkout_proposal_fingerprint, kwargs["metadata"]["proposal_fingerprint"])
         self.assertIsNotNone(project.terms_accepted_at)
 
+    @override_settings(WEBSITE_SERVICE_STRIPE_LIVE_ENABLED=False)
+    @patch("stripe.checkout.Session.create")
+    def test_checkout_key_gate_with_live_disabled(self, create_session):
+        for prefix, status in (("sk_test_", 200), ("rk_test_", 200), ("sk_live_", 400), ("rk_live_", 400)):
+            with self.subTest(prefix=prefix), override_settings(STRIPE_SECRET_KEY=f"{prefix}fixture"):
+                project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+                self.prepare_checkout(project, session_id=None)
+                create_session.reset_mock()
+                create_session.return_value = SimpleNamespace(
+                    id=f"cs_test_{project.pk}", url="https://checkout.stripe.test/session"
+                )
+                response = self.client.post(
+                    f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json"
+                )
+                self.assertEqual(response.status_code, status)
+                if status == 200:
+                    create_session.assert_called_once()
+                else:
+                    create_session.assert_not_called()
+                    project.refresh_from_db()
+                    self.assertIsNone(project.stripe_checkout_session_id)
+
     @override_settings(POSTMARK_SERVER_TOKEN="", SUPPORT_EMAIL="support@example.test")
     def test_checkout_webhook_is_idempotent_and_final_approval_never_publishes(self):
         project_data = self.create()
@@ -384,6 +410,65 @@ class WebsiteServiceTests(TestCase):
         project.refresh_from_db()
         self.assertEqual(project.payment_status, "paid")
         self.assertEqual(WebsiteServiceEvent.objects.filter(project=project, event_type="payment_confirmed").count(), 1)
+
+    @override_settings(STRIPE_WEBHOOK_SECRET="whsec_fixture", SUPPORT_EMAIL="support@example.test")
+    @patch("projects.services.website_service.send_postmark_email", return_value=(True, ""))
+    def test_signed_checkout_retries_failed_save_without_duplicate_email(self, send_email):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        other = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        session = self.prepare_checkout(project)
+        self.prepare_checkout(other, session_id="cs_test_other")
+
+        def deliver(session, *, signing_secret=b"whsec_fixture"):
+            payload = json.dumps({
+                "id": "evt_test_website",
+                "object": "event",
+                "type": "checkout.session.completed",
+                "data": {"object": session},
+            }).encode()
+            timestamp = int(time.time())
+            signed_payload = str(timestamp).encode() + b"." + payload
+            digest = hmac.new(signing_secret, signed_payload, hashlib.sha256).hexdigest()
+            return self.client.post(
+                "/api/payments/webhooks/stripe/",
+                payload,
+                content_type="application/json",
+                HTTP_STRIPE_SIGNATURE=f"t={timestamp},v1={digest}",
+            )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(deliver(session, signing_secret=b"invalid").status_code, 400)
+            self.assertEqual(deliver(dict(session, id="cs_test_unmatched")).status_code, 200)
+            with patch.object(WebsiteServiceProject, "save", side_effect=OperationalError("temporary save failure")):
+                self.assertEqual(deliver(session).status_code, 503)
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "checkout")
+        self.assertIsNone(project.paid_at)
+        send_email.assert_not_called()
+        self.assertFalse(WebsiteServiceEvent.objects.filter(project=project).exists())
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(deliver(session).status_code, 200)
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "paid")
+        self.assertEqual(project.stripe_payment_intent_id, session["payment_intent"])
+        paid_at = project.paid_at
+        self.assertIsNotNone(paid_at)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(deliver(session).status_code, 200)
+        project.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual(project.paid_at, paid_at)
+        self.assertEqual(other.payment_status, "checkout")
+        self.assertCountEqual(
+            [call.kwargs["to_email"] for call in send_email.call_args_list],
+            [self.owner.email, "support@example.test"],
+        )
+        self.assertCountEqual(
+            WebsiteServiceEvent.objects.filter(project=project).values_list("event_type", flat=True),
+            ["payment_confirmed", "payment_confirmed_staff"],
+        )
 
     @override_settings(POSTMARK_SERVER_TOKEN="test-token", SUPPORT_EMAIL="support@example.test")
     @patch("projects.services.website_service.send_postmark_email", side_effect=RuntimeError("provider unavailable"))
