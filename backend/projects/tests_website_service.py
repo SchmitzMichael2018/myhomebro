@@ -272,7 +272,7 @@ class WebsiteServiceTests(TestCase):
         url = f"{self.base}{project.pk}/checkout/"
         self.assertEqual(self.client.post(url, {"accept_terms": False}, format="json").status_code, 400)
         create_session.return_value = SimpleNamespace(id="cs_test_website", url="https://checkout.stripe.test/session")
-        response = self.client.post(url, {"accept_terms": True}, format="json")
+        response = self.client.post(url, {"accept_terms": True, "proposal_fingerprint": proposal_fingerprint(project)}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["checkout_url"], create_session.return_value.url)
         kwargs = create_session.call_args.kwargs
@@ -283,6 +283,42 @@ class WebsiteServiceTests(TestCase):
         project.refresh_from_db()
         self.assertEqual(project.stripe_checkout_session_id, "cs_test_website")
         self.assertEqual(project.checkout_proposal_fingerprint, kwargs["metadata"]["proposal_fingerprint"])
+        self.assertIsNotNone(project.terms_accepted_at)
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_website", WEBSITE_SERVICE_STRIPE_LIVE_ENABLED=False)
+    @patch("stripe.checkout.Session.create")
+    @patch("stripe.checkout.Session.retrieve")
+    def test_checkout_requires_fresh_acceptance_after_same_price_revision(self, retrieve_session, create_session):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        self.prepare_checkout(project, session_id=None)
+        url = f"{self.base}{project.pk}/"
+        displayed = self.client.get(url).data
+
+        self.revise_in_admin(project, service_terms="Updated service terms with the same price")
+        revised = self.client.get(url).data
+        self.assertEqual(displayed["quoted_price_cents"], revised["quoted_price_cents"])
+        self.assertNotEqual(displayed["proposal_fingerprint"], revised["proposal_fingerprint"])
+
+        missing = self.client.post(f"{url}checkout/", {"accept_terms": True}, format="json")
+        self.assertEqual(missing.status_code, 400)
+        stale = self.client.post(f"{url}checkout/", {
+            "accept_terms": True, "proposal_fingerprint": displayed["proposal_fingerprint"],
+        }, format="json")
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(stale.data["code"], "proposal_changed")
+        retrieve_session.assert_not_called()
+        create_session.assert_not_called()
+        project.refresh_from_db()
+        self.assertIsNone(project.terms_accepted_at)
+        self.assertIsNone(project.stripe_checkout_session_id)
+
+        create_session.return_value = SimpleNamespace(id="cs_test_fresh", url="https://checkout.stripe.test/fresh")
+        fresh = self.client.post(f"{url}checkout/", {
+            "accept_terms": True, "proposal_fingerprint": revised["proposal_fingerprint"],
+        }, format="json")
+        self.assertEqual(fresh.status_code, 200)
+        project.refresh_from_db()
+        self.assertEqual(project.checkout_proposal_fingerprint, revised["proposal_fingerprint"])
         self.assertIsNotNone(project.terms_accepted_at)
 
     @override_settings(WEBSITE_SERVICE_STRIPE_LIVE_ENABLED=False)
@@ -297,7 +333,7 @@ class WebsiteServiceTests(TestCase):
                     id=f"cs_test_{project.pk}", url="https://checkout.stripe.test/session"
                 )
                 response = self.client.post(
-                    f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json"
+                    f"{self.base}{project.pk}/checkout/", {"accept_terms": True, "proposal_fingerprint": proposal_fingerprint(project)}, format="json"
                 )
                 self.assertEqual(response.status_code, status)
                 if status == 200:
@@ -390,7 +426,7 @@ class WebsiteServiceTests(TestCase):
         project.proposal_sent_at = timezone.now()
         project.save(update_fields=["proposal_deliverables", "proposal_sent_at", "updated_at"])
         create_session.return_value = SimpleNamespace(id="cs_test_new", url="https://checkout.stripe.test/new")
-        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True, "proposal_fingerprint": proposal_fingerprint(project)}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         retrieve_session.assert_not_called()
         create_session.assert_called_once()
@@ -416,8 +452,8 @@ class WebsiteServiceTests(TestCase):
             return SimpleNamespace(id="cs_test_stale", url="https://checkout.stripe.test/stale")
 
         create_session.side_effect = change_proposal
-        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
-        self.assertEqual(response.status_code, 400, response.data)
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True, "proposal_fingerprint": proposal_fingerprint(project)}, format="json")
+        self.assertEqual(response.status_code, 409, response.data)
         project.refresh_from_db()
         self.assertIsNone(project.stripe_checkout_session_id)
         self.assertEqual(project.checkout_proposal_fingerprint, "")
@@ -433,7 +469,7 @@ class WebsiteServiceTests(TestCase):
         project.checkout_attempt_token = "active-attempt"
         project.checkout_attempt_started_at = timezone.now()
         project.save(update_fields=["stripe_checkout_session_id", "checkout_proposal_fingerprint", "checkout_attempt_token", "checkout_attempt_started_at"])
-        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True, "proposal_fingerprint": proposal_fingerprint(project)}, format="json")
         self.assertEqual(response.status_code, 400)
         create_session.assert_not_called()
 
@@ -452,7 +488,7 @@ class WebsiteServiceTests(TestCase):
             return SimpleNamespace(id="cs_orphan", url="https://checkout.stripe.test/orphan")
 
         create_session.side_effect = supersede
-        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True, "proposal_fingerprint": proposal_fingerprint(project)}, format="json")
         self.assertEqual(response.status_code, 400)
         expire_session.assert_called_once_with("cs_orphan")
         project.refresh_from_db()
@@ -465,7 +501,7 @@ class WebsiteServiceTests(TestCase):
         project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
         self.prepare_checkout(project, session_id="cs_open")
         retrieve_session.return_value = SimpleNamespace(id="cs_open", url="https://checkout.stripe.test/open", status="open", payment_status="unpaid")
-        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True}, format="json")
+        response = self.client.post(f"{self.base}{project.pk}/checkout/", {"accept_terms": True, "proposal_fingerprint": proposal_fingerprint(project)}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["checkout_url"], "https://checkout.stripe.test/open")
         create_session.assert_not_called()

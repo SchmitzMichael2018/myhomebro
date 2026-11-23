@@ -14,7 +14,7 @@ from rest_framework.throttling import UserRateThrottle
 from rest_framework.viewsets import ModelViewSet
 
 from projects.models_website_service import WebsiteServiceMaterial, WebsiteServiceProject, WebsiteServiceRequest
-from projects.services.website_service import create_checkout_session, queue_website_notification
+from projects.services.website_service import ProposalChanged, create_checkout_session, proposal_fingerprint, queue_website_notification
 
 TEMPLATES = {"contractor-showcase", "contractor-local", "contractor-premium", "restaurant-food", "restaurant-local", "restaurant-dining"}
 
@@ -58,11 +58,17 @@ class ProjectSerializer(serializers.ModelSerializer):
     requests = RequestSerializer(many=True, read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     checkout_eligible = serializers.SerializerMethodField()
+    proposal_fingerprint = serializers.SerializerMethodField()
 
     class Meta:
         model = WebsiteServiceProject
-        fields = ["id", "business_name", "business_type", "template_id", "current_website", "description", "services", "contact_details", "design_notes", "status", "status_label", "next_step", "preview_url", "live_url", "proposal_deliverables", "service_terms", "refund_terms", "quoted_price_cents", "proposal_sent_at", "terms_accepted_at", "payment_status", "paid_at", "final_approved_at", "checkout_eligible", "created_at", "updated_at", "materials", "requests"]
-        read_only_fields = ["id", "status", "next_step", "preview_url", "live_url", "proposal_deliverables", "service_terms", "refund_terms", "quoted_price_cents", "proposal_sent_at", "terms_accepted_at", "payment_status", "paid_at", "final_approved_at", "checkout_eligible", "created_at", "updated_at"]
+        fields = ["id", "business_name", "business_type", "template_id", "current_website", "description", "services", "contact_details", "design_notes", "status", "status_label", "next_step", "preview_url", "live_url", "proposal_deliverables", "service_terms", "refund_terms", "quoted_price_cents", "proposal_sent_at", "terms_accepted_at", "payment_status", "paid_at", "final_approved_at", "checkout_eligible", "proposal_fingerprint", "created_at", "updated_at", "materials", "requests"]
+        read_only_fields = ["id", "status", "next_step", "preview_url", "live_url", "proposal_deliverables", "service_terms", "refund_terms", "quoted_price_cents", "proposal_sent_at", "terms_accepted_at", "payment_status", "paid_at", "final_approved_at", "checkout_eligible", "proposal_fingerprint", "created_at", "updated_at"]
+
+    def get_proposal_fingerprint(self, obj):
+        if obj.proposal_sent_at and obj.has_complete_proposal:
+            return proposal_fingerprint(obj)
+        return None
 
     def get_checkout_eligible(self, obj):
         return bool(obj.has_complete_proposal and obj.proposal_sent_at and obj.payment_status != "paid")
@@ -110,7 +116,13 @@ class WebsiteServiceProjectViewSet(ModelViewSet):
     def checkout(self, request, pk=None):
         project = self.get_object()
         try:
-            session = create_checkout_session(project, terms_accepted=request.data.get("accept_terms") is True)
+            session = create_checkout_session(
+                project,
+                terms_accepted=request.data.get("accept_terms") is True,
+                accepted_fingerprint=request.data.get("proposal_fingerprint"),
+            )
+        except ProposalChanged as exc:
+            return Response({"detail": str(exc), "code": "proposal_changed"}, status=409)
         except ValueError as exc:
             raise serializers.ValidationError({"detail": str(exc)})
         return Response({"checkout_url": session.url})

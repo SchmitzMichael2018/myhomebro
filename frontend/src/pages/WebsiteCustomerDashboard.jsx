@@ -42,12 +42,13 @@ function Workspace() {
   const [message, setMessage] = useState('');
   const [file, setFile] = useState(null);
   const [uploadKey, setUploadKey] = useState(0);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedFingerprint, setAcceptedFingerprint] = useState(null);
+  const acceptedTerms = Boolean(project?.proposal_fingerprint && acceptedFingerprint === project.proposal_fingerprint);
 
   function select(next) {
     if ((dirty || menuDirty) && !window.confirm('Leave without saving your website changes?')) return;
     setProject(next); setBrief(next ? Object.fromEntries(Object.keys(emptyBrief()).map(key => [key, next[key] || ''])) : emptyBrief(initialTemplate));
-    setDirty(false); setMenuDirty(false); setMessage(''); setFile(null); setUploadKey(key => key + 1); setAcceptedTerms(false); setError(''); setNotice('');
+    setDirty(false); setMenuDirty(false); setMessage(''); setFile(null); setUploadKey(key => key + 1); setAcceptedFingerprint(null); setError(''); setNotice('');
   }
   function receive(next) { setProject(next); setProjects(rows => [next, ...rows.filter(row => row.id !== next.id)]); }
   async function load() {
@@ -85,9 +86,21 @@ function Workspace() {
   }
   async function startCheckout() {
     await run(async () => {
-      const { data } = await api.post(`${endpoint}${project.id}/checkout/`, { accept_terms: acceptedTerms });
-      if (!safeLink(data.checkout_url)) throw new Error('Checkout did not return a secure URL.');
-      window.location.assign(data.checkout_url);
+      try {
+        const { data } = await api.post(`${endpoint}${project.id}/checkout/`, {
+          accept_terms: acceptedTerms,
+          proposal_fingerprint: acceptedFingerprint,
+        });
+        if (!safeLink(data.checkout_url)) throw new Error('Checkout did not return a secure URL.');
+        window.location.assign(data.checkout_url);
+      } catch (err) {
+        if (err.response?.data?.code === 'proposal_changed') {
+          setAcceptedFingerprint(null);
+          const { data } = await api.get(`${endpoint}${project.id}/`);
+          receive(data);
+        }
+        throw err;
+      }
     });
   }
   return h('div', { className: 'wcd', 'data-testid': 'website-customer-dashboard' },
@@ -135,7 +148,7 @@ function Workspace() {
                   h('details', null, h('summary', null, 'Service terms'), h('p', { className: 'wcd-prewrap' }, project.service_terms)),
                   h('details', null, h('summary', null, 'Refund terms'), h('p', { className: 'wcd-prewrap' }, project.refund_terms)),
                   project.payment_status === 'paid' ? h('p', { className: 'wcd-approval' }, '✓ Payment confirmed') : h(React.Fragment, null,
-                    h('label', { className: 'wcd-terms-check' }, h('input', { type: 'checkbox', checked: acceptedTerms, onChange: event => setAcceptedTerms(event.target.checked) }), h('span', null, 'I reviewed and accept the displayed price, deliverables, service terms, and refund terms.')),
+                    h('label', { className: 'wcd-terms-check' }, h('input', { type: 'checkbox', checked: acceptedTerms, onChange: event => setAcceptedFingerprint(event.target.checked ? project.proposal_fingerprint : null) }), h('span', null, 'I reviewed and accept the displayed price, deliverables, service terms, and refund terms.')),
                     h('button', { type: 'button', className: 'wcd-primary', disabled: busy || !acceptedTerms || !project.checkout_eligible, onClick: startCheckout, 'data-testid': 'website-checkout' }, busy ? 'Opening secure checkout…' : 'Continue to secure checkout')))
                 : h(React.Fragment, null, h('p', null, 'We’ll confirm your build price, deliverables, hosting, refund terms, and any ongoing care before checkout is enabled.'), h('small', null, 'Saving or submitting a brief does not charge you.'))))),
           h('div', { className: 'wcd-bottom' },

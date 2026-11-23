@@ -122,13 +122,16 @@ def expire_checkout_for_revision(session_id):
     )
 
 
-def create_checkout_session(project, *, terms_accepted):
+class ProposalChanged(ValueError):
+    def __init__(self):
+        super().__init__("The proposal changed. Review and accept the latest proposal before checkout.")
+
+
+def create_checkout_session(project, *, terms_accepted, accepted_fingerprint):
     if not terms_accepted:
         raise ValueError("Accept the displayed proposal, service terms, and refund terms before checkout.")
-    if project.payment_status == "paid":
-        raise ValueError("This website project is already paid.")
-    if not project.has_complete_proposal or not project.proposal_sent_at:
-        raise ValueError("A complete written proposal is required before checkout.")
+    if not isinstance(accepted_fingerprint, str) or not accepted_fingerprint:
+        raise ValueError("Reload the proposal and accept the displayed terms before checkout.")
 
     stripe_key = _website_checkout_api_key()
 
@@ -139,9 +142,9 @@ def create_checkout_session(project, *, terms_accepted):
         current = WebsiteServiceProject.objects.select_for_update().select_related("owner").get(pk=project.pk)
         if current.payment_status == "paid":
             raise ValueError("This website project is already paid.")
-        if not current.has_complete_proposal or not current.proposal_sent_at:
-            raise ValueError("A complete written proposal is required before checkout.")
         fingerprint = proposal_fingerprint(current)
+        if not current.has_complete_proposal or not current.proposal_sent_at or accepted_fingerprint != fingerprint:
+            raise ProposalChanged()
         checkout_price_cents = current.quoted_price_cents
         checkout_business_name = current.business_name
         checkout_customer_email = str(getattr(current.owner, "email", "") or "") or None
@@ -163,16 +166,18 @@ def create_checkout_session(project, *, terms_accepted):
         session = stripe.checkout.Session.retrieve(reusable_session_id)
         session_status = str(_session_value(session, "status", "") or "").lower()
         session_payment_status = str(_session_value(session, "payment_status", "") or "").lower()
-        if session_status == "open" and session_payment_status != "paid" and _session_value(session, "url"):
-            return session
-        if session_status == "complete" and session_payment_status == "paid":
-            raise ValueError("Payment is complete and awaiting webhook confirmation. Refresh the project shortly.")
         with transaction.atomic():
             current = WebsiteServiceProject.objects.select_for_update().get(pk=project.pk)
             if current.payment_status == "paid":
                 raise ValueError("This website project is already paid.")
+            if proposal_fingerprint(current) != fingerprint:
+                raise ProposalChanged()
             if current.stripe_checkout_session_id != reusable_session_id:
                 raise ValueError("Checkout changed while opening. Refresh the project and try again.")
+            if session_status == "open" and session_payment_status != "paid" and _session_value(session, "url"):
+                return session
+            if session_status == "complete" and session_payment_status == "paid":
+                raise ValueError("Payment is complete and awaiting webhook confirmation. Refresh the project shortly.")
             attempt_token = uuid.uuid4().hex
             current.stripe_checkout_session_id = None
             current.checkout_proposal_fingerprint = ""
@@ -207,7 +212,7 @@ def create_checkout_session(project, *, terms_accepted):
             if current.checkout_attempt_token != attempt_token:
                 raise ValueError("Another checkout replaced this attempt. Use the newest checkout link.")
             if proposal_fingerprint(current) != fingerprint:
-                raise ValueError("The proposal changed while checkout was opening. Review the updated proposal and try again.")
+                raise ProposalChanged()
             current.stripe_checkout_session_id = session.id
             current.checkout_proposal_fingerprint = fingerprint
             current.checkout_attempt_token = ""
