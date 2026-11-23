@@ -8,13 +8,15 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from PIL import Image
 from pypdf import PdfWriter
+from django.contrib.admin import AdminSite
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import OperationalError, transaction
-from django.test import TestCase, override_settings
+from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from projects.admin_website_service import PROPOSAL_FIELDS, REVISION_REVIEW_EVENT, WebsiteServiceProjectAdmin
 from projects.models_website_service import WebsiteServiceEvent, WebsiteServiceMaterial, WebsiteServiceProject
 from projects.services.website_service import proposal_fingerprint, queue_website_notification, send_website_notification, sync_checkout_completed, sync_checkout_unavailable
 
@@ -69,6 +71,89 @@ class WebsiteServiceTests(TestCase):
                 "proposal_fingerprint": project.checkout_proposal_fingerprint,
             },
         }
+
+    def revise_in_admin(self, project, **proposal):
+        model_admin = WebsiteServiceProjectAdmin(WebsiteServiceProject, AdminSite())
+        for field, value in proposal.items():
+            setattr(project, field, value)
+        with patch.object(model_admin, "message_user"):
+            model_admin.save_model(
+                RequestFactory().post("/admin/"), project,
+                SimpleNamespace(changed_data=list(proposal)), change=True,
+            )
+
+    @override_settings(POSTMARK_SERVER_TOKEN="", SUPPORT_EMAIL="")
+    def test_paid_proposal_is_readonly_and_stale_staff_save_preserves_payment(self):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        session = self.prepare_checkout(project)
+        accepted = {field: getattr(project, field) for field in PROPOSAL_FIELDS}
+        self.assertTrue(sync_checkout_completed(session))
+        paid = WebsiteServiceProject.objects.get(pk=project.pk)
+        model_admin = WebsiteServiceProjectAdmin(WebsiteServiceProject, AdminSite())
+        request = RequestFactory().get("/admin/")
+        self.assertTrue(set(PROPOSAL_FIELDS).issubset(model_admin.get_readonly_fields(request, paid)))
+
+        self.revise_in_admin(
+            project, quoted_price_cents=100, proposal_deliverables="Different scope",
+            service_terms="Different service terms", refund_terms="Different refund terms",
+        )
+        project.refresh_from_db()
+        self.assertEqual({field: getattr(project, field) for field in PROPOSAL_FIELDS}, accepted)
+        self.assertEqual(project.proposal_sent_at, paid.proposal_sent_at)
+        self.assertEqual(project.payment_status, "paid")
+        self.assertEqual(project.paid_at, paid.paid_at)
+        self.assertEqual(project.stripe_payment_intent_id, session["payment_intent"])
+        self.assertEqual(project.events.filter(event_type=REVISION_REVIEW_EVENT).count(), 1)
+
+    @override_settings(STRIPE_SECRET_KEY="rk_test_website", WEBSITE_SERVICE_STRIPE_LIVE_ENABLED=False)
+    @patch("stripe.checkout.Session.expire")
+    def test_unpaid_revision_expires_old_checkout_before_replacing_proposal(self, expire):
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        old_session = self.prepare_checkout(project)
+        project.terms_accepted_at = timezone.now()
+        project.save(update_fields=["terms_accepted_at"])
+        expire.return_value = SimpleNamespace(id=old_session["id"], status="expired", payment_status="unpaid")
+
+        self.revise_in_admin(project, quoted_price_cents=200000)
+
+        expire.assert_called_once_with(old_session["id"], api_key="rk_test_website")
+        project.refresh_from_db()
+        self.assertEqual(project.quoted_price_cents, 200000)
+        self.assertEqual(project.payment_status, "checkout")
+        self.assertIsNone(project.stripe_checkout_session_id)
+        self.assertIsNone(project.terms_accepted_at)
+        self.assertFalse(sync_checkout_completed(old_session))
+
+    @override_settings(
+        STRIPE_SECRET_KEY="rk_test_website", WEBSITE_SERVICE_STRIPE_LIVE_ENABLED=False,
+        SUPPORT_EMAIL="support@example.test",
+    )
+    @patch("stripe.checkout.Session.retrieve")
+    @patch("stripe.checkout.Session.expire")
+    @patch("projects.services.website_service.send_postmark_email", return_value=(True, ""))
+    def test_payment_during_revision_keeps_original_proposal_and_flags_review(self, send_email, expire, retrieve):
+        from stripe import InvalidRequestError
+
+        project = WebsiteServiceProject.objects.get(pk=self.create()["id"])
+        session = self.prepare_checkout(project)
+        expire.side_effect = InvalidRequestError("Session is complete", param=None)
+        retrieve.return_value = SimpleNamespace(id=session["id"], status="complete", payment_status="paid")
+
+        self.revise_in_admin(project, quoted_price_cents=200000)
+        self.revise_in_admin(project, quoted_price_cents=200000)
+        project.refresh_from_db()
+        self.assertEqual(project.quoted_price_cents, session["amount_total"])
+        self.assertEqual(project.stripe_checkout_session_id, session["id"])
+        self.assertEqual(project.events.filter(event_type=REVISION_REVIEW_EVENT).count(), 1)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(sync_checkout_completed(session))
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(sync_checkout_completed(session))
+        project.refresh_from_db()
+        self.assertEqual(project.payment_status, "paid")
+        self.assertEqual(project.stripe_payment_intent_id, session["payment_intent"])
+        self.assertEqual(send_email.call_count, 2)
 
     def test_login_required(self):
         self.client.force_authenticate(None)

@@ -89,6 +89,39 @@ def _expire_checkout_session(stripe, session_id):
         return False
 
 
+def _website_checkout_api_key():
+    stripe_key = str(getattr(settings, "STRIPE_SECRET_KEY", "") or "").strip()
+    allow_live = bool(getattr(settings, "WEBSITE_SERVICE_STRIPE_LIVE_ENABLED", False))
+    if not stripe_key or (not stripe_key.startswith(("sk_test_", "rk_test_")) and not allow_live):
+        raise ValueError("Website checkout is unavailable until Stripe test mode is configured.")
+    return stripe_key
+
+
+def expire_checkout_for_revision(session_id):
+    """Confirm the recorded session cannot take payment before replacing its proposal."""
+    import stripe
+
+    try:
+        api_key = _website_checkout_api_key()
+    except ValueError:
+        return False
+
+    try:
+        session = stripe.checkout.Session.expire(session_id, api_key=api_key)
+    except stripe.StripeError:
+        # Expiration can fail if Checkout already completed or already expired.
+        try:
+            session = stripe.checkout.Session.retrieve(session_id, api_key=api_key)
+        except stripe.StripeError:
+            return False
+
+    return (
+        _session_value(session, "id") == session_id
+        and _session_value(session, "status") == "expired"
+        and _session_value(session, "payment_status") == "unpaid"
+    )
+
+
 def create_checkout_session(project, *, terms_accepted):
     if not terms_accepted:
         raise ValueError("Accept the displayed proposal, service terms, and refund terms before checkout.")
@@ -97,10 +130,7 @@ def create_checkout_session(project, *, terms_accepted):
     if not project.has_complete_proposal or not project.proposal_sent_at:
         raise ValueError("A complete written proposal is required before checkout.")
 
-    stripe_key = str(getattr(settings, "STRIPE_SECRET_KEY", "") or "").strip()
-    allow_live = bool(getattr(settings, "WEBSITE_SERVICE_STRIPE_LIVE_ENABLED", False))
-    if not stripe_key or (not stripe_key.startswith(("sk_test_", "rk_test_")) and not allow_live):
-        raise ValueError("Website checkout is unavailable until Stripe test mode is configured.")
+    stripe_key = _website_checkout_api_key()
 
     import stripe
 
