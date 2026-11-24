@@ -31,7 +31,14 @@ User = get_user_model()
 
 @override_settings(CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE=False)
 class ContractorWebsiteBuilderFoundationTests(TestCase):
-    @override_settings(SECURE_SSL_REDIRECT=False, DEPLOYMENT_ENVIRONMENT="production")
+    @override_settings(
+        SECURE_SSL_REDIRECT=False,
+        DEPLOYMENT_ENVIRONMENT="production",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
     def test_only_published_website_has_indexable_metadata_and_sitemap_entry(self):
         website = ContractorWebsite.objects.create(
             contractor=self.contractor,
