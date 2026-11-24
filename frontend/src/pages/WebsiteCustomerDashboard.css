@@ -97,9 +97,25 @@
 .wcd-right .wcd-card { padding: 28px; }
 .wcd-right h2 { font-size: 28px; }
 .wcd-next { background: #f3e6d1; border-color: #dcc6a4; border-top: 4px solid #aa593c; }
-.wcd-next .wcd-eyebrow { color: #854c32; }
+.wcd-next { margin-bottom: 26px; }
+.wcd-responsibilities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 28px; }
+.wcd-responsibilities p { margin: 4px 0 14px; }
+.wcd a.wcd-primary { color: #fff; }
+#wcd-brief, #wcd-proposal { scroll-margin-top: 24px; }
+#wcd-design-help { margin-bottom: 8px; }
+@media (max-width: 560px) {
+  .wcd-responsibilities { grid-template-columns: minmax(0, 1fr); }
+}
 .wcd-next .wcd-primary { margin: 8px 0; }
 .wcd-right a { margin: 6px 0; }
+.wcd-right details { border-top: 1px solid var(--wc-line); padding: 12px 0; }
+.wcd-right summary { cursor: pointer; font-weight: 700; min-height: 44px; }
+.wcd-price { color: var(--wc-ink) !important; font: 700 32px/1.2 Georgia, serif; margin-bottom: 20px; }
+.wcd-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wcd .wcd-terms-check { display: flex; align-items: flex-start; gap: 10px; margin: 18px 0; font-size: 14px; }
+.wcd .wcd-terms-check input { width: 20px; height: 20px; flex: 0 0 auto; margin-top: 2px; accent-color: var(--wc-forest); }
+.wcd .wcd-terms-check span { margin: 0; }
+.wcd-approval { margin: 16px 0 0; padding: 12px; border-radius: 7px; background: #e6efdc; color: #2e4c32 !important; font-weight: 700; }
 .wcd-muted { font-size: 13px; color: var(--wc-muted); }
 .wcd-bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; margin-top: 26px; }
 .wcd-file-input { margin: 24px 0; }
@@ -131,7 +147,6 @@
   .wcd-sidebar { padding: 34px 20px; }
   .wcd-columns { grid-template-columns: minmax(0, 1fr); }
   .wcd-right { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .wcd-next { grid-column: 1 / -1; }
   .wcd-bottom { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {

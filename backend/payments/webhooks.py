@@ -40,6 +40,10 @@ from projects.services.rental_operations_billing import (
     sync_invoice_payment_failed as sync_rental_operations_invoice_payment_failed,
     sync_subscription as sync_rental_operations_subscription,
 )
+from projects.services.website_service import (
+    sync_checkout_completed as sync_website_service_checkout,
+    sync_checkout_unavailable as sync_website_service_checkout_unavailable,
+)
 
 log = logging.getLogger(__name__)
 
@@ -1196,6 +1200,25 @@ def stripe_webhook(request):
                         stripe_onboarding_status="restricted",
                         stripe_status_updated_at=now(),
                     )
+            return HttpResponse(status=200)
+
+        if event_type in (
+            "checkout.session.completed",
+            "checkout.session.async_payment_succeeded",
+            "checkout.session.async_payment_failed",
+            "checkout.session.expired",
+        ) and (data_obj.get("metadata") or {}).get("kind") == "website_service":
+            try:
+                if event_type == "checkout.session.async_payment_failed":
+                    sync_website_service_checkout_unavailable(data_obj, reason="async_payment_failed")
+                elif event_type == "checkout.session.expired":
+                    sync_website_service_checkout_unavailable(data_obj, reason="expired")
+                else:
+                    sync_website_service_checkout(data_obj)
+            except Exception as exc:
+                # Acknowledge only after reconciliation succeeds or rejects the event.
+                log.error("Website Checkout reconciliation failed (%s).", type(exc).__name__)
+                return HttpResponse(status=503)
             return HttpResponse(status=200)
 
         if event_type in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):

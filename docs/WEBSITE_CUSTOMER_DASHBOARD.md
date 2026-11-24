@@ -2,9 +2,9 @@
 
 Customers use `/webdesign/dashboard` and their existing MyHomeBro credentials. The paid-service workspace is separate from the contractor self-service website builder and is available to any authenticated account without creating a contractor profile.
 
-Customers can save a website brief, choose any of the six gallery designs, upload private materials, submit the brief for review, see progress and preview/live links, and send questions or change requests. Customers cannot set production status, publication links, staff responses, or another owner's project. No site is published automatically.
+Customers can save a website brief, choose any of the six gallery designs, upload private materials, submit the brief for review, see progress and preview/live links, and send questions or change requests. After staff posts a complete proposal, the customer can review the price, deliverables, service terms, and refund terms, explicitly accept them, and continue to a separate website-service Stripe Checkout. A paid customer can approve a final preview; approval never publishes automatically. Customers cannot set production status, publication links, staff responses, proposal terms, payment state, or another owner's project.
 
-Staff manage **Website service projects** in Django admin: filter by status, update next steps, add preview/live links, download private materials, and answer/complete customer requests inline. Django admin records staff changes through its normal log. Check this queue regularly; this release does not send email or SMS notifications.
+Staff manage **Website service projects** in Django admin: filter by project/payment status, write proposals, update next steps, add preview/live links, download private materials, and answer/complete customer requests inline. Notification attempts and delivery results are retained with the project. Events include submissions, uploads, requests, proposals, payment confirmation, preview availability, staff responses, and final approval.
 
 ## Deployment
 
@@ -17,7 +17,7 @@ Rollback: restore the previous application/frontend commit and reload, retaining
 
 ## Scope still to build
 
-Website-specific new-customer registration (including restaurant wording), checkout/invoices, maintenance subscriptions, earned website credits, automated notifications, traffic/error reporting, and a richer staff dashboard. Existing customers/contractors can use their current credentials now. This dashboard is a project handoff and collaboration tool; website code changes continue through Codex/GitHub/hosting.
+Website-specific registration wording beyond the universal customer registration flow, downloadable invoices/receipts, maintenance subscriptions, earned website credits, traffic/error reporting, antivirus scanning, and a richer staff dashboard. Existing customers/contractors can use their current credentials now. This dashboard is a project handoff and collaboration tool; website code changes continue through Codex/GitHub/hosting.
 
 ## QA commands
 
