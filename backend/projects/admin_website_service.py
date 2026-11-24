@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
@@ -71,8 +72,21 @@ class PaymentRevisionReviewFilter(admin.SimpleListFilter):
         return queryset
 
 
+class WebsiteServiceProjectForm(forms.ModelForm):
+    class Meta:
+        model = WebsiteServiceProject
+        fields = "__all__"
+        help_texts = {
+            "next_step": "Tell the customer who acts next, what they should do, and when they can expect an update.",
+            "proposal_deliverables": "List the pages, features, and handoff included at this price. Call out any exclusions.",
+            "service_terms": "Confirm timing, customer materials, revision rounds, launch approval, and who pays for hosting, domain, and ongoing care.",
+            "refund_terms": "State how to request cancellation, what is refundable at each stage, and the timing for approved refunds.",
+        }
+
+
 @admin.register(WebsiteServiceProject)
 class WebsiteServiceProjectAdmin(admin.ModelAdmin):
+    form = WebsiteServiceProjectForm
     list_display = ["business_name", "owner", "business_type", "status", "payment_status", "updated_at"]
     list_filter = ["status", "payment_status", "business_type", PaymentRevisionReviewFilter]
     search_fields = ["business_name", "owner__email"]
