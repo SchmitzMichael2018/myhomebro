@@ -37,7 +37,7 @@ from accounts.views import EmailLoginView
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 from .views_frontend import pwa_asset, spa as spa_index
-from .views_seo import canonical_public_redirect, public_improvement_shell, robots_txt, sitemap_xml
+from .views_seo import canonical_public_redirect, public_contractor_website_shell, public_improvement_shell, robots_txt, sitemap_xml
 from .views_health import async_services_readiness
 
 try:
@@ -219,6 +219,11 @@ urlpatterns = [
     # Legal pages
     path("legal/terms-of-service/", TermsOfServiceView.as_view(), name="terms-of-service"),
     path("legal/privacy-policy/", PrivacyPolicyView.as_view(), name="privacy-policy"),
+
+    path("websites/<slug:slug>", public_contractor_website_shell, name="public-contractor-website"),
+    path("websites/<slug:slug>/<slug:page_slug>", public_contractor_website_shell, name="public-contractor-website-page"),
+    path("websites/<slug:slug>/", public_contractor_website_shell),
+    path("websites/<slug:slug>/<slug:page_slug>/", public_contractor_website_shell),
 
     # SPA shell & fallback
     path("", spa_index, name="spa_index"),

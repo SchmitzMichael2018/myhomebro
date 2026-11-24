@@ -102,6 +102,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
     : serviceItems.map((item) => ({ title: item, description: '' }));
   const sections = visibleSections(layout);
   const businessName = identity.business_name || 'this contractor';
+  const businessWebsite = /^https?:\/\//i.test(contact.website_url || '') ? contact.website_url : '';
   const isQaProfile = /(^|\s)qa(\s|$)/i.test(businessName) || /qa[-_.]?contractor/i.test(contact.email_public || '');
   const leadFormEnabled = contact.allow_public_intake !== false && contactBlock.lead_form_enabled !== false;
   const [intakeForm, setIntakeForm] = useState(emptyIntakeForm);
@@ -180,6 +181,11 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
             <div className={`truncate text-xs ${isRemodeler ? 'text-slate-300' : 'text-slate-500'}`}>{serviceArea.service_area_text || [serviceArea.city, serviceArea.state].filter(Boolean).join(', ')}</div>
           </div>
         </div>
+        {businessWebsite ? (
+          <a href={businessWebsite} target="_blank" rel="noopener noreferrer" className="text-sm font-bold underline">
+            Visit business website
+          </a>
+        ) : null}
         <a href="#website-intake" className="rounded-full px-4 py-2 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5" style={{ background: primary }}>
           Start a Project
         </a>

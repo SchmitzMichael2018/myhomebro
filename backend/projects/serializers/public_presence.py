@@ -112,6 +112,11 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at", "public_url"]
 
+    def validate_website_url(self, value):
+        if value and not value.lower().startswith(("http://", "https://")):
+            raise serializers.ValidationError("Enter a website address starting with https:// or http://.")
+        return value
+
     def validate_slug(self, value):
         slug = slugify(value or "").strip("-")
         if not slug:

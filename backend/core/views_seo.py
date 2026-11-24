@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect
 from django.views.decorators.http import require_GET
@@ -74,6 +75,7 @@ def sitemap_xml(request):
             f"{SITE_ORIGIN}/legal/privacy-policy/",
         ]
     )
+    from projects.models import ContractorWebsite
     from projects.models_templates import ProjectTemplate
 
     published = ProjectTemplate.objects.filter(
@@ -98,6 +100,14 @@ def sitemap_xml(request):
         dynamic_entries.append(
             f"<url><loc>{SITE_ORIGIN}/improvements/{category_slug}/</loc>"
             f"<lastmod>{lastmod.date().isoformat()}</lastmod></url>"
+        )
+    published_websites = ContractorWebsite.objects.filter(
+        status=ContractorWebsite.STATUS_PUBLISHED,
+    ).exclude(published_snapshot={}).order_by("public_profile__slug")
+    if settings.DEPLOYMENT_ENVIRONMENT != "staging":
+        urls.extend(
+            f"{SITE_ORIGIN}/websites/{slug}"
+            for slug in published_websites.values_list("public_profile__slug", flat=True)
         )
     entries = "".join(f"<url><loc>{url}</loc></url>" for url in urls) + "".join(dynamic_entries)
     xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>'
@@ -153,3 +163,30 @@ def public_improvement_shell(request, category_slug=None, improvement_slug=None)
             permanent=True,
         )
     raise Http404("Published improvement not found.")
+
+
+@require_GET
+def public_contractor_website_shell(request, slug, page_slug=None):
+    from projects.services.website_builder import public_website_snapshot
+
+    snapshot = public_website_snapshot(slug, page_slug=page_slug)
+    if snapshot is None:
+        raise Http404("Published contractor website not found.")
+    profile = snapshot.get("profile") or {}
+    page = snapshot.get("current_page") or {}
+    business_name = (profile.get("identity") or {}).get("business_name") or slug.replace("-", " ").title()
+    title = page.get("seo_title") or business_name
+    description = page.get("seo_description") or (profile.get("seo") or {}).get("description") or ""
+    canonical_path = f"/websites/{slug}"
+    if page_slug and page.get("page_type") != "home":
+        canonical_path += f"/{page_slug}"
+    indexable = settings.DEPLOYMENT_ENVIRONMENT != "staging"
+    return spa(request, seo_override={
+        **metadata_for_path(request.path),
+        "seo_title": title,
+        "seo_description": description,
+        "seo_social_description": description,
+        "seo_canonical_url": f"{SITE_ORIGIN}{canonical_path}",
+        "seo_robots": "index, follow" if indexable else "noindex, follow",
+        "seo_indexable": indexable,
+    })

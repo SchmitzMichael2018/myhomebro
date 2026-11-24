@@ -32,7 +32,7 @@ export default function WebsiteCustomerDashboard() {
   const location = useLocation();
   if (!getAccessToken()) return h('div', { className: 'wcd-login' },
     h('div', { className: 'wcd-login-note' }, h(Link, { to: '/webdesign' }, '← Web design'), h('strong', null, 'Your website dashboard'), h('span', null, 'Use your existing MyHomeBro account. New here? ', h(Link, { to: `/register?role=customer&next=${encodeURIComponent(location.pathname + location.search)}` }, 'Create an account'))),
-    h(LoginForm, { redirectTo: location.pathname + location.search }));
+    h(LoginForm, { webDesign: true, redirectTo: location.pathname + location.search }));
   return h(Workspace, { key: location.search });
 }
 

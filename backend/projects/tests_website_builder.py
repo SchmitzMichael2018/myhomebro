@@ -31,6 +31,37 @@ User = get_user_model()
 
 @override_settings(CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE=False)
 class ContractorWebsiteBuilderFoundationTests(TestCase):
+    @override_settings(SECURE_SSL_REDIRECT=False, DEPLOYMENT_ENVIRONMENT="production")
+    def test_only_published_website_has_indexable_metadata_and_sitemap_entry(self):
+        website = ContractorWebsite.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            published_snapshot={
+                "profile": {"identity": {"business_name": "Bright Build Co"}},
+                "pages": [{"page_type": "home", "slug": "home", "seo_title": "Bright Build Remodeling"}],
+            },
+        )
+        path = f"/websites/{self.profile.slug}"
+        self.assertEqual(self.client.get(path).status_code, 404)
+        self.assertNotContains(self.client.get("/sitemap.xml"), path)
+
+        website.status = ContractorWebsite.STATUS_PUBLISHED
+        website.save(update_fields=["status"])
+        response = self.client.get(path)
+        self.assertContains(response, "Bright Build Remodeling")
+        self.assertContains(response, 'content="index, follow"')
+        self.assertContains(self.client.get("/sitemap.xml"), path)
+        self.assertEqual(self.client.get(f"{path}/missing").status_code, 404)
+
+        with override_settings(DEPLOYMENT_ENVIRONMENT="staging"):
+            self.assertContains(self.client.get(path), 'content="noindex, follow"')
+            self.assertNotContains(self.client.get("/sitemap.xml"), path)
+
+        website.status = ContractorWebsite.STATUS_PAUSED
+        website.save(update_fields=["status"])
+        self.assertEqual(self.client.get(path).status_code, 404)
+        self.assertNotContains(self.client.get("/sitemap.xml"), path)
+
     def setUp(self):
         self.user = User.objects.create_user(
             email="builder@example.com",

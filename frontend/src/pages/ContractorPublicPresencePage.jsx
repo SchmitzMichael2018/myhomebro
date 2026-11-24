@@ -2607,6 +2607,11 @@ export default function ContractorPublicPresencePage() {
                 <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="business-information-inherited-copy">
                   Some details come from your Company Profile. Changes here only affect your public website and profile.
                 </div>
+                <label className="mt-4 block space-y-1">
+                  <span className="text-sm font-bold text-slate-800">Public business website link</span>
+                  <input type="url" value={profile.website_url || ''} onChange={(event) => setProfile((prev) => ({ ...prev, website_url: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="https://yourcompany.com" />
+                  <span className="block text-xs text-slate-600">Paste the address of your finished website, including a site built by MyHomeBro. Save your changes, then publish or republish to show the link on your MyHomeBro website.</span>
+                </label>
                 <h3 className="mt-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.14em] text-slate-600">Business Details</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <label className="space-y-1">

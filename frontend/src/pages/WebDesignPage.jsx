@@ -92,7 +92,7 @@ export default function WebDesignPage() {
         h('div', { className: 'wd-hero-preview' }, h(TemplateThumbnail, { template: WEBSITE_TEMPLATES[0], featured: true }))),
       h(TemplateGallery),
       h('section', { id: 'process', className: 'wd-container wd-section' },
-        h('div', { className: 'wd-section-heading' }, h('h2', null, 'How your website gets built'), h('p', null, 'You’ll see the what’s included and what it costs before you decide whether to go ahead.')),
+        h('div', { className: 'wd-section-heading' }, h('h2', null, 'How your website gets built'), h('p', null, 'You’ll see what’s included and what it costs before you decide whether to go ahead.')),
         h('ol', { className: 'wd-journey' }, ...[
           ['Send your website request', 'Tell us what your business needs. Pick a design or ask us to help you choose.'],
           ['Review your proposal', 'We confirm the pages, features, timeline, revisions, and any recurring costs.'],

@@ -13,7 +13,7 @@ import { getLoginErrorMessage } from "../lib/loginErrorMessage.js";
 import logo from "../assets/myhomebro_logo.png";
 import PendingEmailVerificationNotice from "./PendingEmailVerificationNotice.jsx";
 
-export default function LoginForm({ redirectTo = "/dashboard" }) {
+export default function LoginForm({ redirectTo = "/dashboard", webDesign = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const emailRef = useRef(null);
@@ -160,7 +160,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
     <main className="flex min-h-[100dvh] items-center justify-center bg-[radial-gradient(circle_at_top_left,_rgba(245,178,30,0.24),_transparent_34%),linear-gradient(145deg,_#06152d,_#0a2b59)] px-4 py-8">
       <section className="w-full max-w-md rounded-3xl border border-white/15 bg-white p-6 shadow-2xl sm:p-8" aria-labelledby="login-title">
         <div className="mb-7 text-center">
-          <Link to="/" className="inline-flex items-center justify-center gap-3" aria-label="MyHomeBro home">
+          <Link to={webDesign ? "/webdesign" : "/"} className="inline-flex items-center justify-center gap-3" aria-label={webDesign ? "MyHomeBro Web Design" : "MyHomeBro home"}>
             <img src={logo} alt="" className="h-14 w-14 rounded-2xl object-cover shadow-lg" />
             <span className="text-2xl font-black tracking-tight text-slate-950">
               MyHome<span className="text-amber-500">Bro</span>
@@ -248,8 +248,8 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
           <Link to="/forgot-password" className="font-semibold text-blue-700 hover:text-blue-800 hover:underline">
             Forgot password?
           </Link>
-          <Link to="/" className="font-semibold text-slate-600 hover:text-slate-900 hover:underline">
-            Back to home
+          <Link to={webDesign ? "/webdesign" : "/"} className="font-semibold text-slate-600 hover:text-slate-900 hover:underline">
+            {webDesign ? "Back to Web Design" : "Back to home"}
           </Link>
         </div>
         <p className="mt-6 text-center text-xs text-slate-500">Secure project access by MyHomeBro</p>
