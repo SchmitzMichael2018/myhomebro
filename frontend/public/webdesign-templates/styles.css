@@ -10,3 +10,80 @@
 /* Optional restaurant dish photos and dashboard-managed live menus. */
 .menu-item.has-photo{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:18px;align-items:start}.menu-dish-photo{width:96px;height:96px;object-fit:cover;border-radius:8px}.menu-preview-photo{width:100%;height:180px;object-fit:cover;border-radius:8px;margin-bottom:18px}.menu-item.has-photo h3{overflow-wrap:anywhere}.menu-preview>.empty-state{grid-column:1/-1}
 @media(max-width:740px){.menu-item.has-photo{grid-template-columns:80px minmax(0,1fr);gap:14px}.menu-dish-photo{width:80px;height:80px}.menu-item.has-photo>strong{grid-column:2}.menu-preview-photo{height:190px}}
+
+/* The preview controls sit outside the sample business website. */
+.template-demo .demo-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 12px 22px;
+  padding: 12px max(20px, 5vw);
+  background: #203e34;
+  color: #fffdf5;
+  font-size: 13px;
+  letter-spacing: normal;
+}
+.template-demo .demo-ribbon div {
+  flex: 1 1 420px;
+}
+.template-demo .demo-ribbon strong {
+  display: block;
+  font-size: 14px;
+}
+.template-demo .demo-ribbon span {
+  display: block;
+  color: #e1eadc;
+}
+.template-demo .demo-ribbon a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+}
+.template-demo .demo-action {
+  padding: 0 16px;
+  border-radius: 6px;
+  background: #f2e3c4;
+  color: #203e34;
+  font-weight: 700;
+  text-decoration: none;
+}
+.template-demo .site-header {
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+}
+.template-demo .hero-image {
+  background: color-mix(in srgb, var(--paper) 82%, var(--ink));
+}
+
+.template-demo .home-page > .hero {
+  margin: 24px auto 0;
+  width: min(93%, 1440px);
+  min-height: 0;
+  border-radius: 22px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--paper) 94%, var(--ink));
+}
+.template-demo .home-page .hero-copy {
+  padding-block: clamp(40px, 7vw, 90px);
+}
+.template-demo .hero-image img {
+  object-position: center;
+}
+.template-demo .home-page .hero-image {
+  min-height: clamp(320px, 45vw, 580px);
+}
+.template-demo .project-card {
+  overflow: hidden;
+  border-radius: 12px;
+}
+.template-demo .highlight {
+  padding-inline: max(20px, 5vw);
+}
+@media (max-width: 680px) {
+  .template-demo .home-page > .hero {
+    margin-top: 14px;
+    border-radius: 14px;
+  }
+  .template-demo .home-page .hero-image {
+    min-height: 260px;
+  }
+}
