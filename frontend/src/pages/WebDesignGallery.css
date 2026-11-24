@@ -11,7 +11,7 @@
   border-radius: 14px;
   background: #fff;
 }
-.wd-template-image {
+.wd-page .wd-template-image {
   position: relative;
   isolation: isolate;
   display: grid;
@@ -98,6 +98,18 @@
 @media (max-width: 900px) {
   .wd-page .wd-header nav > .wd-dashboard-link { display: block; font-size: 11px; }
   .wd-page .wd-header nav { gap: 10px; flex-direction: column; align-items: flex-end; }
+}
+@media (max-width: 800px) {
+  .wd-page .wd-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 32px;
+    padding-bottom: 48px;
+  }
+  .wd-hero-preview { padding: 0; }
+  .wd-hero-preview .wd-template-image {
+    aspect-ratio: 16 / 10;
+    min-height: 230px;
+  }
 }
 @media (max-width: 640px) {
   .wd-gallery-grid, .wd-journey { grid-template-columns: minmax(0, 1fr); }
