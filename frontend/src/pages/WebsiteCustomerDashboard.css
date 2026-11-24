@@ -97,7 +97,15 @@
 .wcd-right .wcd-card { padding: 28px; }
 .wcd-right h2 { font-size: 28px; }
 .wcd-next { background: #f3e6d1; border-color: #dcc6a4; border-top: 4px solid #aa593c; }
-.wcd-next .wcd-eyebrow { color: #854c32; }
+.wcd-next { margin-bottom: 26px; }
+.wcd-responsibilities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 28px; }
+.wcd-responsibilities p { margin: 4px 0 14px; }
+.wcd a.wcd-primary { color: #fff; }
+#wcd-brief, #wcd-proposal { scroll-margin-top: 24px; }
+#wcd-design-help { margin-bottom: 8px; }
+@media (max-width: 560px) {
+  .wcd-responsibilities { grid-template-columns: minmax(0, 1fr); }
+}
 .wcd-next .wcd-primary { margin: 8px 0; }
 .wcd-right a { margin: 6px 0; }
 .wcd-right details { border-top: 1px solid var(--wc-line); padding: 12px 0; }
@@ -139,7 +147,6 @@
   .wcd-sidebar { padding: 34px 20px; }
   .wcd-columns { grid-template-columns: minmax(0, 1fr); }
   .wcd-right { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .wcd-next { grid-column: 1 / -1; }
   .wcd-bottom { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
