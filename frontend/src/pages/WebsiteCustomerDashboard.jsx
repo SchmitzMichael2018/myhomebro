@@ -55,7 +55,7 @@ function Workspace() {
   const [projects, setProjects] = useState([]);
   const [project, setProject] = useState(null);
   const [brief, setBrief] = useState(() => emptyBrief(initialTemplate));
-  const [requestStep, setRequestStep] = useState(0);
+  const [requestStep, setRequestStep] = useState(() => initialTemplate ? 1 : 0);
   const [dirty, setDirty] = useState(false);
   const [menuDirty, setMenuDirty] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -215,7 +215,7 @@ function Workspace() {
                 field('Services, menu, or business description', 'services', { rows: 4, wide: true, placeholder: 'Services and service areas, or menu items, hours, and location.' }),
                 field('Public business contact information', 'contact_details', { rows: 3, wide: true, maxLength: 3000, placeholder: 'The business phone, email, address, and social links you want shown on your website.' }),
                 field('Do you have a color preference? (optional)', 'design_notes', { rows: 3, wide: true, placeholder: 'Tell us your brand colors, colors you like or want to avoid, or write “Help me choose.” You can add other design notes here, too.' }),
-                h('div', { className: 'wcd-wide wcd-actions' }, inRequest && h('button', { type: 'button', className: 'wcd-secondary', onClick: () => goToRequestStep(0) }, 'Back to starting design'), h('button', { className: 'wcd-primary', type: 'submit', 'data-testid': 'website-save-brief' }, busy ? 'Saving…' : inRequest ? 'Save and continue' : 'Save changes'), template && h('a', { href: websiteTemplateDemoUrl(template.id), target: '_blank', rel: 'noopener noreferrer' }, 'View design demo ↗'))))),
+                h('div', { className: 'wcd-wide wcd-actions' }, inRequest && h('button', { type: 'button', className: 'wcd-secondary', onClick: () => goToRequestStep(0) }, 'Change starting design'), h('button', { className: 'wcd-primary', type: 'submit', 'data-testid': 'website-save-brief' }, busy ? 'Saving…' : inRequest ? 'Save and continue' : 'Save changes'), template && h('a', { href: websiteTemplateDemoUrl(template.id), target: '_blank', rel: 'noopener noreferrer' }, 'View design demo ↗'))))),
             !inRequest && h('aside', { className: 'wcd-right' },
               h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, 'YOUR WEBSITE'), h('h2', null, 'Preview & launch'),
                 safeLink(project?.preview_url) ? h('a', { className: 'wcd-secondary', href: project.preview_url, target: '_blank', rel: 'noopener noreferrer' }, 'Open website preview ↗') : h('p', null, 'Your working website preview will appear here when it is ready.'),
