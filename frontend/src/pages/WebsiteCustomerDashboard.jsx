@@ -3,10 +3,23 @@ import { Link, useLocation } from 'react-router-dom';
 import api, { getAccessToken } from '../api';
 import LoginForm from '../components/LoginForm.jsx';
 import { WEBSITE_TEMPLATES, findWebsiteTemplate, websiteTemplateDemoUrl } from '../lib/websiteTemplates.js';
+import designPhoto0 from '../assets/website/gallery-showcase.webp';
+import designPhoto1 from '../assets/website/gallery-local-service.webp';
+import designPhoto2 from '../assets/website/gallery-premium.webp';
+import designPhoto3 from '../assets/website/gallery-food.webp';
+import designPhoto4 from '../assets/website/gallery-dining.webp';
 import './WebsiteCustomerDashboard.css';
 import RestaurantMenuEditor from '../components/RestaurantMenuEditor.jsx';
 
 const h = React.createElement;
+const designPhotos = {
+  'contractor-showcase': designPhoto0,
+  'contractor-local': designPhoto1,
+  'contractor-premium': designPhoto2,
+  'restaurant-food': designPhoto3,
+  'restaurant-local': designPhoto4,
+  'restaurant-dining': designPhoto4,
+};
 const emptyBrief = template => ({ business_name: '', business_type: template?.type === 'Restaurant' ? 'restaurant' : 'contractor', template_id: template?.id || '', current_website: '', description: '', services: '', contact_details: '', design_notes: '' });
 const steps = ['brief', 'review', 'building', 'preview', 'launched', 'maintenance'];
 const labels = ['Your request', 'Review', 'Build', 'Preview', 'Launch', 'After launch'];
@@ -42,6 +55,7 @@ function Workspace() {
   const [projects, setProjects] = useState([]);
   const [project, setProject] = useState(null);
   const [brief, setBrief] = useState(() => emptyBrief(initialTemplate));
+  const [requestStep, setRequestStep] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [menuDirty, setMenuDirty] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -56,7 +70,8 @@ function Workspace() {
 
   function select(next) {
     if ((dirty || menuDirty) && !window.confirm('Leave without saving your website changes?')) return;
-    setProject(next); setBrief(next ? Object.fromEntries(Object.keys(emptyBrief()).map(key => [key, next[key] || ''])) : emptyBrief(initialTemplate));
+    setProject(next); setBrief(next ? Object.fromEntries(Object.keys(emptyBrief()).map(key => [key, next[key] || ''])) : emptyBrief());
+    setRequestStep(0);
     setDirty(false); setMenuDirty(false); setMessage(''); setFile(null); setUploadKey(key => key + 1); setAcceptedFingerprint(null); setError(''); setNotice('');
   }
   function receive(next) { setProject(next); setProjects(rows => [next, ...rows.filter(row => row.id !== next.id)]); }
@@ -87,6 +102,12 @@ function Workspace() {
   const template = findWebsiteTemplate(brief.template_id);
   const proposalReady = Boolean(project?.proposal_sent_at);
   const paymentStatus = project?.payment_status;
+  const inRequest = !project || (project.status === 'brief' && !proposalReady && paymentStatus !== 'paid');
+  const requestSteps = ['Starting design', 'Business details', 'Review & send'];
+  const goToRequestStep = step => {
+    setRequestStep(step);
+    requestAnimationFrame(() => document.getElementById('wcd-request-heading')?.focus());
+  };
   const reviewProposal = proposalReady && !['paid', 'refunded'].includes(paymentStatus);
   const [nextTitle, customerAction, teamAction] = reviewProposal
     ? ['Review your website proposal', 'Check the price, deliverables, and terms before accepting.', 'MyHomeBro will coordinate the build after payment is confirmed.']
@@ -123,43 +144,79 @@ function Workspace() {
     h('div', { className: 'wcd-layout' },
       h('aside', { className: 'wcd-sidebar' }, h('p', { className: 'wcd-eyebrow' }, 'CUSTOMER WORKSPACE'), h('h2', null, 'Your websites'),
         ...projects.map(row => h('button', { key: row.id, type: 'button', disabled: busy, className: project?.id === row.id ? 'wcd-project active' : 'wcd-project', onClick: () => select(row) }, h('strong', null, row.business_name), h('span', null, row.status_label))),
-        h('button', { type: 'button', className: 'wcd-secondary', disabled: busy || loading, onClick: () => select(null) }, '+ New website project'),
-        h('div', { className: 'wcd-sidebar-note' }, h('strong', null, 'From first idea to launch.'), h('p', null, 'Keep your business information, website materials, and feedback together.'))),
+        h('button', { type: 'button', className: 'wcd-secondary', disabled: busy || loading, onClick: () => select(null) }, 'Start a new request'),
+        h('div', { className: 'wcd-sidebar-note' }, h('p', null, 'Use this if you need another website or want to redesign an existing site.'))),
       h('main', { className: 'wcd-main' },
         h('div', { className: 'wcd-title' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, 'LET’S BUILD SOMETHING THAT FITS'), h('h1', null, project?.business_name || 'Your next website starts here.'), h('p', null, project ? 'See what happens next, share files, and review your proposal.' : 'Tell us what your website needs. Save your request to add photos and files.')), h('span', { className: 'wcd-badge' }, project?.status_label || 'New project')),
         error && h('div', { role: 'alert', className: 'wcd-alert' }, error),
         notice && h('div', { role: 'status', className: 'wcd-success' }, notice),
         loading ? h('p', { role: 'status' }, 'Loading your website projects…') : h(React.Fragment, null,
-          h('ol', { className: 'wcd-progress', 'aria-label': 'Website project progress' }, ...labels.map((label, i) => h('li', { key: label, className: i <= currentStep ? 'reached' : '', 'aria-current': i === currentStep ? 'step' : undefined }, h('span', null, String(i + 1).padStart(2, '0')), label))),
-          h('section', { className: 'wcd-card wcd-next', 'aria-labelledby': 'wcd-next-title' },
+          inRequest && h('ol', { className: 'wcd-progress', 'aria-label': 'Website request steps' },
+            ...requestSteps.map((label, index) => h('li', { key: label, className: index <= requestStep ? 'reached' : '', 'aria-current': index === requestStep ? 'step' : undefined }, h('span', null, index + 1), label))),
+          inRequest && requestStep === 0 && h('section', { className: 'wcd-card', 'aria-labelledby': 'wcd-request-heading' },
+            h('h2', { id: 'wcd-request-heading', tabIndex: -1 }, 'Choose a starting design'),
+            h('p', null, 'Use a template as a starting point, or tell us what you need and we’ll help you choose.'),
+            h('fieldset', { className: 'wcd-design-options' },
+              h('legend', null, 'Your design preference'),
+              h('label', { className: 'wcd-design-skip' },
+                h('input', { type: 'radio', name: 'template_id', value: '', checked: !template, onChange: change }),
+                'Help me choose a design'),
+              h('div', { className: 'wcd-design-grid' }, ...WEBSITE_TEMPLATES.map(row =>
+                h('div', { className: 'wcd-design-card', key: row.id },
+                  h('img', { src: designPhotos[row.id], alt: '', loading: 'lazy' }),
+                  h('div', null,
+                    h('label', null,
+                      h('input', { type: 'radio', name: 'template_id', value: row.id, checked: template?.id === row.id, onChange: change }),
+                      h('strong', null, row.name)),
+                    h('p', null, row.description),
+                    h('a', { href: websiteTemplateDemoUrl(row.id), target: '_blank', rel: 'noopener noreferrer' }, 'View example')))))),
+            template && h('p', { role: 'status' }, h('strong', null, `Selected design: ${template.name}`)),
+            h('div', { className: 'wcd-actions' },
+              h('button', { type: 'button', className: 'wcd-primary', onClick: () => goToRequestStep(1) }, 'Continue to business details'))),
+          inRequest && requestStep === 2 && h('section', { className: 'wcd-card', 'aria-labelledby': 'wcd-request-heading' },
+            h('h2', { id: 'wcd-request-heading', tabIndex: -1 }, 'Review your request'),
+            h('dl', null, ...[
+              ['Starting design', template?.name || 'Help me choose'], ['Business name', brief.business_name],
+              ['Business type', { contractor: 'Contractor', restaurant: 'Restaurant', other: 'Other business' }[brief.business_type]],
+              ['Current website', brief.current_website], ['Website goals', brief.description], ['About your business', brief.services],
+              ['Public business contact information', brief.contact_details], ['Other requests', brief.design_notes],
+            ].filter(([, value]) => value).map(([label, value]) => h('div', { key: label }, h('dt', null, h('strong', null, label)), h('dd', { className: 'wcd-prewrap' }, value)))),
+            h('p', null, 'MyHomeBro will review your details and send a proposal with the scope and price.'),
+            h('div', { className: 'wcd-actions' },
+              h('button', { type: 'button', className: 'wcd-secondary', disabled: busy, onClick: () => goToRequestStep(1) }, 'Edit business details'),
+              h('button', { type: 'button', className: 'wcd-primary', disabled: busy || dirty || !project, onClick: () => run(async () => {
+                const { data } = await api.post(`${endpoint}${project.id}/submit/`);
+                receive(data); setNotice('Your website request was sent to MyHomeBro for review.');
+              }) }, 'Send website request'))),
+          !inRequest && h('ol', { className: 'wcd-progress', 'aria-label': 'Website project progress' }, ...labels.map((label, i) => h('li', { key: label, className: i <= currentStep ? 'reached' : '', 'aria-current': i === currentStep ? 'step' : undefined }, h('span', null, String(i + 1).padStart(2, '0')), label))),
+          !inRequest && h('section', { className: 'wcd-card wcd-next', 'aria-labelledby': 'wcd-next-title' },
             h('h2', { id: 'wcd-next-title' }, nextTitle),
             h('div', { className: 'wcd-responsibilities' },
               h('div', null, h('strong', null, 'Your part'), h('p', null, customerAction)),
               h('div', null, h('strong', null, 'MyHomeBro’s part'), h('p', null, teamAction))),
             project?.next_step && h('p', null, project.next_step),
             h('div', { className: 'wcd-actions' },
-              reviewProposal && h('a', { className: 'wcd-primary', href: '#wcd-proposal' }, 'Go to proposal'),
-              !reviewProposal && project?.status === 'brief' && h('button', { className: 'wcd-primary', disabled: busy || dirty, onClick: () => run(async () => { const { data } = await api.post(`${endpoint}${project.id}/submit/`); receive(data); setNotice('Your website request was sent to MyHomeBro for review.'); }) }, 'Send request for review'),
-              !project && h('a', { href: '#wcd-brief', className: 'wcd-primary' }, 'Start your website request'),
-              !proposalReady && project?.status === 'brief' && dirty && h('small', null, 'Save your changes before sending your request.')),
-            !proposalReady && (!project || project.status === 'brief') && h('small', null, 'Saving or sending your request is free. You’ll review a proposal before payment.')),
+              reviewProposal && h('a', { className: 'wcd-primary', href: '#wcd-proposal' }, 'Go to proposal'))),
           project?.business_type === 'restaurant' && h(RestaurantMenuEditor, { key: project.id, projectId: project.id, onDirtyChange: setMenuDirty }),
           h('div', { className: 'wcd-columns' },
-            h('section', { className: 'wcd-card', id: 'wcd-brief' }, h('div', { className: 'wcd-card-heading' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, '01 / THE FOUNDATION'), h('h2', null, 'Your website request')), h('span', { className: 'wcd-muted' }, dirty ? 'Unsaved changes' : project ? 'Saved' : 'Not saved yet')),
+            (!inRequest || requestStep === 1) && h('section', { className: 'wcd-card', id: 'wcd-brief' }, h('div', { className: 'wcd-card-heading' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, '01 / THE FOUNDATION'), h('h2', { id: 'wcd-request-heading', tabIndex: -1 }, inRequest ? 'Tell us about your business' : 'Your website request')), h('span', { className: 'wcd-muted' }, dirty ? 'Unsaved changes' : project ? 'Saved' : 'Not saved yet')),
+              inRequest && h('p', null, template ? `Selected design: ${template.name}` : 'Design preference: Help me choose'),
               h('form', { onSubmit: event => { event.preventDefault(); run(async () => {
                 const { data } = project ? await api.patch(`${endpoint}${project.id}/`, brief) : await api.post(endpoint, brief);
-                receive(data); setDirty(false); setNotice('Your website request was saved.');
+                receive(data); setDirty(false);
+                if (inRequest) goToRequestStep(2);
+                else setNotice('Your website request was saved.');
               }); } }, h('fieldset', { disabled: busy, className: 'wcd-fields' },
                 field('Business name', 'business_name', { required: true, maxLength: 180 }),
                 h('label', null, h('span', null, 'Business type'), h('select', { name: 'business_type', value: brief.business_type, onChange: change, disabled: menuDirty }, ...[['contractor', 'Contractor'], ['restaurant', 'Restaurant'], ['other', 'Other business']].map(([value, title]) => h('option', { key: value, value }, title)))),
-                h('label', { className: 'wcd-wide' }, h('span', null, 'Starting design'), h('small', { id: 'wcd-design-help' }, 'Demos show sample businesses. We’ll tailor the design to your brand, content, and agreed features.'), h('select', { name: 'template_id', 'aria-describedby': 'wcd-design-help', value: brief.template_id, onChange: change }, h('option', { value: '' }, 'Help me choose'), ...WEBSITE_TEMPLATES.map(row => h('option', { key: row.id, value: row.id }, `${row.type} — ${row.name}`)))),
+                !inRequest && h('label', { className: 'wcd-wide' }, h('span', null, 'Starting design'), h('small', { id: 'wcd-design-help' }, 'Demos show sample businesses. We’ll tailor the design to your brand, content, and agreed features.'), h('select', { name: 'template_id', 'aria-describedby': 'wcd-design-help', value: brief.template_id, onChange: change }, h('option', { value: '' }, 'Help me choose'), ...WEBSITE_TEMPLATES.map(row => h('option', { key: row.id, value: row.id }, `${row.type} — ${row.name}`)))),
                 field('Current website (optional)', 'current_website', { type: 'url', placeholder: 'https://', wide: true, maxLength: 200 }),
                 field('What do you want your website to do?', 'description', { rows: 4, wide: true, placeholder: 'New website or updates? Tell us your goals, preferred pages, and what customers should be able to do.' }),
                 field('Services, menu, or business description', 'services', { rows: 4, wide: true, placeholder: 'Services and service areas, or menu items, hours, and location.' }),
                 field('Public business contact information', 'contact_details', { rows: 3, wide: true, maxLength: 3000, placeholder: 'The business phone, email, address, and social links you want shown on your website.' }),
                 field('Look, feel, and other requests', 'design_notes', { rows: 3, wide: true, placeholder: 'Colors, reference websites, features, timing, budget, and maintenance preferences. Please do not share passwords.' }),
-                h('div', { className: 'wcd-wide wcd-actions' }, h('button', { className: 'wcd-primary', type: 'submit', 'data-testid': 'website-save-brief' }, busy ? 'Saving…' : project ? 'Save changes' : 'Save request'), template && h('a', { href: websiteTemplateDemoUrl(template.id), target: '_blank', rel: 'noopener noreferrer' }, 'View design demo ↗'))))),
-            h('aside', { className: 'wcd-right' },
+                h('div', { className: 'wcd-wide wcd-actions' }, inRequest && h('button', { type: 'button', className: 'wcd-secondary', onClick: () => goToRequestStep(0) }, 'Back to starting design'), h('button', { className: 'wcd-primary', type: 'submit', 'data-testid': 'website-save-brief' }, busy ? 'Saving…' : inRequest ? 'Save and continue' : 'Save changes'), template && h('a', { href: websiteTemplateDemoUrl(template.id), target: '_blank', rel: 'noopener noreferrer' }, 'View design demo ↗'))))),
+            !inRequest && h('aside', { className: 'wcd-right' },
               h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, 'YOUR WEBSITE'), h('h2', null, 'Preview & launch'),
                 safeLink(project?.preview_url) ? h('a', { className: 'wcd-secondary', href: project.preview_url, target: '_blank', rel: 'noopener noreferrer' }, 'Open website preview ↗') : h('p', null, 'Your working website preview will appear here when it is ready.'),
                 safeLink(project?.live_url) && h('a', { className: 'wcd-secondary', href: project.live_url, target: '_blank', rel: 'noopener noreferrer' }, 'Visit live website ↗'),
