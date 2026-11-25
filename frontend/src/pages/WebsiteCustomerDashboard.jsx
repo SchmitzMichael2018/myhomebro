@@ -103,6 +103,7 @@ function Workspace() {
     h(options.rows ? 'textarea' : 'input', { name, value: brief[name], onChange: change, maxLength: 8000, ...options, wide: undefined }));
   const currentStep = Math.max(0, steps.indexOf(project?.status || 'brief'));
   const template = findWebsiteTemplate(brief.template_id);
+  const savedTemplate = findWebsiteTemplate(project?.template_id);
   const proposalReady = Boolean(project?.proposal_sent_at);
   const paymentStatus = project?.payment_status;
   const inRequest = !project || (project.status === 'brief' && !proposalReady && paymentStatus !== 'paid');
@@ -192,6 +193,9 @@ function Workspace() {
                 const { data } = await api.post(`${endpoint}${project.id}/submit/`);
                 receive(data); setNotice('Your website request was sent to MyHomeBro for review.');
               }) }, 'Send website request'))),
+          !inRequest && savedTemplate && h('section', { className: 'wcd-card', 'aria-labelledby': 'wcd-selected-template' },
+            h('h2', { id: 'wcd-selected-template' }, `Selected template: ${savedTemplate.name}`),
+            h('p', null, h('a', { href: websiteTemplateDemoUrl(savedTemplate.id), target: '_blank', rel: 'noopener noreferrer' }, `View ${savedTemplate.name} example website ↗`))),
           !inRequest && h('ol', { className: 'wcd-progress', 'aria-label': 'Website project progress' }, ...labels.map((label, i) => h('li', { key: label, className: i <= currentStep ? 'reached' : '', 'aria-current': i === currentStep ? 'step' : undefined }, h('span', null, String(i + 1).padStart(2, '0')), label))),
           !inRequest && h('section', { className: 'wcd-card wcd-next', 'aria-labelledby': 'wcd-next-title' },
             h('h2', { id: 'wcd-next-title' }, nextTitle),
@@ -220,7 +224,7 @@ function Workspace() {
                 field('Services, menu, or business description', 'services', { rows: 4, wide: true, placeholder: 'Services and service areas, or menu items, hours, and location.' }),
                 field('Public business contact information', 'contact_details', { rows: 3, wide: true, maxLength: 3000, placeholder: 'The business phone, email, address, and social links you want shown on your website.' }),
                 field('Do you have a color preference? (optional)', 'design_notes', { rows: 3, wide: true, placeholder: 'Tell us your brand colors, colors you like or want to avoid, or write “Help me choose.” You can add other design notes here, too.' }),
-                h('div', { className: 'wcd-wide wcd-actions' }, inRequest && h('button', { type: 'button', className: 'wcd-secondary', onClick: () => goToRequestStep(0) }, 'Change starting design'), h('button', { className: 'wcd-primary', type: 'submit', 'data-testid': 'website-save-brief' }, busy ? 'Saving…' : inRequest ? 'Save and continue' : 'Save changes'), template && h('a', { href: websiteTemplateDemoUrl(template.id), target: '_blank', rel: 'noopener noreferrer' }, 'View design demo ↗'))))),
+                h('div', { className: 'wcd-wide wcd-actions' }, inRequest && h('button', { type: 'button', className: 'wcd-secondary', onClick: () => goToRequestStep(0) }, 'Change starting design'), h('button', { className: 'wcd-primary', type: 'submit', 'data-testid': 'website-save-brief' }, busy ? 'Saving…' : inRequest ? 'Save and continue' : 'Save changes'), inRequest && template && h('a', { href: websiteTemplateDemoUrl(template.id), target: '_blank', rel: 'noopener noreferrer' }, 'View design demo ↗'))))),
             !inRequest && h('aside', { className: 'wcd-right' },
               h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, 'YOUR WEBSITE'), h('h2', null, 'Preview & launch'),
                 safeLink(project?.preview_url) ? h('a', { className: 'wcd-secondary', href: project.preview_url, target: '_blank', rel: 'noopener noreferrer' }, 'Open website preview ↗') : h('p', null, 'Your working website preview will appear here when it is ready.'),
