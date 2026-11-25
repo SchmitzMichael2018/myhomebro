@@ -12,6 +12,8 @@ import './WebsiteCustomerDashboard.css';
 import RestaurantMenuEditor from '../components/RestaurantMenuEditor.jsx';
 
 const h = React.createElement;
+const requestStatusLabels = { brief: 'Preparing your request', review: 'Request under review' };
+const projectStatusLabel = project => requestStatusLabels[project.status] || project.status_label;
 const workspaceFollowUp = 'After you send your request, you can upload logos, photos, and documents, ask questions, and request changes in your project workspace.';
 const designPhotos = {
   'contractor-showcase': designPhoto0,
@@ -143,12 +145,12 @@ function Workspace() {
   return h('div', { className: 'wcd', 'data-testid': 'website-customer-dashboard' },
     h('header', { className: 'wcd-header' }, h(Link, { to: '/webdesign', className: 'wcd-brand' }, 'MyHomeBro', h('span', null, 'WEB DESIGN')), h('nav', null, h(Link, { to: '/webdesign#templates' }, 'Template gallery'), h(Link, { to: '/app' }, 'MyHomeBro account'))),
     h('div', { className: 'wcd-layout' },
-      h('aside', { className: 'wcd-sidebar' }, h('p', { className: 'wcd-eyebrow' }, 'CUSTOMER WORKSPACE'), h('h2', null, 'Your websites'),
-        ...projects.map(row => h('button', { key: row.id, type: 'button', disabled: busy, className: project?.id === row.id ? 'wcd-project active' : 'wcd-project', onClick: () => select(row) }, h('strong', null, row.business_name), h('span', null, row.status_label))),
+      h('aside', { className: 'wcd-sidebar' }, h('p', { className: 'wcd-workspace-label' }, 'Customer workspace'), h('h2', null, 'Your websites'),
+        ...projects.map(row => h('button', { key: row.id, type: 'button', disabled: busy, className: project?.id === row.id ? 'wcd-project active' : 'wcd-project', onClick: () => select(row) }, h('strong', null, row.business_name), h('span', null, projectStatusLabel(row)))),
         h('button', { type: 'button', className: 'wcd-secondary', disabled: busy || loading, onClick: () => select(null) }, 'Start a new request'),
         h('div', { className: 'wcd-sidebar-note' }, h('p', null, 'Use this if you need another website or want to redesign an existing site.'))),
       h('main', { className: 'wcd-main' },
-        h('div', { className: 'wcd-title' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, 'LET’S BUILD SOMETHING THAT FITS'), h('h1', null, project?.business_name || 'Your next website starts here.'), h('p', null, project ? 'See what happens next, share files, and review your proposal.' : 'Tell us what your website needs. Save your request to add photos and files.')), h('span', { className: 'wcd-badge' }, project?.status_label || 'New project')),
+        h('div', { className: 'wcd-title' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, 'LET’S BUILD SOMETHING THAT FITS'), h('h1', null, project?.business_name || 'Your next website starts here.'), h('p', null, project ? 'See what happens next, share files, and review your proposal.' : 'Tell us what your website needs. Save your request to add photos and files.')), h('span', { className: 'wcd-badge' }, project ? projectStatusLabel(project) : 'New request')),
         error && h('div', { role: 'alert', className: 'wcd-alert' }, error),
         notice && h('div', { role: 'status', className: 'wcd-success' }, notice),
         loading ? h('p', { role: 'status' }, 'Loading your website projects…') : h(React.Fragment, null,

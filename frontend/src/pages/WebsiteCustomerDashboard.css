@@ -194,3 +194,5 @@
 .wcd-design-card img { aspect-ratio: 16 / 9; display: block; object-fit: cover; width: 100%; }
 .wcd-design-card > div { padding: .85rem; }
 .wcd-design-options input[type=radio] { appearance: auto; accent-color: #23493c; margin-inline-end: .45rem; width: auto; }
+
+.wcd-sidebar .wcd-workspace-label { font-size: 1.25rem; font-weight: 700; line-height: 1.25; margin: 0 0 .6rem; }
