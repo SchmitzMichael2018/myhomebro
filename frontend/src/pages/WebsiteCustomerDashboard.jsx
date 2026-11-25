@@ -181,7 +181,7 @@ function Workspace() {
               ['Current website', brief.current_website], ['Website goals', brief.description], ['About your business', brief.services],
               ['Public business contact information', brief.contact_details], ['Color preferences and design notes', brief.design_notes],
             ].filter(([, value]) => value).map(([label, value]) => h('div', { key: label }, h('dt', null, h('strong', null, label)), h('dd', { className: 'wcd-prewrap' }, value)))),
-            h('p', null, 'MyHomeBro will review your details and send a proposal with the scope and price.'),
+            h('p', null, 'MyHomeBro will review your details and send a proposal with the scope and price. After sending your request, you can upload files and ask questions in your project workspace.'),
             h('div', { className: 'wcd-actions' },
               h('button', { type: 'button', className: 'wcd-secondary', disabled: busy, onClick: () => goToRequestStep(1) }, 'Edit business details'),
               h('button', { type: 'button', className: 'wcd-primary', disabled: busy || dirty || !project, onClick: () => run(async () => {
@@ -197,7 +197,7 @@ function Workspace() {
             project?.next_step && h('p', null, project.next_step),
             h('div', { className: 'wcd-actions' },
               reviewProposal && h('a', { className: 'wcd-primary', href: '#wcd-proposal' }, 'Go to proposal'))),
-          project?.business_type === 'restaurant' && h(RestaurantMenuEditor, { key: project.id, projectId: project.id, onDirtyChange: setMenuDirty }),
+          !inRequest && project?.business_type === 'restaurant' && h(RestaurantMenuEditor, { key: project.id, projectId: project.id, onDirtyChange: setMenuDirty }),
           h('div', { className: 'wcd-columns' },
             (!inRequest || requestStep === 1) && h('section', { className: 'wcd-card', id: 'wcd-brief' }, h('div', { className: 'wcd-card-heading' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, '01 / THE FOUNDATION'), h('h2', { id: 'wcd-request-heading', tabIndex: -1 }, inRequest ? 'Tell us about your business' : 'Your website request')), h('span', { className: 'wcd-muted' }, dirty ? 'Unsaved changes' : project ? 'Saved' : 'Not saved yet')),
               inRequest && h('p', null, template ? `Selected design: ${template.name}` : 'Design preference: Help me choose'),
@@ -233,7 +233,7 @@ function Workspace() {
                     h('label', { className: 'wcd-terms-check' }, h('input', { type: 'checkbox', checked: acceptedTerms, onChange: event => setAcceptedFingerprint(event.target.checked ? project.proposal_fingerprint : null) }), h('span', null, 'I reviewed and accept the price, what’s included, and the website service and refund terms.')),
                     h('button', { type: 'button', className: 'wcd-primary', disabled: busy || !acceptedTerms || !project.checkout_eligible, onClick: startCheckout, 'data-testid': 'website-checkout' }, busy ? 'Opening secure checkout…' : 'Continue to Stripe to pay')))
                 : h(React.Fragment, null, h('p', null, 'We’ll confirm what’s included, the price, hosting costs, refund terms, and any ongoing support before you can pay.'), h('small', null, 'You’ll only pay if you accept a proposal and complete payment.'))))),
-          h('div', { className: 'wcd-bottom' },
+          !inRequest && h('div', { className: 'wcd-bottom' },
             h('section', { className: 'wcd-card' }, h('p', { className: 'wcd-eyebrow' }, '02 / YOUR MATERIALS'), h('h2', null, 'Photos, logos & documents'), h('p', null, 'Share photos you own or have permission to use. JPG, PNG, WebP, or PDF; up to 5 MB each and 20 files per project. Files are private to your account and the MyHomeBro team.'),
               project ? h(React.Fragment, null,
                 h('ul', { className: 'wcd-file-list' }, ...(project.materials || []).map(material => h('li', { key: material.id }, h('span', null, material.original_name, h('small', null, `${Math.ceil(material.size / 1024)} KB`)), h('button', { type: 'button', disabled: busy, onClick: () => download(material) }, 'Download')))),
