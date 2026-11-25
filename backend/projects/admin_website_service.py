@@ -3,12 +3,15 @@ from datetime import timedelta
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.db import transaction
-from django.http import FileResponse
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.text import slugify
 
 from .models_website_service import WebsiteServiceEvent, WebsiteServiceMaterial, WebsiteServiceProject, WebsiteServiceRequest
 from .services.website_service import expire_checkout_for_revision, queue_website_notification
@@ -21,6 +24,14 @@ PAYMENT_FIELDS = (
     "stripe_payment_intent_id",
 )
 REVISION_REVIEW_EVENT = "payment_revision_review"
+TEMPLATE_NAMES = {
+    "contractor-showcase": "Project Showcase",
+    "contractor-local": "Local Service",
+    "contractor-premium": "Premium Builder",
+    "restaurant-food": "Food First",
+    "restaurant-local": "Neighborhood Favorite",
+    "restaurant-dining": "Dining Experience",
+}
 
 
 class WebsiteRequestInline(admin.TabularInline):
@@ -87,6 +98,7 @@ class WebsiteServiceProjectForm(forms.ModelForm):
 @admin.register(WebsiteServiceProject)
 class WebsiteServiceProjectAdmin(admin.ModelAdmin):
     form = WebsiteServiceProjectForm
+    change_list_template = "admin/projects/website_service_change_list.html"
     list_display = ["business_name", "owner", "business_type", "status", "payment_status", "updated_at"]
     list_filter = ["status", "payment_status", "business_type", PaymentRevisionReviewFilter]
     search_fields = ["business_name", "owner__email"]
@@ -175,7 +187,48 @@ class WebsiteServiceProjectAdmin(admin.ModelAdmin):
                     queue_website_notification(form.instance, "request_updated", "Your website request was updated", request_form.instance.response or "The status of your request changed. See the dashboard for details.", "customer")
 
     def get_urls(self):
-        return [path("materials/<int:material_id>/download/", self.admin_site.admin_view(self.download_material), name="website-service-material-download")] + super().get_urls()
+        return [
+            path("workspace/", self.admin_site.admin_view(self.workspace), name="website-service-workspace"),
+            path(
+                "workspace/<int:project_id>/",
+                self.admin_site.admin_view(self.workspace),
+                name="website-service-workspace-project",
+            ),
+            path(
+                "materials/<int:material_id>/download/",
+                self.admin_site.admin_view(self.download_material),
+                name="website-service-material-download",
+            ),
+        ] + super().get_urls()
+
+    def workspace(self, request, project_id=None):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        submitted = self.get_queryset(request).exclude(status="brief").select_related("owner")
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Web Design staff workspace",
+        }
+        if project_id is None:
+            query = request.GET.get("q", "").strip()
+            results, distinct = self.get_search_results(request, submitted, query)
+            if distinct:
+                results = results.distinct()
+            context.update(query=query, page=Paginator(results, 25).get_page(request.GET.get("page")))
+        else:
+            project = get_object_or_404(submitted, pk=project_id)
+            if not self.has_view_permission(request, project):
+                raise Http404
+            template_name = TEMPLATE_NAMES.get(project.template_id)
+            slug = slugify(project.business_name).replace("_", "-")[:60]
+            slug = "-".join(part for part in slug.split("-") if part) or "website"
+            context.update(
+                project=project,
+                template_name=template_name,
+                build_slug=f"{slug}-{project.pk}",
+                can_edit=self.has_change_permission(request, project),
+            )
+        return TemplateResponse(request, "admin/projects/website_service_workspace.html", context)
 
     def download_material(self, request, material_id):
         material = get_object_or_404(WebsiteServiceMaterial.objects.select_related("project"), pk=material_id)

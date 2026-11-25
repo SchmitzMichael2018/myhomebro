@@ -1,0 +1,127 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .website-workspace { max-width: 1120px; }
+  .website-workspace h2 { font-size: 1.35rem; margin: 0 0 12px; }
+  .website-workspace p { overflow-wrap: anywhere; }
+  .website-workspace dt { font-weight: 700; margin-top: 16px; }
+  .website-workspace dd { margin: 4px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .website-workspace pre { overflow: auto; padding: 12px; background: var(--darkened-bg); }
+  .website-workspace .summary { padding: 20px; background: var(--darkened-bg); border-radius: 10px; margin-bottom: 18px; }
+  .website-workspace .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; align-items: start; }
+  .website-workspace section { border: 1px solid var(--border-color); padding: 18px; border-radius: 10px; min-width: 0; }
+  .website-workspace table { width: 100%; }
+  .website-workspace .table-scroll { overflow: auto; margin: 16px 0; }
+  .website-workspace nav { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a> &rsaquo;
+  {% if project %}<a href="{% url 'admin:website-service-workspace' %}">Web Design workspace</a> &rsaquo; {{ project.business_name }}
+  {% else %}Web Design workspace{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="website-workspace">
+{% if project %}
+  <div class="summary">
+    <h2>{{ project.business_name }}</h2>
+    <p>{{ project.get_business_type_display }} · {% if project.status == "review" %}Request under review{% else %}{{ project.get_status_display }}{% endif %}</p>
+    {% if can_edit %}
+      <a class="button" href="{% url 'admin:projects_websiteserviceproject_change' project.pk %}">Manage proposal, preview and replies</a>
+    {% endif %}
+  </div>
+  <div class="cards">
+    <section>
+      <h2>Submitted request</h2>
+      <dl>
+        <dt>Customer account</dt><dd>{{ project.owner.email|default:"Email unavailable" }}</dd>
+        <dt>About the business</dt><dd>{{ project.description|default:"No description provided" }}</dd>
+        <dt>Services or offerings</dt><dd>{{ project.services|default:"No services provided" }}</dd>
+        <dt>Business contact details</dt><dd>{{ project.contact_details|default:"No contact details provided" }}</dd>
+        <dt>Existing website</dt><dd>{{ project.current_website|default:"No website provided" }}</dd>
+        <dt>Design notes and color preferences</dt><dd>{{ project.design_notes|default:"No design notes provided" }}</dd>
+      </dl>
+    </section>
+    <section>
+      <h2>Design and build</h2>
+      {% if template_name %}
+        <p><strong>Selected template · {{ template_name }}</strong></p>
+        <p><a href="/static/webdesign-templates/demo.html?template={{ project.template_id|urlencode }}">View example website</a></p>
+        {% if can_edit %}
+        <details>
+          <summary>Start a template build</summary>
+          <p>Run this from the MyHomeBro checkout to create a separate starter site, then customize its content, colors and photos.</p>
+          <pre>node scripts/create-customer-website.mjs {{ project.template_id }} {{ build_slug }}</pre>
+        </details>
+        {% endif %}
+      {% elif project.template_id %}
+        <p>Saved design reference · {{ project.template_id }}</p>
+        <p>Confirm the starting design with the customer.</p>
+      {% else %}
+        <p>The customer asked for help choosing a design. Use their business details to propose a starting point or plan a custom layout.</p>
+      {% endif %}
+    </section>
+    <section>
+      <h2>Proposal and customer preview</h2>
+      <dl>
+        <dt>Proposal</dt><dd>{% if project.proposal_sent_at %}Sent {{ project.proposal_sent_at|date:"M j, Y" }}{% else %}Awaiting scope and price{% endif %}</dd>
+        <dt>Preview URL</dt><dd>{{ project.preview_url|default:"Awaiting a preview" }}</dd>
+        <dt>Customer approval</dt><dd>{% if project.final_approved_at %}Approved {{ project.final_approved_at|date:"M j, Y" }}{% else %}Pending{% endif %}</dd>
+      </dl>
+    </section>
+    <section>
+      <h2>Files and customer messages</h2>
+      <h3>Uploaded files</h3>
+      <ul>
+        {% for material in project.materials.all %}
+          <li><a href="{% url 'admin:website-service-material-download' material.pk %}">{{ material.original_name }}</a></li>
+        {% empty %}<li>No files uploaded yet.</li>{% endfor %}
+      </ul>
+      <h3>Questions and changes</h3>
+      {% for message in project.requests.all %}
+        <dl>
+          <dt>{{ message.get_status_display }} · {{ message.created_at|date:"M j, Y" }}</dt>
+          <dd>{{ message.message }}</dd>
+          {% if message.response %}<dt>Staff reply</dt><dd>{{ message.response }}</dd>{% endif %}
+        </dl>
+      {% empty %}<p>No customer messages yet.</p>{% endfor %}
+    </section>
+  </div>
+{% else %}
+  <h2>Submitted website requests</h2>
+  <form method="get" role="search">
+    <label for="website-search">Business name or customer email</label>
+    <input id="website-search" name="q" value="{{ query }}" type="search">
+    <button type="submit" class="button">Search</button>
+  </form>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th scope="col">Business</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Last updated</th></tr></thead>
+      <tbody>
+      {% for item in page %}
+        <tr>
+          <th scope="row"><a href="{% url 'admin:website-service-workspace-project' item.pk %}">{{ item.business_name }}</a></th>
+          <td>{{ item.get_business_type_display }}</td>
+          <td>{% if item.status == "review" %}Request under review{% else %}{{ item.get_status_display }}{% endif %}</td>
+          <td>{{ item.updated_at|date:"M j, Y" }}</td>
+        </tr>
+      {% empty %}<tr><td colspan="4">No submitted requests found.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.has_other_pages %}
+    <nav aria-label="Request pages">
+      {% if page.has_previous %}<a href="?q={{ query|urlencode }}&amp;page={{ page.previous_page_number }}">Previous</a>{% endif %}
+      <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}<a href="?q={{ query|urlencode }}&amp;page={{ page.next_page_number }}">Next</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endif %}
+</div>
+{% endblock %}

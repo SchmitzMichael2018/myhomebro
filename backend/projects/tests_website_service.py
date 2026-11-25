@@ -8,11 +8,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from PIL import Image
 from pypdf import PdfWriter
+from django.conf import settings
 from django.contrib.admin import AdminSite
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import OperationalError, transaction
 from django.test import RequestFactory, TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -40,6 +42,42 @@ class WebsiteServiceTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.owner)
         self.base = "/api/projects/website-service-projects/"
+
+    @override_settings(
+        FRONTEND_URL="https://staging.example.test",
+        SUPPORT_EMAIL="staff@example.test",
+        STORAGES={
+            **settings.STORAGES,
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_staff_workspace_and_notification(self):
+        project = WebsiteServiceProject.objects.create(
+            owner=self.owner, business_name="Juniper Ridge", status="review",
+            template_id="contractor-local", design_notes="Use forest green",
+        )
+        WebsiteServiceProject.objects.create(owner=self.owner, business_name="Unsubmitted draft")
+        queue = reverse("admin:website-service-workspace")
+        detail = reverse("admin:website-service-workspace-project", args=[project.pk])
+
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(detail).status_code, 302)
+        self.other.is_staff = True
+        self.other.save(update_fields=["is_staff"])
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(detail).status_code, 403)
+
+        self.other.is_superuser = True
+        self.other.save(update_fields=["is_superuser"])
+        self.assertNotContains(self.client.get(queue), "Unsubmitted draft")
+        self.assertContains(self.client.get(queue, {"q": "Juniper"}), "Juniper Ridge")
+        response = self.client.get(detail)
+        self.assertContains(response, "Local Service")
+        self.assertContains(response, "Use forest green")
+        self.assertContains(response, "Manage proposal")
+        with patch("projects.services.website_service.send_postmark_email", return_value=(True, "")) as send:
+            send_website_notification(project, "project_submitted", "New website project", "Ready to review.")
+        self.assertIn(f"https://staging.example.test{detail}", send.call_args.kwargs["text_body"])
 
     def create(self, **extra):
         payload = {"business_name": "Example Kitchen", "business_type": "restaurant", "template_id": "restaurant-food"}

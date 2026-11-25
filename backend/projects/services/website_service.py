@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from projects.models_website_service import WebsiteServiceEvent, WebsiteServiceProject
@@ -27,6 +28,15 @@ def _recipients(project, audience):
 
 def send_website_notification(project, event_type, subject, message, audience="staff"):
     """Deliver a best-effort email and always retain an auditable attempt."""
+    project_url = _dashboard_url(project)
+    if audience == "staff":
+        base = str(getattr(settings, "FRONTEND_URL", "") or "").rstrip("/")
+        route = (
+            "admin:website-service-workspace-project"
+            if project.status != "brief"
+            else "admin:projects_websiteserviceproject_change"
+        )
+        project_url = base + reverse(route, args=[project.pk])
     for recipient in [value for value in _recipients(project, audience) if value]:
         delivered = False
         detail = ""
@@ -34,7 +44,7 @@ def send_website_notification(project, event_type, subject, message, audience="s
             delivered, detail = send_postmark_email(
                 to_email=recipient,
                 subject=subject,
-                text_body=f"{message}\n\nProject: {project.business_name}\n{_dashboard_url(project)}",
+                text_body=f"{message}\n\nProject: {project.business_name}\n{project_url}",
                 html_body=None,
             )
         except Exception as exc:  # Notification failures must not lose customer work.
@@ -195,7 +205,7 @@ def create_checkout_session(project, *, terms_accepted, accepted_fingerprint):
             "price_data": {
                 "currency": WEBSITE_SERVICE_CURRENCY,
                 "unit_amount": checkout_price_cents,
-                "product_data": {"name": f"Website design — {checkout_business_name}"},
+                "product_data": {"name": f"Website design â€” {checkout_business_name}"},
             },
         }],
         metadata={"kind": "website_service", "website_service_project_id": str(project.pk), "proposal_fingerprint": fingerprint, "checkout_attempt_token": attempt_token},
