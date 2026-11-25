@@ -12,6 +12,7 @@ import './WebsiteCustomerDashboard.css';
 import RestaurantMenuEditor from '../components/RestaurantMenuEditor.jsx';
 
 const h = React.createElement;
+const workspaceFollowUp = 'After you send your request, you can upload logos, photos, and documents, ask questions, and request changes in your project workspace.';
 const designPhotos = {
   'contractor-showcase': designPhoto0,
   'contractor-local': designPhoto1,
@@ -181,7 +182,8 @@ function Workspace() {
               ['Current website', brief.current_website], ['Website goals', brief.description], ['About your business', brief.services],
               ['Public business contact information', brief.contact_details], ['Color preferences and design notes', brief.design_notes],
             ].filter(([, value]) => value).map(([label, value]) => h('div', { key: label }, h('dt', null, h('strong', null, label)), h('dd', { className: 'wcd-prewrap' }, value)))),
-            h('p', null, 'MyHomeBro will review your details and send a proposal with the scope and price. After sending your request, you can upload files and ask questions in your project workspace.'),
+            h('p', null, 'MyHomeBro will review your details and send a proposal with the scope and price.'),
+            h('p', null, workspaceFollowUp),
             h('div', { className: 'wcd-actions' },
               h('button', { type: 'button', className: 'wcd-secondary', disabled: busy, onClick: () => goToRequestStep(1) }, 'Edit business details'),
               h('button', { type: 'button', className: 'wcd-primary', disabled: busy || dirty || !project, onClick: () => run(async () => {
@@ -200,6 +202,7 @@ function Workspace() {
           !inRequest && project?.business_type === 'restaurant' && h(RestaurantMenuEditor, { key: project.id, projectId: project.id, onDirtyChange: setMenuDirty }),
           h('div', { className: 'wcd-columns' },
             (!inRequest || requestStep === 1) && h('section', { className: 'wcd-card', id: 'wcd-brief' }, h('div', { className: 'wcd-card-heading' }, h('div', null, h('p', { className: 'wcd-eyebrow' }, '01 / THE FOUNDATION'), h('h2', { id: 'wcd-request-heading', tabIndex: -1 }, inRequest ? 'Tell us about your business' : 'Your website request')), h('span', { className: 'wcd-muted' }, dirty ? 'Unsaved changes' : project ? 'Saved' : 'Not saved yet')),
+              inRequest && h('p', null, workspaceFollowUp),
               inRequest && h('p', null, template ? `Selected design: ${template.name}` : 'Design preference: Help me choose'),
               h('form', { onSubmit: event => { event.preventDefault(); run(async () => {
                 const { data } = project ? await api.patch(`${endpoint}${project.id}/`, brief) : await api.post(endpoint, brief);
