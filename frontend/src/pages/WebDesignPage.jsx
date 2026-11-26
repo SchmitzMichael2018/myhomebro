@@ -105,15 +105,10 @@ export default function WebDesignPage() {
       h('section', { id: 'process', className: 'wd-container wd-section' },
         h('div', { className: 'wd-section-heading' }, h('h2', null, 'How your website gets built'), h('p', null, 'You’ll see what’s included and what it costs before you decide whether to go ahead.')),
         h('ol', { className: 'wd-journey' }, ...[
-          ['Send your free request', 'Choose a starting design or ask us to help, tell us about your business, then review and send.'],
-          ['Open your project workspace', 'After you send your request, track its progress, upload logos and photos, ask questions, and request changes.'],
-          ['Review your proposal', 'We confirm the pages, features, timeline, revisions, and any recurring costs.'],
-          ['Accept and pay', 'If the proposal works for you, accept the terms and pay securely through Stripe.'],
-          ['Review your preview', 'We build the site using your content and share it for feedback.'],
-          ['Approve and launch', 'Once you approve the design, we schedule launch and confirm how you’ll access your website.'],
+          ['Send your request', 'Choose a starting design or ask us to help, add your business details, then review and send.'],
+          ['Review your quote', 'Use your project workspace to share materials and review the scope, timing, and price before you decide.'],
+          ['Approve your site', 'Review the preview, request changes in your workspace, and approve the site for launch.'],
         ].map(([title, copy]) => h('li', { key: title }, h('h3', null, title), h('p', null, copy))))),
-      h('section', { className: 'wd-credit' }, h('div', { className: 'wd-container wd-credit-grid' }, h('div', null, h('p', { className: 'wd-eyebrow' }, 'FOR MYHOMEBRO CONTRACTORS'), h('h2', null, 'A website that could', h('br'), 'help pay for itself.'), h('p', null, 'Pay for your website development upfront. Our proposed website-credit program would let contractors earn credits through qualifying MyHomeBro projects.'), h('a', { className: 'wd-button', href: '#quote', onClick: () => setBusiness('Contractor') }, 'Ask about contractor credits ↗')),
-        h('div', { className: 'wd-credit-notes' }, h('h3', null, 'Two ways to connect with MyHomeBro'), h('p', null, h('strong', null, 'Referral rewards'), h('br'), 'Share your referral QR code or link under the applicable MyHomeBro referral program.'), h('p', null, h('strong', null, 'Proposed website credits'), h('br'), 'Earn toward your development cost through eligible platform activity. Separate from referral rewards.'), h('p', { className: 'wd-small' }, 'Website credits are not yet available. Amounts, eligibility, limits, redemption, and treatment of maintenance fees must be finalized before enrollment. No credit or reimbursement is guaranteed.')))),
       h('section', { id: 'ownership', className: 'wd-container wd-section' },
         h('div', { className: 'wd-section-heading' },
           h('h2', null, 'Domain ownership and hosting'),
@@ -131,6 +126,7 @@ export default function WebDesignPage() {
         h('details', null, h('summary', null, 'Prefer to start by email?'), h(QuoteForm, { business, setBusiness, selectedTemplate, setSelectedTemplate })))),
       h('section', { className: 'wd-container wd-faq' }, h('h2', null, 'A few helpful answers.'), ...[
         ['Can you work on my existing website?', 'Yes. We first review its platform, access, and requested changes, then recommend an update, redesign, or rebuild.'], ['Do I need to move my domain?', 'Usually you can keep your existing domain registrar. We assess hosting and domain settings before making any changes, including settings used by business email.'], ['Can a restaurant include online ordering?', 'We can link to your existing ordering provider. A custom ordering system or deeper integration requires a separate scope and quote.'], ['How much does a website cost?', 'We quote after reviewing the template, content, pages, and features you need. Development and recurring services are listed separately.'],
+        ['Are website credits available for MyHomeBro contractors?', 'Website credits are proposed and enrollment is closed. The existing MyHomeBro referral program has separate terms.'],
       ].map(([question, answer]) => h('details', { key: question }, h('summary', null, question), h('p', null, answer))))),
     h('footer', { className: 'wd-container wd-footer' }, h('span', null, 'MyHomeBro LLC • Web Design'), h('div', null, h(Link, { to: '/' }, 'Explore MyHomeBro ↗'), h(Link, { to: '/legal/privacy-policy' }, 'Privacy'), h(Link, { to: '/legal/terms-of-service' }, 'Terms'))));
 }

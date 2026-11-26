@@ -145,3 +145,43 @@
 .wd-ownership-grid dd {
   margin: 8px 0 0;
 }
+
+/* Keep the public overview compact on both desktop and mobile. */
+.wd-page .wd-hero {
+  gap: clamp(20px, 4vw, 40px);
+  padding-block: clamp(20px, 4vw, 44px);
+}
+.wd-page .wd-hero h1 { margin: 0 0 14px; }
+.wd-hero .wd-lead + .wd-lead { margin-top: 8px; }
+.wd-hero .wd-actions { margin-top: 18px; }
+.wd-page .wd-hero-preview { padding: 0; }
+.wd-page .wd-section { padding-block: clamp(24px, 4vw, 44px); }
+.wd-section-heading {
+  gap: 10px 28px;
+  margin-bottom: 16px;
+}
+.wd-page .wd-section-heading h2 { margin: 0; }
+.wd-page .wd-template-image {
+  aspect-ratio: 2 / 1;
+  min-height: 180px;
+  padding: 16px;
+}
+.wd-page .wd-hero-preview .wd-template-image { min-height: 235px; }
+.wd-gallery-card-copy { padding: 15px 16px; }
+.wd-gallery-toggle { margin-bottom: 12px; }
+.wd-template-tabs { margin-block: 4px 16px; }
+.wd-journey {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+.wd-ownership-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 218px), 1fr));
+}
+.wd-ownership-grid > div { padding: 14px; }
+.wd-page .wd-faq { padding-bottom: 28px; }
+.wd-faq h2 { margin-bottom: 12px; }
+.wd-faq details { padding-block: 8px; }
+@media (max-width: 640px) {
+  .wd-page .wd-hero h1 { font-size: clamp(36px, 10vw, 49px); }
+  .wd-journey { grid-template-columns: minmax(0, 1fr); }
+}
