@@ -11,7 +11,7 @@ import './WebDesignGallery.css';
 import { WEBSITE_TEMPLATES, findWebsiteTemplate, websiteTemplateDemoUrl } from '../lib/websiteTemplates.js';
 
 const h = React.createElement;
-const EMAIL = 'schmitzmichael1985@gmail.com';
+const EMAIL = 'info@myhomebro.com';
 const previewDetails = {
   'contractor-showcase': [showcasePhoto, 'A home that feels more like you.', 'Remodelers with finished projects to show', 'Project gallery and estimate inquiry'],
   'contractor-local': [localServicePhoto, 'Your home to-do list. Handled.', 'Local repair and home service businesses', 'Service list and quick estimate path'],
@@ -119,7 +119,7 @@ export default function WebDesignPage() {
           ['Updates to an existing website', 'We review your current platform and hosting first. We confirm any changes to that setup with you before work begins.'],
           ['Handoff and ongoing care', 'Your proposal spells out which site files and account access you receive, who handles renewals, and any optional maintenance.'],
         ].map(([title, copy]) => h('div', { key: title }, h('dt', null, title), h('dd', null, copy))))),
-      h('section', { id: 'quote', className: 'wd-container wd-section wd-quote' }, h('div', null, h('p', { className: 'wd-eyebrow' }, 'LET’S TALK ABOUT YOUR WEBSITE'), h('h2', null, 'A fresh start.', h('br'), 'Or a better next step.'), h('p', { className: 'wd-lead' }, 'Tell us what you have in mind. We’ll help identify the right starting point and scope.'), h('p', { className: 'wd-small' }, 'Prefer to talk? ', h('a', { href: 'tel:+14846648861' }, '(484) 664-8861')), h('a', { className: 'wd-text-link', href: `mailto:${EMAIL}` }, EMAIL)), h('div', { className: 'wd-intake' },
+      h('section', { id: 'quote', className: 'wd-container wd-section wd-quote' }, h('div', null, h('p', { className: 'wd-eyebrow' }, 'LET’S TALK ABOUT YOUR WEBSITE'), h('h2', null, 'A fresh start.', h('br'), 'Or a better next step.'), h('p', { className: 'wd-lead' }, 'Tell us what you have in mind. We’ll help identify the right starting point and scope.'), h('a', { className: 'wd-text-link', href: `mailto:${EMAIL}` }, EMAIL)), h('div', { className: 'wd-intake' },
         h('h3', null, 'Start your website request'),
         h('p', null, 'Sign in or create a MyHomeBro account to save your request, share files, and review your proposal when it’s ready.'),
         h(Link, { className: 'wd-button', to: briefPath(selectedTemplate) }, 'Start a free website request'),
