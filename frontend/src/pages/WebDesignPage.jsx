@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import logo from '../assets/myhomebro_logo.png';
+import showcasePhoto from '../assets/website/gallery-showcase.webp';
+import localServicePhoto from '../assets/website/gallery-local-service.webp';
+import premiumPhoto from '../assets/website/gallery-premium.webp';
+import foodPhoto from '../assets/website/gallery-food.webp';
+import diningPhoto from '../assets/website/gallery-dining.webp';
 import './WebDesignPage.css';
 import './WebDesignGallery.css';
 import { WEBSITE_TEMPLATES, findWebsiteTemplate, websiteTemplateDemoUrl } from '../lib/websiteTemplates.js';
@@ -8,32 +13,37 @@ import { WEBSITE_TEMPLATES, findWebsiteTemplate, websiteTemplateDemoUrl } from '
 const h = React.createElement;
 const EMAIL = 'schmitzmichael1985@gmail.com';
 const previewDetails = {
-  'contractor-showcase': ['1600210492486-724fe5c67fb0', 'A home that feels more like you.', 'Remodelers with finished projects to show', 'Project gallery and estimate inquiry'],
-  'contractor-local': ['1600607687920-4e2a09cf159d', 'Your home to-do list. Handled.', 'Local repair and home service businesses', 'Service list and quick estimate path'],
-  'contractor-premium': ['1600566753086-00f18fb6b3ea', 'Spaces shaped around your life.', 'Custom builders with a photo portfolio', 'Full-width photography and project stories'],
-  'restaurant-food': ['1547592180-85f173990554', 'Good food. Your favorite people.', 'Restaurants that want the menu front and center', 'Featured dishes and searchable menu'],
-  'restaurant-local': ['1517248135467-4c7edcad34c4', 'Your everyday favorite.', 'Neighborhood spots with regular walk-in traffic', 'Menu, hours, and location up front'],
-  'restaurant-dining': ['1517248135467-4c7edcad34c4', 'An evening worth savoring.', 'Dining rooms where atmosphere matters', 'Dining photography, restaurant story, and visit details'],
+  'contractor-showcase': [showcasePhoto, 'A home that feels more like you.', 'Remodelers with finished projects to show', 'Project gallery and estimate inquiry'],
+  'contractor-local': [localServicePhoto, 'Your home to-do list. Handled.', 'Local repair and home service businesses', 'Service list and quick estimate path'],
+  'contractor-premium': [premiumPhoto, 'Spaces shaped around your life.', 'Custom builders with a photo portfolio', 'Full-width photography and project stories'],
+  'restaurant-food': [foodPhoto, 'Good food. Your favorite people.', 'Restaurants that want the menu front and center', 'Featured dishes and searchable menu'],
+  'restaurant-local': [diningPhoto, 'Your everyday favorite.', 'Neighborhood spots with regular walk-in traffic', 'Menu, hours, and location up front'],
+  'restaurant-dining': [diningPhoto, 'An evening worth savoring.', 'Dining rooms where atmosphere matters', 'Dining photography, restaurant story, and visit details'],
 };
 
 const briefPath = (templateId = '') => '/webdesign/dashboard' + (templateId ? '?template=' + encodeURIComponent(templateId) : '');
 
 function TemplateThumbnail({ template, featured = false }) {
-  const [photo, headline] = previewDetails[template.id];
-  const imageUrl = `https://images.unsplash.com/photo-${photo}?auto=format&fit=crop&w=960&q=80`;
+  const [imageUrl, headline] = previewDetails[template.id];
   return h('a', { className: 'wd-template-image wd-template-image-' + template.id, href: websiteTemplateDemoUrl(template.id), 'aria-label': 'View ' + template.name + ' demo', 'data-testid': featured ? 'webdesign-template-preview' : undefined },
-    h('img', { src: imageUrl, alt: '', loading: featured ? 'eager' : 'lazy', width: 960, height: 600 }),
+    h('img', { src: imageUrl, alt: '', onError: event => { event.currentTarget.hidden = true; }, loading: featured ? 'eager' : 'lazy', width: 960, height: 600 }),
     h('span', { className: 'wd-template-image-copy' }, h('small', null, template.business), h('strong', null, headline)),
     h('span', { className: 'wd-template-image-action', 'aria-hidden': true }, 'View example website ↗'));
 }
 
 function TemplateGallery() {
   const [filter, setFilter] = useState('All');
-  const templates = WEBSITE_TEMPLATES.filter(template => filter === 'All' || template.type === filter);
+  const [showAll, setShowAll] = useState(false);
+  const templates = showAll
+    ? WEBSITE_TEMPLATES.filter(template => filter === 'All' || template.type === filter)
+    : ['contractor-local', 'restaurant-food'].map(findWebsiteTemplate);
   return h('section', { id: 'templates', className: 'wd-container wd-section' },
-    h('div', { className: 'wd-section-heading' }, h('h2', null, 'Find a design that fits.'), h('p', null, 'Explore sample websites for fictional businesses. We’ll customize your design with your brand, photos, and the features agreed in your proposal.')),
-    h('div', { className: 'wd-template-tabs', role: 'group', 'aria-label': 'Filter website templates' }, ...['All', 'Contractor', 'Restaurant'].map(item => h('button', { type: 'button', key: item, 'aria-pressed': filter === item, className: filter === item ? 'wd-active' : '', onClick: () => setFilter(item) }, item === 'All' ? 'All designs' : item + ' websites'))),
-    h('div', { className: 'wd-gallery-grid', 'data-testid': 'website-template-gallery' }, ...templates.map(template => {
+    h('div', { className: 'wd-section-heading' },
+      h('h2', null, 'Website examples'),
+      h('p', null, 'Explore a contractor site and a restaurant site. When you start your request, you can choose a design or ask us to help.')),
+    h('button', { type: 'button', className: 'wd-secondary wd-gallery-toggle', 'aria-expanded': showAll, 'aria-controls': 'webdesign-gallery', onClick: () => setShowAll(!showAll) }, showAll ? 'Show featured examples' : 'View full template gallery'),
+    showAll && h('div', { className: 'wd-template-tabs', role: 'group', 'aria-label': 'Filter website templates' }, ...['All', 'Contractor', 'Restaurant'].map(item => h('button', { type: 'button', key: item, 'aria-pressed': filter === item, className: filter === item ? 'wd-active' : '', onClick: () => setFilter(item) }, item === 'All' ? 'All designs' : item + ' websites'))),
+    h('div', { id: 'webdesign-gallery', className: 'wd-gallery-grid' + (showAll ? '' : ' wd-gallery-featured'), 'data-testid': 'website-template-gallery' }, ...templates.map(template => {
       const [, , audience, feature] = previewDetails[template.id];
       return h('article', { className: 'wd-gallery-card', key: template.id, 'data-testid': 'template-' + template.id },
         h(TemplateThumbnail, { template }),
@@ -42,7 +52,7 @@ function TemplateGallery() {
           h('h3', null, template.name),
           h('p', null, audience),
           h('p', { className: 'wd-template-feature' }, feature),
-          h(Link, { className: 'wd-text-link', to: briefPath(template.id), 'aria-label': 'Choose ' + template.name }, 'Use this design →')));
+          showAll && h(Link, { className: 'wd-text-link', to: briefPath(template.id), 'aria-label': 'Choose ' + template.name }, 'Use this design →')));
     })));
 }
 
@@ -88,13 +98,15 @@ export default function WebDesignPage() {
         h('div', { className: 'wd-hero-copy' },
           h('h1', null, 'A website that works for your business.'),
           h('p', { className: 'wd-lead' }, 'Help customers find your services, browse your menu, or get in touch. We design and build websites for contractors and restaurants.'),
+          h('p', { className: 'wd-lead' }, h('strong', null, 'Start with a free, three-step request.'), ' Once you send it, your project workspace is where you track progress.'),
           h('div', { className: 'wd-actions' }, h('a', { className: 'wd-button', href: '#templates' }, 'Explore the designs'), h('a', { className: 'wd-text-link', href: '#quote' }, 'Start a free website request →'))),
         h('div', { className: 'wd-hero-preview' }, h(TemplateThumbnail, { template: WEBSITE_TEMPLATES[0], featured: true }))),
       h(TemplateGallery),
       h('section', { id: 'process', className: 'wd-container wd-section' },
         h('div', { className: 'wd-section-heading' }, h('h2', null, 'How your website gets built'), h('p', null, 'You’ll see what’s included and what it costs before you decide whether to go ahead.')),
         h('ol', { className: 'wd-journey' }, ...[
-          ['Send your website request', 'Tell us what your business needs. Pick a design or ask us to help you choose.'],
+          ['Send your free request', 'Choose a starting design or ask us to help, tell us about your business, then review and send.'],
+          ['Open your project workspace', 'After you send your request, track its progress, upload logos and photos, ask questions, and request changes.'],
           ['Review your proposal', 'We confirm the pages, features, timeline, revisions, and any recurring costs.'],
           ['Accept and pay', 'If the proposal works for you, accept the terms and pay securely through Stripe.'],
           ['Review your preview', 'We build the site using your content and share it for feedback.'],
@@ -102,7 +114,16 @@ export default function WebDesignPage() {
         ].map(([title, copy]) => h('li', { key: title }, h('h3', null, title), h('p', null, copy))))),
       h('section', { className: 'wd-credit' }, h('div', { className: 'wd-container wd-credit-grid' }, h('div', null, h('p', { className: 'wd-eyebrow' }, 'FOR MYHOMEBRO CONTRACTORS'), h('h2', null, 'A website that could', h('br'), 'help pay for itself.'), h('p', null, 'Pay for your website development upfront. Our proposed website-credit program would let contractors earn credits through qualifying MyHomeBro projects.'), h('a', { className: 'wd-button', href: '#quote', onClick: () => setBusiness('Contractor') }, 'Ask about contractor credits ↗')),
         h('div', { className: 'wd-credit-notes' }, h('h3', null, 'Two ways to connect with MyHomeBro'), h('p', null, h('strong', null, 'Referral rewards'), h('br'), 'Share your referral QR code or link under the applicable MyHomeBro referral program.'), h('p', null, h('strong', null, 'Proposed website credits'), h('br'), 'Earn toward your development cost through eligible platform activity. Separate from referral rewards.'), h('p', { className: 'wd-small' }, 'Website credits are not yet available. Amounts, eligibility, limits, redemption, and treatment of maintenance fees must be finalized before enrollment. No credit or reimbursement is guaranteed.')))),
-      h('section', { className: 'wd-container wd-care' }, h('div', null, h('p', { className: 'wd-eyebrow' }, 'AFTER LAUNCH'), h('h2', null, 'You run your business.', h('br'), 'We can look after the website.')), h('div', null, h('p', null, 'Choose a one-time build with website access at launch, or ask about ongoing maintenance for content updates, website checks, and hosting management.'), h('p', { className: 'wd-small' }, 'Maintenance scope, response times, domain renewals, hosting costs, and third-party charges are agreed separately. Custom ordering, booking systems, and advanced features are quoted individually.'))),
+      h('section', { id: 'ownership', className: 'wd-container wd-section' },
+        h('div', { className: 'wd-section-heading' },
+          h('h2', null, 'Domain ownership and hosting'),
+          h('p', null, 'Your proposal explains what you own, who manages your site, and what it costs to keep it online.')),
+        h('dl', { className: 'wd-ownership-grid' }, ...[
+          ['You own your domain', 'Register your domain in your name or keep the one you already own.'],
+          ['Hosting for new websites', 'We typically set up new websites on Cloudflare Pages. Your proposal lists who manages hosting and any recurring costs.'],
+          ['Updates to an existing website', 'We review your current platform and hosting first. We confirm any changes to that setup with you before work begins.'],
+          ['Handoff and ongoing care', 'Your proposal spells out which site files and account access you receive, who handles renewals, and any optional maintenance.'],
+        ].map(([title, copy]) => h('div', { key: title }, h('dt', null, title), h('dd', null, copy))))),
       h('section', { id: 'quote', className: 'wd-container wd-section wd-quote' }, h('div', null, h('p', { className: 'wd-eyebrow' }, 'LET’S TALK ABOUT YOUR WEBSITE'), h('h2', null, 'A fresh start.', h('br'), 'Or a better next step.'), h('p', { className: 'wd-lead' }, 'Tell us what you have in mind. We’ll help identify the right starting point and scope.'), h('p', { className: 'wd-small' }, 'Prefer to talk? ', h('a', { href: 'tel:+14846648861' }, '(484) 664-8861')), h('a', { className: 'wd-text-link', href: `mailto:${EMAIL}` }, EMAIL)), h('div', { className: 'wd-intake' },
         h('h3', null, 'Start your website request'),
         h('p', null, 'Sign in or create a MyHomeBro account to save your request, share files, and review your proposal when it’s ready.'),

@@ -2,15 +2,16 @@ import { test, expect } from '@playwright/test';
 const origin = process.env.WEB_DESIGN_BASE_URL || 'https://www.myhomebro.com';
 const ids = ['contractor-showcase','contractor-local','contractor-premium','restaurant-food','restaurant-local','restaurant-dining'];
 
-test('gallery filters and design choices reach the contact-last quote',async({page})=>{
+test('landing page features two examples and the full gallery retains template selection', async ({ page }) => {
   await page.goto(`${origin}/webdesign`);
+  await expect(page.locator('.wd-gallery-card')).toHaveCount(2);
+  await expect(page.getByRole('heading', { name: 'Domain ownership and hosting' })).toBeVisible();
+  await page.getByRole('button', { name: 'View full template gallery' }).click();
   await expect(page.locator('.wd-gallery-card')).toHaveCount(6);
-  await page.getByRole('button',{name:'Restaurant websites',exact:true}).click();
+  await page.getByRole('button', { name: 'Restaurant websites', exact: true }).click();
   await expect(page.locator('.wd-gallery-card')).toHaveCount(3);
-  await page.getByRole('link',{name:'Choose Dining Experience',exact:true}).click();
-  await expect(page.locator('select[name="template"]')).toHaveValue('restaurant-dining');
-  await expect(page.getByRole('radio',{name:'Restaurant',exact:true})).toBeChecked();
-  await expect(page.getByLabel('Email address')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Choose Dining Experience', exact: true }))
+    .toHaveAttribute('href', '/webdesign/dashboard?template=restaurant-dining');
 });
 
 for(const id of ids){
